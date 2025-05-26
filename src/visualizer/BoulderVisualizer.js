@@ -7,6 +7,7 @@ export class BoulderVisualizer {
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         this.rings = [];
+        this.moveSegments = [];
         this.boulder = null;
         this.centerText = null;
         
@@ -43,7 +44,10 @@ export class BoulderVisualizer {
             cruxEmphasis: 2.2,       // How much to emphasize crux moves
             waveComplexity: 1.0,     // Complexity of wave patterns
             depthEffect: 0.6,        // 3D depth effect strength
-            centerFade: 0.75         // How much lines fade near center (slab effect)
+            centerFade: 0.75,        // How much lines fade near center (slab effect)
+            showMoveSegments: true,  // Show background move segments
+            segmentOpacity: 0.15,    // Opacity of move segments
+            segmentGap: 0.05         // Gap between segments (0.0-0.2)
         };
         
         this.init();
@@ -158,6 +162,9 @@ export class BoulderVisualizer {
         
         if (!this.boulder) return;
         
+        // Create background move segments (pizza slices)
+        this.createMoveSegments();
+        
         // Create center grade display
         this.createCenterGrade();
         
@@ -171,6 +178,14 @@ export class BoulderVisualizer {
             this.scene.remove(ring);
         });
         this.rings = [];
+        
+        // Remove move segments
+        if (this.moveSegments) {
+            this.moveSegments.forEach(segment => {
+                this.scene.remove(segment);
+            });
+            this.moveSegments = [];
+        }
         
         // Remove center circle
         if (this.centerCircle) {
@@ -204,6 +219,74 @@ export class BoulderVisualizer {
         const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
         this.centerText = new THREE.Mesh(textGeometry, textMaterial);
         this.scene.add(this.centerText);
+    }
+    
+    createMoveSegments() {
+        if (!this.settings.showMoveSegments) return;
+        
+        const moveCount = this.boulder.moves.length;
+        this.moveSegments = [];
+        
+        // Calculate the maximum radius for the background segments
+        const maxRadius = this.settings.baseRadius + (this.settings.ringCount * this.settings.ringSpacing) + 2;
+        const innerRadius = this.settings.baseRadius * 0.8; // Start slightly inside the center circle
+        
+        // Calculate angle per move
+        const anglePerMove = (Math.PI * 2) / moveCount;
+        const gapAngle = anglePerMove * this.settings.segmentGap; // Configurable gap between segments
+        const segmentAngle = anglePerMove - gapAngle;
+        
+        for (let i = 0; i < moveCount; i++) {
+            const startAngle = i * anglePerMove + gapAngle / 2;
+            const endAngle = startAngle + segmentAngle;
+            
+            // Create ring segment geometry
+            const segmentGeometry = new THREE.RingGeometry(
+                innerRadius, 
+                maxRadius, 
+                startAngle, 
+                segmentAngle
+            );
+            
+            // Set the number of segments for smooth curves
+            segmentGeometry.parameters.thetaSegments = 32;
+            segmentGeometry.parameters.phiSegments = 8;
+            
+            // Create material - grey background with slightly stronger outer ring
+            const segmentMaterial = new THREE.MeshBasicMaterial({
+                color: 0x404040, // Dark grey
+                transparent: true,
+                opacity: this.settings.segmentOpacity,
+                side: THREE.DoubleSide
+            });
+            
+            const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
+            segment.position.z = -0.1; // Place slightly behind other elements
+            
+            this.moveSegments.push(segment);
+            this.scene.add(segment);
+            
+            // Create outer ring for stronger color
+            const outerRingGeometry = new THREE.RingGeometry(
+                maxRadius - 0.3, 
+                maxRadius, 
+                startAngle, 
+                segmentAngle
+            );
+            
+            const outerRingMaterial = new THREE.MeshBasicMaterial({
+                color: 0x606060, // Slightly lighter grey for outer ring
+                transparent: true,
+                opacity: this.settings.segmentOpacity * 1.7, // Stronger outer ring
+                side: THREE.DoubleSide
+            });
+            
+            const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
+            outerRing.position.z = -0.05; // Place slightly in front of main segment
+            
+            this.moveSegments.push(outerRing);
+            this.scene.add(outerRing);
+        }
     }
     
     createLiquidRings() {

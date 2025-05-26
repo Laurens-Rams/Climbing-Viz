@@ -149,6 +149,23 @@ export class BoulderControlPanel {
             
         effectsFolder.open();
         
+        // Move Segments Settings
+        const segmentsFolder = this.gui.addFolder('🍕 Move Segments');
+        
+        segmentsFolder.add(this.visualizer.settings, 'showMoveSegments')
+            .name('Show Move Segments')
+            .onChange(() => this.updateVisualization());
+            
+        segmentsFolder.add(this.visualizer.settings, 'segmentOpacity', 0.0, 0.5, 0.01)
+            .name('Segment Opacity')
+            .onChange(() => this.updateVisualization());
+            
+        segmentsFolder.add(this.visualizer.settings, 'segmentGap', 0.0, 0.2, 0.01)
+            .name('Gap Between Segments')
+            .onChange(() => this.updateVisualization());
+            
+        segmentsFolder.open();
+        
         // Liquid Effect Settings
         const liquidFolder = this.gui.addFolder('🌊 Liquid Effect');
         
