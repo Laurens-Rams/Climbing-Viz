@@ -8,13 +8,14 @@ export class BoulderVisualizer {
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         this.rings = [];
         this.moveSegments = [];
+        this.moveLines = [];
         this.boulder = null;
         this.centerText = null;
         
         // Color variables that can be changed
         this.colors = {
-            cruxMove: 0x00ffcc,      // Turquoise for crux moves
-            normalMove: 0xffffff,    // White for normal moves
+            cruxMove: 0xd624ab,      // Magenta/purple for crux moves
+            normalMove: 0x39accc,    // Purple for normal moves
             gradeColors: {
                 'V1': 0x00ff00,     // Green
                 'V2': 0x66ff00,     // Light green
@@ -45,9 +46,15 @@ export class BoulderVisualizer {
             waveComplexity: 1.0,     // Complexity of wave patterns
             depthEffect: 0.6,        // 3D depth effect strength
             centerFade: 0.75,        // How much lines fade near center (slab effect)
-            showMoveSegments: true,  // Show background move segments
+            showMoveSegments: false, // Show background move segments (disabled by default)
             segmentOpacity: 0.15,    // Opacity of move segments
-            segmentGap: 0.05         // Gap between segments (0.0-0.2)
+            segmentGap: 0.05,        // Gap between segments (0.0-0.2)
+            showMoveLines: true,     // Show radial lines at move peaks
+            lineLength: 3.0,         // Length of radial lines
+            lineOpacity: 0.6,        // Opacity of move lines
+            dotSize: 0.08,           // Size of dots at line ends
+            dotOpacity: 0.8,         // Opacity of dots
+            radiusMultiplier: 1.0    // Overall radius multiplier for the entire visualization
         };
         
         this.init();
@@ -165,6 +172,9 @@ export class BoulderVisualizer {
         // Create background move segments (pizza slices)
         this.createMoveSegments();
         
+        // Create radial move lines
+        this.createMoveLines();
+        
         // Create center grade display
         this.createCenterGrade();
         
@@ -187,6 +197,14 @@ export class BoulderVisualizer {
             this.moveSegments = [];
         }
         
+        // Remove move lines
+        if (this.moveLines) {
+            this.moveLines.forEach(line => {
+                this.scene.remove(line);
+            });
+            this.moveLines = [];
+        }
+        
         // Remove center circle
         if (this.centerCircle) {
             this.scene.remove(this.centerCircle);
@@ -204,8 +222,8 @@ export class BoulderVisualizer {
         // Create a colored circle in the center with the grade
         const gradeColor = this.colors.gradeColors[this.boulder.grade] || 0xffffff;
         
-        // Create center circle that updates with base radius
-        const centerGeometry = new THREE.CircleGeometry(this.settings.baseRadius * 0.7, 32);
+        // Create center circle that fills the base radius completely
+        const centerGeometry = new THREE.CircleGeometry(this.settings.baseRadius * this.settings.radiusMultiplier, 32);
         const centerMaterial = new THREE.MeshBasicMaterial({ 
             color: gradeColor,
             transparent: true,
@@ -214,10 +232,40 @@ export class BoulderVisualizer {
         this.centerCircle = new THREE.Mesh(centerGeometry, centerMaterial);
         this.scene.add(this.centerCircle);
         
-        // Create grade text (simplified - in real implementation would use TextGeometry)
-        const textGeometry = new THREE.SphereGeometry(0.15, 16, 16);
-        const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        // Create grade text using canvas texture
+        this.createGradeText(this.boulder.grade, gradeColor);
+    }
+    
+    createGradeText(grade, gradeColor) {
+        // Create canvas for text
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 256;
+        canvas.height = 256;
+        
+        // Set font and text properties
+        context.font = 'bold 120px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        
+        // Fill text with white color
+        context.fillStyle = '#ffffff';
+        context.fillText(grade, canvas.width / 2, canvas.height / 2);
+        
+        // Create texture from canvas
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        
+        // Create plane geometry for the text
+        const textGeometry = new THREE.PlaneGeometry(1.5, 1.5);
+        const textMaterial = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            opacity: 0.9
+        });
+        
         this.centerText = new THREE.Mesh(textGeometry, textMaterial);
+        this.centerText.position.z = 0.01; // Place slightly in front of center circle
         this.scene.add(this.centerText);
     }
     
@@ -225,34 +273,29 @@ export class BoulderVisualizer {
         if (!this.settings.showMoveSegments) return;
         
         const moveCount = this.boulder.moves.length;
+        if (moveCount <= 0) return; // Safety check
+        
         this.moveSegments = [];
         
         // Calculate the maximum radius for the background segments
-        const maxRadius = this.settings.baseRadius + (this.settings.ringCount * this.settings.ringSpacing) + 2;
-        const innerRadius = this.settings.baseRadius * 0.8; // Start slightly inside the center circle
+        const maxRadius = (this.settings.baseRadius + (this.settings.ringCount * this.settings.ringSpacing) + 2) * this.settings.radiusMultiplier;
+        const innerRadius = this.settings.baseRadius * this.settings.radiusMultiplier; // Start exactly at the center circle edge
+        
+        // Validate radii
+        if (innerRadius >= maxRadius) return;
         
         // Calculate angle per move
         const anglePerMove = (Math.PI * 2) / moveCount;
-        const gapAngle = anglePerMove * this.settings.segmentGap; // Configurable gap between segments
-        const segmentAngle = anglePerMove - gapAngle;
+        const gapAngle = Math.min(anglePerMove * this.settings.segmentGap, anglePerMove * 0.8); // Cap gap at 80% of segment
+        const segmentAngle = Math.max(anglePerMove - gapAngle, 0.01); // Minimum segment angle
         
         for (let i = 0; i < moveCount; i++) {
             const startAngle = i * anglePerMove + gapAngle / 2;
-            const endAngle = startAngle + segmentAngle;
             
-            // Create ring segment geometry
-            const segmentGeometry = new THREE.RingGeometry(
-                innerRadius, 
-                maxRadius, 
-                startAngle, 
-                segmentAngle
-            );
+            // Create segment using custom geometry to avoid RingGeometry issues
+            const segmentGeometry = this.createSegmentGeometry(innerRadius, maxRadius, startAngle, segmentAngle);
             
-            // Set the number of segments for smooth curves
-            segmentGeometry.parameters.thetaSegments = 32;
-            segmentGeometry.parameters.phiSegments = 8;
-            
-            // Create material - grey background with slightly stronger outer ring
+            // Create material - grey background
             const segmentMaterial = new THREE.MeshBasicMaterial({
                 color: 0x404040, // Dark grey
                 transparent: true,
@@ -261,18 +304,13 @@ export class BoulderVisualizer {
             });
             
             const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
-            segment.position.z = -0.1; // Place slightly behind other elements
+            segment.position.z = -0.5; // Place further behind other elements
             
             this.moveSegments.push(segment);
             this.scene.add(segment);
             
             // Create outer ring for stronger color
-            const outerRingGeometry = new THREE.RingGeometry(
-                maxRadius - 0.3, 
-                maxRadius, 
-                startAngle, 
-                segmentAngle
-            );
+            const outerRingGeometry = this.createSegmentGeometry(maxRadius - 0.3, maxRadius, startAngle, segmentAngle);
             
             const outerRingMaterial = new THREE.MeshBasicMaterial({
                 color: 0x606060, // Slightly lighter grey for outer ring
@@ -282,10 +320,113 @@ export class BoulderVisualizer {
             });
             
             const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
-            outerRing.position.z = -0.05; // Place slightly in front of main segment
+            outerRing.position.z = -0.4; // Place slightly in front of main segment but still behind rings
             
             this.moveSegments.push(outerRing);
             this.scene.add(outerRing);
+        }
+    }
+    
+    createSegmentGeometry(innerRadius, outerRadius, startAngle, segmentAngle) {
+        const geometry = new THREE.BufferGeometry();
+        
+        // Number of segments for smooth curves
+        const segments = Math.max(8, Math.floor(segmentAngle / (Math.PI / 16))); // Adaptive segments based on angle
+        
+        const vertices = [];
+        const indices = [];
+        
+        // Create vertices for the ring segment
+        for (let i = 0; i <= segments; i++) {
+            const angle = startAngle + (i / segments) * segmentAngle;
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            
+            // Inner vertex
+            vertices.push(innerRadius * cos, innerRadius * sin, 0);
+            // Outer vertex
+            vertices.push(outerRadius * cos, outerRadius * sin, 0);
+        }
+        
+        // Create triangles
+        for (let i = 0; i < segments; i++) {
+            const base = i * 2;
+            
+            // First triangle
+            indices.push(base, base + 1, base + 2);
+            // Second triangle
+            indices.push(base + 1, base + 3, base + 2);
+        }
+        
+        geometry.setIndex(indices);
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.computeVertexNormals();
+        
+        return geometry;
+    }
+    
+    createMoveLines() {
+        if (!this.settings.showMoveLines) return;
+        
+        const moveCount = this.boulder.moves.length;
+        if (moveCount <= 0) return;
+        
+        this.moveLines = [];
+        
+        // Calculate the base radius where lines start (from outer edge of visualization)
+        const baseRadius = (this.settings.baseRadius + (this.settings.ringCount * this.settings.ringSpacing) + 1) * this.settings.radiusMultiplier;
+        const lineEndRadius = baseRadius + (this.settings.lineLength * this.settings.radiusMultiplier);
+        
+        for (let i = 0; i < moveCount; i++) {
+            const move = this.boulder.moves[i];
+            
+            // Calculate angle for this move (center of the move segment)
+            const anglePerMove = (Math.PI * 2) / moveCount;
+            const moveAngle = i * anglePerMove;
+            
+            // Calculate line start and end positions
+            const startX = Math.cos(moveAngle) * baseRadius;
+            const startY = Math.sin(moveAngle) * baseRadius;
+            const endX = Math.cos(moveAngle) * lineEndRadius;
+            const endY = Math.sin(moveAngle) * lineEndRadius;
+            
+            // Create line geometry
+            const lineGeometry = new THREE.BufferGeometry();
+            const lineVertices = new Float32Array([
+                startX, startY, 0,
+                endX, endY, 0
+            ]);
+            lineGeometry.setAttribute('position', new THREE.BufferAttribute(lineVertices, 3));
+            
+            // Line color based on move type (crux vs normal)
+            const lineColor = move.isCrux ? this.colors.cruxMove : this.colors.normalMove;
+            
+            // Create line material
+            const lineMaterial = new THREE.LineBasicMaterial({
+                color: lineColor,
+                transparent: true,
+                opacity: this.settings.lineOpacity,
+                linewidth: 2
+            });
+            
+            // Create line mesh
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            this.moveLines.push(line);
+            this.scene.add(line);
+            
+            // Create dot at the end of the line
+            const dotGeometry = new THREE.SphereGeometry(this.settings.dotSize, 8, 6);
+            const dotMaterial = new THREE.MeshBasicMaterial({
+                color: lineColor,
+                transparent: true,
+                opacity: this.settings.dotOpacity
+            });
+            
+            const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+            dot.position.set(endX, endY, 0);
+            
+            this.moveLines.push(dot);
+            this.scene.add(dot);
         }
     }
     
@@ -301,7 +442,7 @@ export class BoulderVisualizer {
     }
     
     createSingleRing(ringIndex, moveCount) {
-        const baseRadius = this.settings.baseRadius + (ringIndex * this.settings.ringSpacing);
+        const baseRadius = (this.settings.baseRadius + (ringIndex * this.settings.ringSpacing)) * this.settings.radiusMultiplier;
         const points = [];
         
         // Create much more detailed points for dramatic effect

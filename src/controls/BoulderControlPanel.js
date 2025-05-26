@@ -56,14 +56,14 @@ export class BoulderControlPanel {
         };
         
         colorFolder.addColor(colorSettings, 'cruxColor')
-            .name('Crux Moves (Turquoise)')
+            .name('Crux Moves (Magenta)')
             .onChange((color) => {
                 this.visualizer.colors.cruxMove = this.rgbToHex(color);
                 this.updateVisualization();
             });
             
         colorFolder.addColor(colorSettings, 'normalColor')
-            .name('Normal Moves (White)')
+            .name('Normal Moves (Purple)')
             .onChange((color) => {
                 this.visualizer.colors.normalMove = this.rgbToHex(color);
                 this.updateVisualization();
@@ -122,6 +122,10 @@ export class BoulderControlPanel {
             .name('Line Opacity')
             .onChange(() => this.updateVisualization());
             
+        visualFolder.add(this.visualizer.settings, 'radiusMultiplier', 0.5, 3.0, 0.1)
+            .name('Overall Size')
+            .onChange(() => this.updateVisualization());
+            
         visualFolder.open();
         
         // Dynamic Effects Settings
@@ -165,6 +169,31 @@ export class BoulderControlPanel {
             .onChange(() => this.updateVisualization());
             
         segmentsFolder.open();
+        
+        // Move Lines Settings
+        const linesFolder = this.gui.addFolder('📍 Move Lines');
+        
+        linesFolder.add(this.visualizer.settings, 'showMoveLines')
+            .name('Show Move Lines')
+            .onChange(() => this.updateVisualization());
+            
+        linesFolder.add(this.visualizer.settings, 'lineLength', 1.0, 6.0, 0.1)
+            .name('Line Length')
+            .onChange(() => this.updateVisualization());
+            
+        linesFolder.add(this.visualizer.settings, 'lineOpacity', 0.0, 1.0, 0.05)
+            .name('Line Opacity')
+            .onChange(() => this.updateVisualization());
+            
+        linesFolder.add(this.visualizer.settings, 'dotSize', 0.02, 0.2, 0.01)
+            .name('Dot Size')
+            .onChange(() => this.updateVisualization());
+            
+        linesFolder.add(this.visualizer.settings, 'dotOpacity', 0.0, 1.0, 0.05)
+            .name('Dot Opacity')
+            .onChange(() => this.updateVisualization());
+            
+        linesFolder.open();
         
         // Liquid Effect Settings
         const liquidFolder = this.gui.addFolder('🌊 Liquid Effect');
