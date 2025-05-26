@@ -9,6 +9,7 @@ export class BoulderVisualizer {
         this.rings = [];
         this.moveSegments = [];
         this.moveLines = [];
+        this.startLabel = null;
         this.boulder = null;
         this.centerText = null;
         
@@ -290,7 +291,8 @@ export class BoulderVisualizer {
         const segmentAngle = Math.max(anglePerMove - gapAngle, 0.01); // Minimum segment angle
         
         for (let i = 0; i < moveCount; i++) {
-            const startAngle = i * anglePerMove + gapAngle / 2;
+            // Start at 12 o'clock (top) by adding PI/2 to the angle
+            const startAngle = i * anglePerMove + gapAngle / 2 + Math.PI / 2;
             
             // Create segment using custom geometry to avoid RingGeometry issues
             const segmentGeometry = this.createSegmentGeometry(innerRadius, maxRadius, startAngle, segmentAngle);
@@ -381,8 +383,9 @@ export class BoulderVisualizer {
             const move = this.boulder.moves[i];
             
             // Calculate angle for this move (center of the move segment)
+            // Start at 12 o'clock (top) by adding PI/2 to the angle
             const anglePerMove = (Math.PI * 2) / moveCount;
-            const moveAngle = i * anglePerMove;
+            const moveAngle = i * anglePerMove + Math.PI / 2;
             
             // Calculate line start and end positions
             const startX = Math.cos(moveAngle) * baseRadius;
@@ -414,22 +417,64 @@ export class BoulderVisualizer {
             this.moveLines.push(line);
             this.scene.add(line);
             
-            // Create dot at the end of the line
-            const dotGeometry = new THREE.SphereGeometry(this.settings.dotSize, 8, 6);
-            const dotMaterial = new THREE.MeshBasicMaterial({
-                color: lineColor,
-                transparent: true,
-                opacity: this.settings.dotOpacity
-            });
-            
-            const dot = new THREE.Mesh(dotGeometry, dotMaterial);
-            dot.position.set(endX, endY, 0);
-            
-            this.moveLines.push(dot);
-            this.scene.add(dot);
+            // Create dot/arrow at the end of the line
+            if (i === 0) {
+                // First move gets a bigger, brighter dot
+                const dotGeometry = new THREE.SphereGeometry(this.settings.dotSize * 2, 12, 8);
+                const dotMaterial = new THREE.MeshBasicMaterial({
+                    color: lineColor,
+                    transparent: true,
+                    opacity: 1.0, // Full opacity for first dot
+                    emissive: lineColor,
+                    emissiveIntensity: 0.3 // Make it glow
+                });
+                
+                const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+                dot.position.set(endX, endY, 0);
+                
+                this.moveLines.push(dot);
+                this.scene.add(dot);
+            } else {
+                // Other moves get arrows pointing in the direction of movement
+                const nextMoveIndex = (i + 1) % moveCount;
+                const nextAngle = nextMoveIndex * anglePerMove + Math.PI / 2;
+                
+                // Calculate direction vector for arrow
+                const directionAngle = nextAngle - moveAngle;
+                
+                const arrow = this.createArrow(endX, endY, directionAngle, lineColor);
+                this.moveLines.push(arrow);
+                this.scene.add(arrow);
+            }
         }
+        
+        // No need for start label - first dot will be bigger and brighter
     }
     
+    createArrow(x, y, directionAngle, color) {
+        // Create arrow geometry pointing in the direction of movement
+        const arrowGroup = new THREE.Group();
+        
+        // Arrow head (triangle)
+        const arrowHeadGeometry = new THREE.ConeGeometry(this.settings.dotSize * 0.8, this.settings.dotSize * 1.5, 3);
+        const arrowMaterial = new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: this.settings.dotOpacity
+        });
+        
+        const arrowHead = new THREE.Mesh(arrowHeadGeometry, arrowMaterial);
+        
+        // Rotate arrow to point in the correct direction
+        // The cone points up by default, so we need to rotate it
+        arrowHead.rotation.z = -directionAngle + Math.PI / 2;
+        
+        arrowGroup.add(arrowHead);
+        arrowGroup.position.set(x, y, 0);
+        
+        return arrowGroup;
+    }
+
     createLiquidRings() {
         const moveCount = this.boulder.moves.length;
         
@@ -450,7 +495,8 @@ export class BoulderVisualizer {
         
         for (let i = 0; i < detailLevel; i++) {
             const normalizedPosition = i / detailLevel;
-            const angle = normalizedPosition * Math.PI * 2;
+            // Start at 12 o'clock (top) by adding PI/2 to the angle
+            const angle = normalizedPosition * Math.PI * 2 + Math.PI / 2;
             
             // Find the closest moves for interpolation
             const movePosition = normalizedPosition * moveCount;
