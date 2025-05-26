@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boulder Problem Visualizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+            overflow: hidden;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #333;
+            max-width: 300px;
+        }
+        
+        #info h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #00ffcc;
+        }
+        
+        #info p {
+            font-size: 14px;
+            line-height: 1.4;
+            margin-bottom: 10px;
+            color: #cccccc;
+        }
+        
+        #stats {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #333;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 200;
+            color: #00ffcc;
+            font-size: 18px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="loading">Loading boulder visualizer...</div>
+        
+        <div id="info">
+            <h1>Boulder Visualizer</h1>
+            <p>Visualize boulder problems with liquid-like concentric rings</p>
+            <p>Each ring shows the move sequence clockwise around the circle</p>
+            <p>Spikes = Dynamic/powerful moves | Flat = Static/controlled moves</p>
+            <p><strong>Colors:</strong></p>
+            <p>• <span style="color: #00ffcc;">Turquoise</span> = Crux moves</p>
+            <p>• <span style="color: #ffffff;">White</span> = Normal moves</p>
+            <p>• Center = Grade with color coding</p>
+            <p><strong>Controls:</strong></p>
+            <p>• Mouse: Rotate view | Scroll: Zoom</p>
+            <p>• Use control panel to select boulders & adjust settings</p>
+        </div>
+        
+        <div id="stats">
+            <div id="boulder-name">Boulder: --</div>
+            <div id="boulder-grade">Grade: --</div>
+            <div id="move-count">Moves: --</div>
+        </div>
+    </div>
+    
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html> 

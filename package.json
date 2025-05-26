@@ -1,0 +1,23 @@
+{
+  "name": "climbing-viz",
+  "version": "1.0.0",
+  "description": "3D Climbing Data Visualizer",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && gh-pages -d dist"
+  },
+  "dependencies": {
+    "three": "^0.158.0",
+    "dat.gui": "^0.7.9"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "gh-pages": "^6.1.0"
+  },
+  "keywords": ["climbing", "visualization", "3d", "threejs"],
+  "author": "",
+  "license": "MIT"
+} 
