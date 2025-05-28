@@ -43,14 +43,14 @@ export class BoulderVisualizer {
             centerTextSize: 1.0,     // Size of center grade text
             showMoveNumbers: true,   // Show move sequence numbers
             liquidEffect: true,      // Enable liquid wave effect
-            organicNoise: 1.0,       // Amount of organic noise
+            organicNoise: 0.05,      // Amount of organic noise (reduced for subtle filter effect)
             cruxEmphasis: 3.0,       // How much to emphasize crux moves
             moveEmphasis: 0.0,       // How much to emphasize all moves equally
             waveComplexity: 1.0,     // Complexity of wave patterns
             depthEffect: 0.6,        // 3D depth effect strength
             centerFade: 0.95,        // How much lines fade near center (slab effect)
-            showMoveSegments: false, // Show background move segments
-            segmentOpacity: 0.15,    // Opacity of move segments
+            showMoveSegments: true,  // Show background move segments (changed from false)
+            segmentOpacity: 0.25,    // Opacity of move segments (increased from 0.15)
             segmentGap: 0.06,        // Gap between segments (0.0-0.2)
             showMoveLines: true,     // Show radial lines at move peaks
             lineLength: 4,           // Length of radial lines
@@ -82,6 +82,14 @@ export class BoulderVisualizer {
         this.renderer.outputColorSpace = THREE.SRGBColorSpace; // Better color accuracy
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping; // Better tone mapping
         this.renderer.toneMappingExposure = 1.0;
+        
+        // Ensure canvas is visible
+        this.renderer.domElement.style.display = 'block';
+        this.renderer.domElement.style.position = 'absolute';
+        this.renderer.domElement.style.top = '0';
+        this.renderer.domElement.style.left = '0';
+        this.renderer.domElement.style.zIndex = '1';
+        
         this.container.appendChild(this.renderer.domElement);
         
         // Setup camera for front view
@@ -91,6 +99,11 @@ export class BoulderVisualizer {
         // Setup scene
         this.setupLighting();
         this.setupControls();
+        this.setupEventListeners();
+        
+        console.log('BoulderVisualizer initialized - Canvas added to container');
+        console.log('Canvas dimensions:', this.renderer.domElement.width, 'x', this.renderer.domElement.height);
+        console.log('Container:', this.container);
     }
     
     // Simple seeded random number generator for consistent results
@@ -188,22 +201,42 @@ export class BoulderVisualizer {
         // Clear existing visualization
         this.clearScene();
         
-        if (!this.boulder) return;
+        if (!this.boulder) {
+            console.log('No boulder data available for visualization');
+            return;
+        }
+        
+        console.log(`Creating visualization for boulder: ${this.boulder.name} with ${this.boulder.moves?.length || 0} moves`);
         
         // Create background move segments (pizza slices)
         this.createMoveSegments();
+        console.log(`Created ${this.moveSegments?.length || 0} move segments`);
         
         // Create radial move lines
         this.createMoveLines();
+        console.log(`Created ${this.moveLines?.length || 0} move lines`);
         
         // Create center grade display
         this.createCenterGrade();
+        console.log('Created center grade display');
         
         // Create concentric rings with liquid effect
         this.createLiquidRings();
+        console.log(`Created ${this.rings?.length || 0} liquid rings`);
         
         // Create attempt visualization layer
         this.createAttemptVisualization();
+        console.log(`Created ${this.attemptLines?.length || 0} attempt lines`);
+        
+        console.log(`Total scene objects: ${this.scene.children.length}`);
+        
+        // Debug: Check if renderer and scene are working
+        console.log('Renderer size:', this.renderer.getSize(new THREE.Vector2()));
+        console.log('Camera position:', this.camera.position);
+        console.log('Scene children:', this.scene.children.map(child => child.type));
+        
+        // Force a render to ensure something is visible
+        this.renderer.render(this.scene, this.camera);
     }
     
     clearScene() {
@@ -838,7 +871,14 @@ export class BoulderVisualizer {
             
             // Add dramatic dynamics effect with exponential scaling
             const ringProgress = ringIndex / this.settings.ringCount;
-            const dynamicsEffect = Math.pow(dynamics, 1.8) * this.settings.dynamicsMultiplier;
+            
+            // Enhanced dynamics scaling: lower values stay lower, but outer values spike more dramatically
+            // Use a more aggressive power curve that preserves low values but amplifies high values
+            const enhancedDynamics = dynamics < 0.3 ? 
+                dynamics * 0.8 : // Keep low values even lower
+                Math.pow(dynamics, 1.2) * (1 + ringProgress * 2); // Amplify higher values more on outer rings
+            
+            const dynamicsEffect = enhancedDynamics * this.settings.dynamicsMultiplier;
             
             // Create liquid wave effect - outer rings get more dramatic
             const waveAmplitude = dynamicsEffect * Math.pow(ringProgress, 0.6);
@@ -1000,31 +1040,10 @@ export class BoulderVisualizer {
         Object.assign(this.settings, newSettings);
         
         if (this.boulder) {
-            // Only recreate if necessary - check what actually changed
-            const needsFullRecreation = (
-                oldSettings.ringCount !== this.settings.ringCount ||
-                oldSettings.baseRadius !== this.settings.baseRadius ||
-                oldSettings.ringSpacing !== this.settings.ringSpacing ||
-                oldSettings.radiusMultiplier !== this.settings.radiusMultiplier ||
-                oldSettings.showMoveSegments !== this.settings.showMoveSegments ||
-                oldSettings.showMoveLines !== this.settings.showMoveLines ||
-                oldSettings.showAttempts !== this.settings.showAttempts ||
-                oldSettings.maxAttempts !== this.settings.maxAttempts ||
-                oldSettings.attemptWaviness !== this.settings.attemptWaviness ||
-                oldSettings.attemptFadeStrength !== this.settings.attemptFadeStrength ||
-                oldSettings.attemptThickness !== this.settings.attemptThickness ||
-                oldSettings.attemptIntensity !== this.settings.attemptIntensity ||
-                oldSettings.attemptRadius !== this.settings.attemptRadius ||
-                oldSettings.cruxEmphasis !== this.settings.cruxEmphasis ||
-                oldSettings.moveEmphasis !== this.settings.moveEmphasis
-            );
-            
-            if (needsFullRecreation) {
-                this.createVisualization();
-            } else {
-                // Only update materials/opacity for performance
-                this.updateMaterialsOnly();
-            }
+            // Always do full recreation for immediate visual feedback
+            // This ensures all changes are immediately visible
+            console.log('Auto-reloading visualization due to settings change');
+            this.createVisualization();
         }
     }
     

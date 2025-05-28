@@ -172,7 +172,7 @@ export class ControlPanel {
         const info = {
             totalWeeks: 52,
             gradeRange: 'V1 - V12',
-            dataSource: 'Mock Data'
+            dataSource: 'CSV Sensor Data'
         };
         
         infoFolder.add(info, 'totalWeeks').name('Total Weeks').listen();

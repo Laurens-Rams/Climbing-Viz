@@ -1,255 +1,341 @@
-import { AccelerationAnalyzer } from './accelerationAnalyzer.js';
+// Boulder data management for real CSV files only
+let csvFileCache = new Map();
+let lastCacheUpdate = 0;
+const CACHE_DURATION = 30000; // 30 seconds
 
-// Initialize the acceleration analyzer
-const accelerationAnalyzer = new AccelerationAnalyzer();
-
-// Available CSV data files - these will be dynamically populated
-let csvBoulders = [
-    {
-        id: 1,
-        name: "Raw Data",
-        csvFile: "Raw Data.csv",
-        description: "Real climbing data from acceleration sensors"
-    },
-    {
-        id: 2,
-        name: "Raw Data1", 
-        csvFile: "Raw Data1.csv",
-        description: "Real climbing data from acceleration sensors"
-    }
-];
-
-// Cache for processed boulder data
-const processedBoulders = new Map();
-
-/**
- * Dynamically discover CSV files in the data directory
- * This function will be enhanced when we have server-side file listing
- */
+// Dynamically discover CSV files in the data directory
 async function discoverCSVFiles() {
-    // For now, we'll use the predefined list, but this can be enhanced
-    // to automatically discover CSV files when running on a server
-    const knownCSVFiles = [
-        "Raw Data.csv",
-        "Raw Data1.csv"
-        // Add more CSV files here as they become available
+    const csvFiles = [];
+    
+    // Common CSV file patterns to try
+    const commonPatterns = [
+        'Raw Data.csv',
+        'Raw Data2.csv', 
+        'Raw Data3.csv',
+        'Raw Data4.csv',
+        'Raw Data5.csv',
+        'rawdata.csv',
+        'rawdata2.csv',
+        'rawdata3.csv',
+        'data.csv',
+        'climbing.csv',
+        'acceleration.csv'
     ];
     
-    const discoveredBoulders = [];
-    let id = 1;
-    
-    for (const csvFile of knownCSVFiles) {
+    for (const filename of commonPatterns) {
+        const filepath = `src/data/${filename}`;
         try {
-            // Test if the file exists by trying to fetch it
-            const response = await fetch(`/src/data/${csvFile}`);
+            const response = await fetch(filepath);
             if (response.ok) {
-                const name = csvFile.replace('.csv', ''); // Use filename without extension as name
-                discoveredBoulders.push({
-                    id: id++,
-                    name: name,
-                    csvFile: csvFile,
-                    description: `Real climbing data from ${csvFile}`
-                });
+                csvFiles.push(filepath);
+                console.log(`Found CSV file: ${filepath}`);
             }
         } catch (error) {
-            console.warn(`CSV file ${csvFile} not found or not accessible`);
+            // File doesn't exist, continue
         }
     }
     
-    csvBoulders = discoveredBoulders;
-    console.log('Discovered CSV files:', csvBoulders.map(b => b.csvFile));
-    return csvBoulders;
+    console.log(`Discovered ${csvFiles.length} CSV files:`, csvFiles);
+    return csvFiles;
 }
 
-/**
- * Load and process CSV file for a boulder
- * @param {Object} boulderInfo - Boulder metadata
- * @returns {Promise<Object>} - Processed boulder data
- */
-async function loadCSVBoulder(boulderInfo) {
-    try {
-        console.log('Loading CSV boulder:', boulderInfo.name);
-        
-        // Check cache first
-        if (processedBoulders.has(boulderInfo.id)) {
-            console.log('Returning cached boulder data for:', boulderInfo.name);
-            return processedBoulders.get(boulderInfo.id);
+// Parse real CSV data from Phyphox format
+function parsePhyphoxCSV(csvText, filename) {
+    console.log(`Parsing CSV file: ${filename}`);
+    
+    const lines = csvText.trim().split('\n');
+    if (lines.length < 2) {
+        throw new Error('CSV file is too short');
+    }
+
+    // Parse headers
+    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+    console.log('CSV Headers:', headers);
+
+    // Find required columns
+    let timeCol = -1, absAccelCol = -1;
+    
+    for (let i = 0; i < headers.length; i++) {
+        const header = headers[i].toLowerCase();
+        if (header.includes('time') && header.includes('s')) {
+            timeCol = i;
+        } else if (header.includes('absolute acceleration')) {
+            absAccelCol = i;
         }
+    }
+
+    if (timeCol === -1) {
+        throw new Error('Could not find time column in CSV');
+    }
+    if (absAccelCol === -1) {
+        throw new Error('Could not find absolute acceleration column in CSV');
+    }
+
+    console.log(`Found columns - Time: ${timeCol}, Absolute Acceleration: ${absAccelCol}`);
+
+    // Parse data
+    const time = [];
+    const absoluteAcceleration = [];
+    let validRows = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => {
+            const trimmed = v.trim().replace(/"/g, '');
+            // Handle scientific notation
+            const num = parseFloat(trimmed);
+            return isNaN(num) ? 0 : num;
+        });
+
+        if (values.length <= Math.max(timeCol, absAccelCol)) continue;
+
+        const timeVal = values[timeCol];
+        const accelVal = values[absAccelCol];
+
+        if (!isNaN(timeVal) && !isNaN(accelVal) && accelVal > 0) {
+            time.push(timeVal);
+            absoluteAcceleration.push(accelVal);
+            validRows++;
+        }
+    }
+
+    if (validRows === 0) {
+        throw new Error('No valid data rows found in CSV');
+    }
+
+    console.log(`Parsed ${validRows} valid data points from ${filename}`);
+    console.log(`Time range: ${Math.min(...time).toFixed(3)}s to ${Math.max(...time).toFixed(3)}s`);
+    console.log(`Acceleration range: ${Math.min(...absoluteAcceleration).toFixed(2)} to ${Math.max(...absoluteAcceleration).toFixed(2)} m/s²`);
+
+    return {
+        time,
+        absoluteAcceleration,
+        filename,
+        duration: Math.max(...time) - Math.min(...time),
+        maxAcceleration: Math.max(...absoluteAcceleration),
+        avgAcceleration: absoluteAcceleration.reduce((a, b) => a + b, 0) / absoluteAcceleration.length,
+        sampleCount: validRows
+    };
+}
+
+// Convert CSV data to boulder visualization format
+function convertCSVToBoulder(csvData, id) {
+    const { time, absoluteAcceleration, filename, duration, maxAcceleration, avgAcceleration } = csvData;
+    
+    // Detect significant moves based on acceleration peaks
+    const moves = detectMovesFromAcceleration(time, absoluteAcceleration);
+    
+    // Determine grade based on acceleration characteristics
+    const grade = estimateGradeFromData(maxAcceleration, avgAcceleration, moves.length);
+    
+    // Clean filename for display
+    const cleanName = filename.replace(/^.*\//, '').replace('.csv', '');
+    const csvFileName = filename.replace(/^.*\//, '');
+    
+    console.log(`Converting CSV to boulder - filename: "${filename}", csvFileName: "${csvFileName}", cleanName: "${cleanName}"`);
+    
+    const boulder = {
+        id,
+        name: `${cleanName} (Real Data)`,
+        grade,
+        type: 'csv',
+        description: `Real climbing data from ${cleanName}`,
+        csvFile: csvFileName, // Store just the filename without path
+        moves,
+        csvData,
+        stats: {
+            duration: duration.toFixed(1),
+            maxAcceleration: maxAcceleration.toFixed(2),
+            avgAcceleration: avgAcceleration.toFixed(2),
+            moveCount: moves.length,
+            sampleCount: csvData.sampleCount
+        }
+    };
+    
+    console.log(`Created boulder object:`, boulder);
+    return boulder;
+}
+
+// Detect climbing moves from acceleration data
+function detectMovesFromAcceleration(time, acceleration) {
+    const moves = [];
+    const threshold = 12.0; // m/s² threshold for significant moves
+    const minMoveDuration = 0.5; // minimum seconds between moves
+    
+    let lastMoveTime = -minMoveDuration;
+    
+    // First, detect all the actual moves
+    const detectedMoves = [];
+    for (let i = 1; i < acceleration.length - 1; i++) {
+        const currentAccel = acceleration[i];
+        const currentTime = time[i];
         
-        // Load CSV file
-        const csvPath = `/src/data/${boulderInfo.csvFile}`;
-        console.log('Fetching CSV from:', csvPath);
+        // Look for peaks above threshold
+        if (currentAccel > threshold && 
+            currentAccel > acceleration[i-1] && 
+            currentAccel > acceleration[i+1] &&
+            (currentTime - lastMoveTime) > minMoveDuration) {
+            
+            // Determine move type based on acceleration magnitude
+            let moveType, dynamics, isCrux;
+            
+            if (currentAccel > 30) {
+                moveType = 'dyno';
+                dynamics = 0.9;
+                isCrux = true;
+            } else if (currentAccel > 20) {
+                moveType = 'dynamic';
+                dynamics = 0.8;
+                isCrux = currentAccel > 25;
+            } else if (currentAccel > 15) {
+                moveType = 'powerful';
+                dynamics = 0.7;
+                isCrux = false;
+            } else {
+                moveType = 'static';
+                dynamics = 0.6;
+                isCrux = false;
+            }
+            
+            detectedMoves.push({
+                time: currentTime,
+                type: moveType,
+                dynamics,
+                isCrux,
+                acceleration: currentAccel,
+                description: `${moveType} move (${currentAccel.toFixed(1)} m/s²)`
+            });
+            
+            lastMoveTime = currentTime;
+        }
+    }
+    
+    // Add starting position at time 0 (this will be at 12 o'clock, move 0)
+    moves.push({
+        time: 0,
+        type: 'start',
+        dynamics: 0.5,
+        isCrux: false,
+        acceleration: acceleration[0] || 9.8, // Use first acceleration value or gravity
+        description: 'Starting position'
+    });
+    
+    // Add all detected moves (these will be moves 1, 2, 3, etc. going clockwise)
+    moves.push(...detectedMoves);
+    
+    console.log(`Detected ${moves.length} moves from acceleration data (including start position)`);
+    return moves;
+}
+
+// Estimate boulder grade from acceleration data
+function estimateGradeFromData(maxAccel, avgAccel, moveCount) {
+    // Simple heuristic based on acceleration characteristics
+    if (maxAccel > 40 || avgAccel > 15) return 'V8+';
+    if (maxAccel > 30 || avgAccel > 12) return 'V6-V7';
+    if (maxAccel > 20 || avgAccel > 10) return 'V4-V5';
+    if (maxAccel > 15 || avgAccel > 8) return 'V2-V3';
+    return 'V0-V1';
+}
+
+// Load CSV file
+async function loadCSVFile(filepath) {
+    try {
+        console.log(`Loading CSV file: ${filepath}`);
+        const response = await fetch(filepath);
         
-        const response = await fetch(csvPath);
         if (!response.ok) {
-            throw new Error(`Failed to load CSV file: ${response.status} ${response.statusText}`);
+            throw new Error(`Failed to load ${filepath}: ${response.status}`);
         }
         
         const csvText = await response.text();
-        console.log('CSV loaded, size:', csvText.length, 'characters');
+        const csvData = parsePhyphoxCSV(csvText, filepath);
         
-        // Process with acceleration analyzer
-        const processedBoulder = await accelerationAnalyzer.analyzeClimbingData(csvText, boulderInfo);
-        
-        // Cache the processed data
-        processedBoulders.set(boulderInfo.id, processedBoulder);
-        
-        console.log('Boulder processed and cached:', processedBoulder.name);
-        return processedBoulder;
+        console.log(`Successfully loaded CSV: ${filepath}`);
+        return csvData;
         
     } catch (error) {
-        console.error('Error loading CSV boulder:', error);
-        
-        // Return fallback boulder with minimal data
-        return {
-            id: boulderInfo.id,
-            name: boulderInfo.name,
-            csvFile: boulderInfo.csvFile,
-            description: `Error loading data from ${boulderInfo.csvFile}: ${error.message}`,
-            type: 'csv',
-            moves: [
-                { sequence: 1, dynamics: 0.3, isCrux: false, type: "static", description: "Fallback move" }
-            ],
-            error: true
-        };
+        console.error(`Error loading CSV file ${filepath}:`, error);
+        throw error;
     }
 }
 
-/**
- * Get boulder by ID
- * @param {number} id - Boulder ID
- * @returns {Promise<Object>} - Boulder data
- */
-export async function getBoulderById(id) {
-    console.log('getBoulderById called with id:', id);
-    
-    // Ensure CSV files are discovered
-    await discoverCSVFiles();
-    
-    const boulderInfo = csvBoulders.find(b => b.id === id);
-    if (!boulderInfo) {
-        console.error('Boulder not found with id:', id);
-        return null;
-    }
-    
-    return await loadCSVBoulder(boulderInfo);
-}
-
-/**
- * Get list of available boulders
- * @returns {Promise<Array>} - Array of boulder metadata
- */
+// Get list of available boulders (from real CSV files)
 export async function getBoulderList() {
-    console.log('getBoulderList called');
+    const boulders = [];
     
-    // Ensure CSV files are discovered
-    await discoverCSVFiles();
+    // Dynamically discover CSV files
+    const csvFiles = await discoverCSVFiles();
     
-    const boulderList = csvBoulders.map(boulder => ({
-        id: boulder.id,
-        name: boulder.name,
-        csvFile: boulder.csvFile,
-        type: 'csv',
-        description: boulder.description
-    }));
+    for (let i = 0; i < csvFiles.length; i++) {
+        const filepath = csvFiles[i];
+        const cacheKey = filepath;
+        
+        try {
+            // Check cache first
+            if (csvFileCache.has(cacheKey)) {
+                const cached = csvFileCache.get(cacheKey);
+                if (Date.now() - cached.timestamp < CACHE_DURATION) {
+                    boulders.push(cached.boulder);
+                    continue;
+                }
+            }
+            
+            // Load and parse CSV
+            const csvData = await loadCSVFile(filepath);
+            const boulder = convertCSVToBoulder(csvData, i + 1);
+            
+            // Cache the result
+            csvFileCache.set(cacheKey, {
+                boulder,
+                timestamp: Date.now()
+            });
+            
+            boulders.push(boulder);
+            
+        } catch (error) {
+            console.error(`Failed to load boulder from ${filepath}:`, error);
+            // Continue with other files
+        }
+    }
     
-    console.log('Returning boulder list:', boulderList.length, 'boulders');
-    return boulderList;
+    console.log(`Loaded ${boulders.length} real CSV boulders`);
+    return boulders;
 }
 
-/**
- * Generate a random boulder (selects randomly from available CSV boulders)
- * @returns {Promise<Object>} - Random boulder data
- */
-export async function generateRandomBoulder() {
-    console.log('generateRandomBoulder called');
+// Get boulder by ID
+export async function getBoulderById(id) {
+    const boulders = await getBoulderList();
+    console.log(`getBoulderById(${id}) - Available boulders:`, boulders.map(b => ({ id: b.id, name: b.name })));
     
-    // Ensure CSV files are discovered
-    await discoverCSVFiles();
+    // Convert id to number for comparison since dropdown values might be strings
+    const targetId = parseInt(id);
+    const boulder = boulders.find(b => parseInt(b.id) === targetId);
     
-    const randomIndex = Math.floor(Math.random() * csvBoulders.length);
-    const randomBoulder = csvBoulders[randomIndex];
-    
-    console.log('Selected random boulder:', randomBoulder.name);
-    return await loadCSVBoulder(randomBoulder);
+    console.log(`getBoulderById(${id}) found:`, boulder ? `${boulder.name} (ID: ${boulder.id})` : 'not found');
+    return boulder || boulders[0];
 }
 
-/**
- * Add a new CSV file to the system
- * @param {string} csvFileName - Name of the CSV file (e.g., "Raw Data2.csv")
- * @returns {Object} - New boulder info
- */
-export function addCSVFile(csvFileName) {
-    const name = csvFileName.replace('.csv', '');
-    const newId = Math.max(...csvBoulders.map(b => b.id), 0) + 1;
+// Get random boulder
+export async function getRandomBoulder() {
+    const boulders = await getBoulderList();
+    if (boulders.length === 0) return null;
     
-    const newBoulder = {
-        id: newId,
-        name: name,
-        csvFile: csvFileName,
-        description: `Real climbing data from ${csvFileName}`
-    };
-    
-    csvBoulders.push(newBoulder);
-    console.log('Added new CSV file:', csvFileName, 'as boulder:', name);
-    
-    return newBoulder;
+    const randomIndex = Math.floor(Math.random() * boulders.length);
+    return boulders[randomIndex];
 }
 
-/**
- * Clear the boulder cache (useful for reloading data)
- */
-export function clearBoulderCache() {
-    console.log('Clearing boulder cache');
-    processedBoulders.clear();
+// Clear cache
+export function clearCache() {
+    csvFileCache.clear();
+    console.log('CSV file cache cleared');
 }
 
-/**
- * Update acceleration analyzer settings
- * @param {Object} settings - New analyzer settings
- */
-export function updateAnalyzerSettings(settings) {
-    console.log('Updating analyzer settings:', settings);
-    accelerationAnalyzer.updateSettings(settings);
-    
-    // Clear cache to force reprocessing with new settings
-    clearBoulderCache();
-}
-
-/**
- * Get acceleration analyzer instance for direct access
- * @returns {AccelerationAnalyzer} - The analyzer instance
- */
-export function getAccelerationAnalyzer() {
-    return accelerationAnalyzer;
-}
-
-/**
- * Get boulder processing status
- * @param {number} id - Boulder ID
- * @returns {Object} - Processing status information
- */
-export function getBoulderStatus(id) {
-    const isProcessed = processedBoulders.has(id);
-    const boulderInfo = csvBoulders.find(b => b.id === id);
-    
+// Debug function
+export async function debugBoulderState() {
+    const discoveredFiles = await discoverCSVFiles();
     return {
-        id,
-        exists: !!boulderInfo,
-        processed: isProcessed,
-        cached: isProcessed,
-        name: boulderInfo?.name || 'Unknown',
-        csvFile: boulderInfo?.csvFile || 'Unknown'
+        cacheSize: csvFileCache.size,
+        lastUpdate: lastCacheUpdate,
+        discoveredFiles: discoveredFiles,
+        cacheKeys: Array.from(csvFileCache.keys())
     };
-}
-
-/**
- * Get all available CSV files
- * @returns {Array} - Array of CSV filenames
- */
-export function getAvailableCSVFiles() {
-    return csvBoulders.map(boulder => boulder.csvFile);
-}
-
-// Export boulder list for external access
-export { csvBoulders }; 
+} 

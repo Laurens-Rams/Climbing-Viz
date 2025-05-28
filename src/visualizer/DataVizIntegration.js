@@ -1,648 +1,1028 @@
 import { getBoulderList } from '../data/boulderData.js';
 
 export class DataVizIntegration {
-    constructor(mainContainer) {
-        this.mainContainer = mainContainer;
+    constructor(container) {
+        this.container = container;
         this.dataVizContainer = null;
-        this.wearVisualizer = null;
-        this.isVisible = false;
-        this.csvFiles = [];
+        this.currentData = null;
+        this.currentBoulder = null; // Track current boulder for move regeneration
+        this.samplingRate = 50; // 50Hz default
+        this.plotlyLoaded = false;
+        this.plotlyLoadPromise = null;
         
-        this.init();
-    }
-    
-    init() {
-        // Create DataViz container
+        // Initialize the DataViz interface
         this.createDataVizContainer();
         
-        // Load and initialize the WEAR visualizer
-        this.loadDataVizComponents();
-        
-        // Initially hidden
-        this.hide();
+        // Load Plotly and setup
+        this.plotlyLoadPromise = this.loadDataVizComponents();
     }
-    
+
     createDataVizContainer() {
         this.dataVizContainer = document.createElement('div');
         this.dataVizContainer.id = 'dataviz-container';
         this.dataVizContainer.style.cssText = `
-            position: fixed;
+            position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            z-index: 100;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            color: #00ffcc;
+            font-family: Arial, sans-serif;
             overflow-y: auto;
+            display: none;
+            z-index: 10;
         `;
         
         // Create the DataViz HTML structure
         this.dataVizContainer.innerHTML = `
-            <div class="container" style="max-width: 1400px; margin: 0 auto; padding: 20px;">
-                <div class="header" style="text-align: center; margin-bottom: 30px; background: rgba(255, 255, 255, 0.95); padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
-                    <h1 style="color: #2c3e50; margin-bottom: 10px; font-size: 2.5em; font-weight: 300;">Climbing Acceleration Visualizer</h1>
-                    <p style="color: #7f8c8d; font-size: 1.1em; max-width: 800px; margin: 0 auto; line-height: 1.6;">
-                        Interactive visualization of climbing acceleration data. Upload sensor data or use mock boulder data to analyze movement patterns and optimize climbing technique.
-                    </p>
+            <div style="padding: 20px;">
+                <!-- Header -->
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #00ffcc; margin: 0; font-size: 28px; text-shadow: 0 0 10px rgba(0, 255, 204, 0.5);">
+                        🧗‍♂️ Real Climbing Data Analysis
+                    </h1>
+                    <p style="color: #888; margin: 10px 0 0 0;">Analyzing absolute acceleration from Phyphox CSV files</p>
                 </div>
 
-                <div class="controls" style="background: rgba(255, 255, 255, 0.95); padding: 25px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);">
-                    <div class="control-group" style="display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin-bottom: 15px;">
-                        <div class="control-item" style="display: flex; flex-direction: column; gap: 5px;">
-                            <label for="dataSourceSelect" style="font-weight: 600; color: #2c3e50; font-size: 0.9em;">Data Source:</label>
-                            <select id="dataSourceSelect" style="padding: 10px 15px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px;">
-                                <option value="mock">Mock Boulder Data</option>
-                            </select>
-                        </div>
+                <!-- Controls Panel -->
+                <div style="background: rgba(0, 0, 0, 0.7); border: 1px solid #00ffcc; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: center;">
                         
-                        <div class="control-item" id="routeSelectContainer" style="display: flex; flex-direction: column; gap: 5px;">
-                            <label for="routeSelect" style="font-weight: 600; color: #2c3e50; font-size: 0.9em;">Boulder Route:</label>
-                            <select id="routeSelect" style="padding: 10px 15px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px;">
-                            </select>
-                        </div>
-                        
-                        <div class="control-item" style="display: flex; flex-direction: column; gap: 5px;">
-                            <label for="visualizationMode" style="font-weight: 600; color: #2c3e50; font-size: 0.9em;">Visualization Mode:</label>
-                            <select id="visualizationMode" style="padding: 10px 15px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px;">
-                                <option value="standard">Standard Time Series</option>
-                                <option value="heatmap">Heat Map Analysis</option>
-                                <option value="polar">Polar Burst View</option>
-                                <option value="3d">3D Surface Landscape</option>
+                        <!-- CSV File Selection -->
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; color: #00ffcc;">CSV Data File:</label>
+                            <select id="csvFileSelect" style="width: 100%; padding: 8px; background: #1a1a2e; color: #00ffcc; border: 1px solid #00ffcc; border-radius: 5px;">
+                                <option value="">Loading CSV files...</option>
                             </select>
                         </div>
 
-                        <div class="control-item" style="display: flex; flex-direction: column; gap: 5px;">
-                            <button id="generateBtn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 25px; border-radius: 8px; cursor: pointer; font-weight: 600;">Generate Data</button>
+                        <!-- Time Range -->
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; color: #00ffcc;">View Duration: <span id="timeValue">All</span></label>
+                            <input type="range" id="timeRange" min="0" max="100" value="100" style="width: 100%;">
                         </div>
-                        
-                        <div class="control-item" style="display: flex; flex-direction: column; gap: 5px;">
-                            <button id="exportBtn" style="background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600;">Export Data</button>
+
+                        <!-- Acceleration Threshold -->
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; color: #00ffcc;">Move Threshold: <span id="thresholdValue">12</span> m/s²</label>
+                            <input type="range" id="thresholdRange" min="8" max="25" value="12" style="width: 100%;">
+                        </div>
+
+                        <!-- Visualization Mode -->
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; color: #00ffcc;">Visualization:</label>
+                            <select id="visualizationMode" style="width: 100%; padding: 8px; background: #1a1a2e; color: #00ffcc; border: 1px solid #00ffcc; border-radius: 5px;">
+                                <option value="standard">Time Series Plot</option>
+                                <option value="moves">Move Detection</option>
+                                <option value="histogram">Acceleration Distribution</option>
+                                <option value="heatmap">Intensity Heat Map</option>
+                            </select>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div style="display: flex; gap: 10px;">
+                            <button id="refreshBtn" style="flex: 1; padding: 8px; background: #00ffcc; color: #000; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                                🔄 Refresh
+                            </button>
+                            <button id="exportBtn" style="flex: 1; padding: 8px; background: #0066aa; color: #fff; border: none; border-radius: 5px; cursor: pointer;">
+                                💾 Export
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- File Upload Section -->
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #333;">
+                        <label style="display: block; margin-bottom: 5px; color: #00ffcc;">Upload New Phyphox CSV:</label>
+                        <input type="file" id="fileUpload" accept=".csv" style="width: 100%; padding: 8px; background: #1a1a2e; color: #00ffcc; border: 1px solid #00ffcc; border-radius: 5px;">
+                    </div>
+                </div>
+
+                <!-- Statistics Panel -->
+                <div style="background: rgba(0, 0, 0, 0.7); border: 1px solid #00ffcc; border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+                    <h3 style="margin: 0 0 10px 0; color: #00ffcc;">📊 Data Statistics</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold; color: #ff6b6b;" id="maxAccel">0.0</div>
+                            <div style="font-size: 12px; color: #888;">Max Acceleration (m/s²)</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold; color: #4ecdc4;" id="avgAccel">0.0</div>
+                            <div style="font-size: 12px; color: #888;">Average Acceleration (m/s²)</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold; color: #45b7d1;" id="moveCount">0</div>
+                            <div style="font-size: 12px; color: #888;">Detected Moves</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold; color: #f9ca24;" id="duration">0</div>
+                            <div style="font-size: 12px; color: #888;">Duration (s)</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold; color: #a55eea;" id="sampleCount">0</div>
+                            <div style="font-size: 12px; color: #888;">Data Points</div>
                         </div>
                     </div>
                 </div>
 
-                <div class="visualization-container" style="background: rgba(255, 255, 255, 0.95); border-radius: 15px; padding: 25px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin-bottom: 20px;">
-                    <h3 style="color: #2c3e50; margin-bottom: 15px;">Acceleration Data Visualization</h3>
-                    <div id="accelerationPlot" style="width: 100%; height: 500px; margin-bottom: 20px;"></div>
-                    
-                    <div class="stats-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
-                        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px; text-align: center;">
-                            <div class="stat-value" id="maxAccel" style="font-size: 2em; font-weight: bold; margin-bottom: 5px;">0.0</div>
-                            <div class="stat-label" style="font-size: 0.9em; opacity: 0.9;">Max Acceleration (g)</div>
-                        </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px; text-align: center;">
-                            <div class="stat-value" id="avgAccel" style="font-size: 2em; font-weight: bold; margin-bottom: 5px;">0.0</div>
-                            <div class="stat-label" style="font-size: 0.9em; opacity: 0.9;">Avg Acceleration (g)</div>
-                        </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px; text-align: center;">
-                            <div class="stat-value" id="peakCount" style="font-size: 2em; font-weight: bold; margin-bottom: 5px;">0</div>
-                            <div class="stat-label" style="font-size: 0.9em; opacity: 0.9;">Movement Peaks</div>
-                        </div>
-                        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px; text-align: center;">
-                            <div class="stat-value" id="duration" style="font-size: 2em; font-weight: bold; margin-bottom: 5px;">30</div>
-                            <div class="stat-label" style="font-size: 0.9em; opacity: 0.9;">Duration (s)</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="info-panel" style="background: rgba(255, 255, 255, 0.95); padding: 25px; border-radius: 15px; box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);">
-                    <h3 style="color: #2c3e50; margin-bottom: 15px; font-size: 1.3em;">Data Integration</h3>
-                    <p style="color: #7f8c8d; line-height: 1.6; margin-bottom: 10px;">
-                        <strong>Mock Data:</strong> Uses your existing boulder problems with simulated acceleration patterns based on move dynamics and types.
-                    </p>
-                    <p style="color: #7f8c8d; line-height: 1.6;">
-                        <strong>Heatmap Data:</strong> Movement intensity analysis provides coloring data for your crux detection system.
-                    </p>
+                <!-- Main Visualization Container -->
+                <div style="background: rgba(0, 0, 0, 0.7); border: 1px solid #00ffcc; border-radius: 10px; padding: 20px;">
+                    <div id="accelerationPlot" style="width: 100%; height: 500px; background: rgba(255, 255, 255, 0.05); border-radius: 5px;"></div>
                 </div>
             </div>
         `;
-        
+
         document.body.appendChild(this.dataVizContainer);
     }
-    
+
     async loadDataVizComponents() {
         try {
-            // Load Plotly if not already loaded
+            // Load Plotly
             if (typeof Plotly === 'undefined') {
-                await this.loadScript('https://cdn.plot.ly/plotly-2.35.2.min.js');
+                console.log('Loading Plotly...');
+                const script = document.createElement('script');
+                script.src = 'https://cdn.plot.ly/plotly-2.35.2.min.js'; // Use specific version instead of latest
+                
+                // Wait for Plotly to load
+                await new Promise((resolve, reject) => {
+                    script.onload = () => {
+                        console.log('Plotly loaded successfully');
+                        this.plotlyLoaded = true;
+                        resolve();
+                    };
+                    script.onerror = () => {
+                        console.error('Failed to load Plotly');
+                        reject(new Error('Failed to load Plotly'));
+                    };
+                    document.head.appendChild(script);
+                });
+                
+                this.initializeDataVizControls();
+                this.loadAvailableCSVFiles();
+            } else {
+                console.log('Plotly already available');
+                this.plotlyLoaded = true;
+                this.initializeDataVizControls();
+                this.loadAvailableCSVFiles();
             }
-            
-            // Initialize the WEAR visualizer with our custom configuration
-            this.initializeWEARVisualizer();
-            
-            // Setup event listeners
-            this.setupEventListeners();
-            
-            // Populate boulder routes
-            await this.populateBoulderRoutes();
-            
-            // Generate initial data
-            this.generateMockData();
-            
         } catch (error) {
             console.error('Failed to load DataViz components:', error);
         }
     }
-    
-    loadScript(src) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
-    }
-    
-    initializeWEARVisualizer() {
-        // Create a simplified version of the WEAR visualizer
-        this.wearVisualizer = {
-            currentData: null,
-            samplingRate: 50,
+
+    async loadAvailableCSVFiles() {
+        try {
+            const csvFileSelect = this.dataVizContainer.querySelector('#csvFileSelect');
+            if (!csvFileSelect) return;
+
+            // Clear existing options
+            csvFileSelect.innerHTML = '<option value="">Loading...</option>';
+
+            // Get available boulders (CSV files)
+            const boulders = await getBoulderList();
             
-            // Generate climbing data based on boulder moves
-            generateClimbingDataFromBoulder: (boulder) => {
-                // Safety check for moves data
-                if (!boulder || !boulder.moves || !Array.isArray(boulder.moves) || boulder.moves.length === 0) {
-                    console.warn('DataVizIntegration: Invalid boulder data, creating fallback');
-                    return {
-                        time: Array.from({length: 100}, (_, i) => i * 0.1),
-                        acceleration: Array.from({length: 100}, () => 0.5 + Math.random() * 0.5),
-                        moveAverages: [],
-                        boulder: boulder || { name: 'Unknown', grade: 'V0' }
-                    };
-                }
-                
-                const duration = boulder.moves.length * 2; // 2 seconds per move
-                const samples = duration * this.wearVisualizer.samplingRate;
-                const time = [];
-                const acceleration = [];
-                const moveAverages = [];
-                
-                for (let i = 0; i < samples; i++) {
-                    const t = i / this.wearVisualizer.samplingRate;
-                    time.push(t);
+            if (boulders.length === 0) {
+                csvFileSelect.innerHTML = '<option value="">No CSV files found</option>';
+                return;
+            }
+
+            // Populate dropdown with available CSV files
+            csvFileSelect.innerHTML = '<option value="">Select a CSV file...</option>';
+            boulders.forEach(boulder => {
+                const option = document.createElement('option');
+                option.value = boulder.id;
+                option.textContent = `${boulder.name} (${boulder.stats?.sampleCount || 0} points)`;
+                csvFileSelect.appendChild(option);
+            });
+
+            // Load first file by default
+            if (boulders.length > 0) {
+                csvFileSelect.value = boulders[0].id;
+                await this.loadCSVData(boulders[0]);
+            }
+
+        } catch (error) {
+            console.error('Error loading CSV files:', error);
+            const csvFileSelect = this.dataVizContainer.querySelector('#csvFileSelect');
+            if (csvFileSelect) {
+                csvFileSelect.innerHTML = '<option value="">Error loading files</option>';
+            }
+        }
+    }
+
+    initializeDataVizControls() {
+        // CSV file selection
+        const csvFileSelect = this.dataVizContainer.querySelector('#csvFileSelect');
+        if (csvFileSelect) {
+            csvFileSelect.addEventListener('change', async () => {
+                const selectedId = parseInt(csvFileSelect.value);
+                if (selectedId) {
+                    // Emit global event for cross-view sync
+                    document.dispatchEvent(new CustomEvent('boulderSelectionChanged', {
+                        detail: { boulderId: selectedId, source: 'dataviz' }
+                    }));
                     
-                    // Find current move
-                    const moveIndex = Math.floor(t / 2);
-                    const move = boulder.moves[moveIndex] || boulder.moves[boulder.moves.length - 1];
-                    
-                    // Generate acceleration based on move dynamics
-                    let accel = 0.1; // Base acceleration
-                    if (move) {
-                        const moveProgress = (t % 2) / 2; // Progress within current move
-                        
-                        // Create realistic acceleration pattern
-                        if (move.type === 'dynamic') {
-                            accel = move.dynamics * (1 + Math.sin(moveProgress * Math.PI) * 0.8);
-                        } else {
-                            accel = move.dynamics * 0.6;
-                        }
-                        
-                        // Add crux emphasis
-                        if (move.isCrux) {
-                            accel *= 1.5;
-                        }
-                        
-                        // Add noise
-                        accel += (Math.random() - 0.5) * 0.1;
+                    const boulders = await getBoulderList();
+                    const selectedBoulder = boulders.find(b => b.id === selectedId);
+                    if (selectedBoulder) {
+                        await this.loadCSVData(selectedBoulder);
                     }
-                    
-                    acceleration.push(Math.max(0, accel));
                 }
-                
-                // Calculate move averages for boulder visualizer integration
-                boulder.moves.forEach((move, index) => {
-                    const startTime = index * 2;
-                    const endTime = (index + 1) * 2;
-                    const moveData = acceleration.slice(
-                        Math.floor(startTime * this.wearVisualizer.samplingRate),
-                        Math.floor(endTime * this.wearVisualizer.samplingRate)
-                    );
-                    
-                    const average = moveData.reduce((sum, val) => sum + val, 0) / moveData.length;
-                    moveAverages.push({
-                        sequence: move.sequence,
-                        average: average,
-                        isCrux: move.isCrux,
-                        type: move.type,
-                        dynamics: move.dynamics
-                    });
-                });
-                
-                return {
-                    time,
-                    acceleration,
-                    moveAverages,
-                    boulder: boulder
-                };
-            },
-            
-            // Calculate statistics
-            calculateStats: (data) => {
-                const accel = data.acceleration;
-                const max = Math.max(...accel);
-                const avg = accel.reduce((sum, val) => sum + val, 0) / accel.length;
-                const peaks = this.detectPeaks(accel);
-                
-                return {
-                    maxAccel: max.toFixed(2),
-                    avgAccel: avg.toFixed(2),
-                    peakCount: peaks.length,
-                    duration: Math.max(...data.time).toFixed(1)
-                };
-            }
-        };
-    }
-    
-    detectPeaks(data, threshold = 0.3) {
-        const peaks = [];
-        for (let i = 1; i < data.length - 1; i++) {
-            if (data[i] > data[i-1] && data[i] > data[i+1] && data[i] > threshold) {
-                peaks.push(i);
-            }
+            });
         }
-        return peaks;
-    }
-    
-    setupEventListeners() {
-        const dataSourceSelect = this.dataVizContainer.querySelector('#dataSourceSelect');
-        const routeSelect = this.dataVizContainer.querySelector('#routeSelect');
-        const generateBtn = this.dataVizContainer.querySelector('#generateBtn');
-        const exportBtn = this.dataVizContainer.querySelector('#exportBtn');
+
+        // Time range slider
+        const timeRange = this.dataVizContainer.querySelector('#timeRange');
+        const timeValue = this.dataVizContainer.querySelector('#timeValue');
+        if (timeRange && timeValue) {
+            timeRange.addEventListener('input', () => {
+                const percentage = parseInt(timeRange.value);
+                if (percentage === 100) {
+                    timeValue.textContent = 'All';
+                } else {
+                    const duration = this.currentData ? this.currentData.duration : 0;
+                    const viewDuration = (duration * percentage / 100).toFixed(1);
+                    timeValue.textContent = `${viewDuration}s`;
+                }
+                this.updateVisualization();
+                this.updateStatistics(); // Auto-refresh statistics
+                
+                // Emit control change event
+                this.emitControlChange('timeRange', percentage);
+            });
+        }
+
+        // Threshold slider
+        const thresholdRange = this.dataVizContainer.querySelector('#thresholdRange');
+        const thresholdValue = this.dataVizContainer.querySelector('#thresholdValue');
+        if (thresholdRange && thresholdValue) {
+            thresholdRange.addEventListener('input', async () => {
+                thresholdValue.textContent = thresholdRange.value;
+                this.updateVisualization();
+                this.updateStatistics(); // Auto-refresh statistics
+                
+                // Regenerate moves with new threshold and sync to Boulder visualizer
+                await this.regenerateMovesAndSync();
+                
+                // Emit control change event
+                this.emitControlChange('threshold', parseFloat(thresholdRange.value));
+            });
+        }
+
+        // Visualization mode
         const visualizationMode = this.dataVizContainer.querySelector('#visualizationMode');
+        if (visualizationMode) {
+            visualizationMode.addEventListener('change', () => {
+                this.updateVisualization();
+                
+                // Emit control change event
+                this.emitControlChange('visualizationMode', visualizationMode.value);
+            });
+        }
+
+        // Refresh button
+        const refreshBtn = this.dataVizContainer.querySelector('#refreshBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                this.loadAvailableCSVFiles();
+            });
+        }
+
+        // Export button
+        const exportBtn = this.dataVizContainer.querySelector('#exportBtn');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => {
+                this.exportData();
+            });
+        }
+
+        // File upload
+        const fileUpload = this.dataVizContainer.querySelector('#fileUpload');
+        if (fileUpload) {
+            fileUpload.addEventListener('change', (event) => {
+                this.handleFileUpload(event);
+            });
+        }
         
-        dataSourceSelect.addEventListener('change', async () => {
-            await this.handleDataSourceChange();
-        });
-        
-        routeSelect.addEventListener('change', async () => {
-            await this.generateMockData();
-        });
-        
-        generateBtn.addEventListener('click', async () => {
-            await this.generateMockData();
-        });
-        
-        exportBtn.addEventListener('click', () => {
-            this.exportData();
-        });
-        
-        visualizationMode.addEventListener('change', () => {
-            this.updateVisualization();
+        // Add window resize listener for plot responsiveness
+        window.addEventListener('resize', () => {
+            setTimeout(() => {
+                this.resizePlot();
+            }, 100);
         });
     }
-    
-    async populateBoulderRoutes() {
-        const routeSelect = this.dataVizContainer.querySelector('#routeSelect');
-        const boulders = await getBoulderList();
-        
-        routeSelect.innerHTML = '';
-        boulders.forEach(boulder => {
-            const option = document.createElement('option');
-            option.value = boulder.id;
-            option.textContent = `${boulder.name} - ${boulder.csvFile}`;
-            routeSelect.appendChild(option);
-        });
-    }
-    
-    async handleDataSourceChange() {
-        const dataSourceSelect = this.dataVizContainer.querySelector('#dataSourceSelect');
-        const routeSelectContainer = this.dataVizContainer.querySelector('#routeSelectContainer');
-        
-        if (dataSourceSelect.value === 'mock') {
-            routeSelectContainer.style.display = 'flex';
-            await this.generateMockData();
+
+    async loadCSVData(boulder) {
+        try {
+            console.log('Loading CSV data for boulder:', boulder.name);
+            
+            if (!boulder.csvData) {
+                throw new Error('No CSV data available for this boulder');
+            }
+
+            // Store current boulder for move regeneration
+            this.currentBoulder = boulder;
+
+            this.currentData = {
+                time: boulder.csvData.time,
+                absoluteAcceleration: boulder.csvData.absoluteAcceleration,
+                filename: boulder.csvData.filename,
+                duration: boulder.csvData.duration,
+                maxAcceleration: boulder.csvData.maxAcceleration,
+                avgAcceleration: boulder.csvData.avgAcceleration,
+                sampleCount: boulder.csvData.sampleCount
+            };
+
+            // Wait for Plotly to be loaded before updating visualization
+            await this.ensurePlotlyLoaded();
+            await this.updateVisualization();
+            this.updateStatistics();
+            
+            this.showNotification(`Loaded ${boulder.name}`, 'success');
+
+        } catch (error) {
+            console.error('Error loading CSV data:', error);
+            this.showNotification('Error loading CSV data: ' + error.message, 'error');
         }
     }
-    
-    async generateMockData() {
-        const routeSelect = this.dataVizContainer.querySelector('#routeSelect');
-        const selectedBoulderID = parseInt(routeSelect.value);
+
+    async ensurePlotlyLoaded() {
+        if (this.plotlyLoaded && typeof Plotly !== 'undefined') {
+            return true;
+        }
+        
+        if (this.plotlyLoadPromise) {
+            await this.plotlyLoadPromise;
+        }
+        
+        // Double check
+        if (typeof Plotly === 'undefined') {
+            throw new Error('Plotly failed to load');
+        }
+        
+        return true;
+    }
+
+    async updateVisualization() {
+        if (!this.currentData) return;
         
         try {
-            // Import getBoulderById to get full boulder data with moves
-            const { getBoulderById } = await import('../data/boulderData.js');
-            const boulder = await getBoulderById(selectedBoulderID);
-            
-            if (boulder && boulder.moves) {
-                const data = this.wearVisualizer.generateClimbingDataFromBoulder(boulder);
-                this.wearVisualizer.currentData = data;
-                this.updateVisualization();
-                this.updateStatistics();
-            } else {
-                console.warn('DataVizIntegration: No boulder data with moves found for ID:', selectedBoulderID);
-                // Create fallback data
-                this.createFallbackData();
-            }
+            await this.ensurePlotlyLoaded();
         } catch (error) {
-            console.error('DataVizIntegration: Error generating mock data:', error);
-            this.createFallbackData();
+            console.error('Cannot update visualization - Plotly not loaded:', error);
+            return;
         }
-    }
-    
-    /**
-     * Create fallback data when boulder data is not available
-     */
-    createFallbackData() {
-        const fallbackData = {
-            time: Array.from({length: 100}, (_, i) => i * 0.1),
-            acceleration: Array.from({length: 100}, () => 0.5 + Math.random() * 0.5),
-            moveAverages: [],
-            boulder: { name: 'Fallback Data', grade: 'V0' }
-        };
         
-        this.wearVisualizer.currentData = fallbackData;
-        this.updateVisualization();
-        this.updateStatistics();
-    }
-    
-    updateVisualization() {
-        if (!this.wearVisualizer.currentData) return;
-        
-        const mode = this.dataVizContainer.querySelector('#visualizationMode').value;
-        const plotDiv = this.dataVizContainer.querySelector('#accelerationPlot');
+        const visualizationMode = this.dataVizContainer.querySelector('#visualizationMode');
+        const mode = visualizationMode ? visualizationMode.value : 'standard';
         
         switch (mode) {
             case 'standard':
-                this.createStandardPlot(plotDiv);
+                this.createTimeSeriesVisualization();
+                break;
+            case 'moves':
+                this.createMoveDetectionVisualization();
+                break;
+            case 'histogram':
+                this.createHistogramVisualization();
                 break;
             case 'heatmap':
-                this.createHeatmapPlot(plotDiv);
-                break;
-            case 'polar':
-                this.createPolarPlot(plotDiv);
-                break;
-            case '3d':
-                this.create3DPlot(plotDiv);
+                this.createHeatMapVisualization();
                 break;
         }
-    }
-    
-    createStandardPlot(plotDiv) {
-        const data = this.wearVisualizer.currentData;
         
-        const trace = {
-            x: data.time,
-            y: data.acceleration,
+        // Force immediate resize to fix width issues
+        setTimeout(() => {
+            this.resizePlot();
+        }, 100);
+    }
+
+    resizePlot() {
+        const plotDiv = this.dataVizContainer.querySelector('#accelerationPlot');
+        if (plotDiv && typeof Plotly !== 'undefined') {
+            // Get the container dimensions
+            const container = plotDiv.parentElement;
+            const containerWidth = container.offsetWidth - 40; // Account for padding
+            const containerHeight = 500; // Fixed height
+            
+            // Update the plot size
+            Plotly.relayout(plotDiv, {
+                width: containerWidth,
+                height: containerHeight
+            });
+            
+            console.log(`Plot resized to: ${containerWidth}x${containerHeight}`);
+        }
+    }
+
+    createTimeSeriesVisualization() {
+        const plotDiv = this.dataVizContainer.querySelector('#accelerationPlot');
+        if (!plotDiv || !this.currentData) return;
+
+        // Get time range
+        const timeRange = this.dataVizContainer.querySelector('#timeRange');
+        const percentage = timeRange ? parseInt(timeRange.value) : 100;
+        
+        let { time, absoluteAcceleration } = this.currentData;
+        
+        // Filter data based on time range
+        if (percentage < 100) {
+            const maxTime = Math.max(...time);
+            const cutoffTime = maxTime * percentage / 100;
+            const indices = time.map((t, i) => t <= cutoffTime ? i : -1).filter(i => i !== -1);
+            time = indices.map(i => time[i]);
+            absoluteAcceleration = indices.map(i => absoluteAcceleration[i]);
+        }
+
+        const traces = [{
+            x: time,
+            y: absoluteAcceleration,
             type: 'scatter',
             mode: 'lines',
-            name: 'Acceleration',
-            line: { color: '#667eea', width: 2 }
-        };
-        
+            name: 'Absolute Acceleration',
+            line: { 
+                color: '#00ffcc',
+                width: 2
+            }
+        }];
+
         const layout = {
-            title: 'Climbing Acceleration Over Time',
-            xaxis: { title: 'Time (s)' },
-            yaxis: { title: 'Acceleration (g)' },
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            paper_bgcolor: 'rgba(0,0,0,0)'
+            title: {
+                text: '📈 Absolute Acceleration vs Time',
+                font: { color: '#00ffcc', size: 18 }
+            },
+            xaxis: { 
+                title: 'Time (seconds)',
+                color: '#00ffcc',
+                gridcolor: 'rgba(0, 255, 204, 0.2)'
+            },
+            yaxis: { 
+                title: 'Absolute Acceleration (m/s²)',
+                color: '#00ffcc',
+                gridcolor: 'rgba(0, 255, 204, 0.2)'
+            },
+            plot_bgcolor: 'rgba(0, 0, 0, 0.8)',
+            paper_bgcolor: 'rgba(0, 0, 0, 0)',
+            font: { color: '#00ffcc' },
+            autosize: true,
+            margin: { l: 60, r: 30, t: 60, b: 60 }
         };
-        
-        Plotly.newPlot(plotDiv, [trace], layout);
+
+        const config = { 
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+            displaylogo: false
+        };
+
+        Plotly.newPlot(plotDiv, traces, layout, config).then(() => {
+            // Force resize after plot creation
+            setTimeout(() => {
+                this.resizePlot();
+            }, 100);
+        });
     }
-    
-    createHeatmapPlot(plotDiv) {
-        const data = this.wearVisualizer.currentData;
+
+    createMoveDetectionVisualization() {
+        const plotDiv = this.dataVizContainer.querySelector('#accelerationPlot');
+        if (!plotDiv || !this.currentData) return;
+
+        const thresholdRange = this.dataVizContainer.querySelector('#thresholdRange');
+        const threshold = thresholdRange ? parseFloat(thresholdRange.value) : 12;
+
+        const { time, absoluteAcceleration } = this.currentData;
         
-        // Create heatmap data
-        const windowSize = 50;
-        const heatmapData = [];
-        const timeLabels = [];
-        
-        for (let i = 0; i < data.acceleration.length - windowSize; i += windowSize) {
-            const window = data.acceleration.slice(i, i + windowSize);
-            heatmapData.push(window);
-            timeLabels.push(data.time[i].toFixed(1));
+        // Detect moves
+        const moves = this.detectMoves(time, absoluteAcceleration, threshold);
+
+        const traces = [
+            // Main acceleration trace
+            {
+                x: time,
+                y: absoluteAcceleration,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Acceleration',
+                line: { color: '#00ffcc', width: 2 }
+            },
+            // Threshold line
+            {
+                x: [Math.min(...time), Math.max(...time)],
+                y: [threshold, threshold],
+                type: 'scatter',
+                mode: 'lines',
+                name: `Threshold (${threshold} m/s²)`,
+                line: { color: '#ff6b6b', width: 2, dash: 'dash' }
+            }
+        ];
+
+        // Add move markers
+        if (moves.length > 0) {
+            traces.push({
+                x: moves.map(m => m.time),
+                y: moves.map(m => m.acceleration),
+                type: 'scatter',
+                mode: 'markers',
+                name: 'Detected Moves',
+                marker: {
+                    color: '#ff4444',
+                    size: 10,
+                    symbol: 'star'
+                }
+            });
         }
+
+        const layout = {
+            title: {
+                text: `🎯 Move Detection (${moves.length} moves found)`,
+                font: { color: '#00ffcc', size: 18 }
+            },
+            xaxis: { 
+                title: 'Time (seconds)',
+                color: '#00ffcc',
+                gridcolor: 'rgba(0, 255, 204, 0.2)'
+            },
+            yaxis: { 
+                title: 'Absolute Acceleration (m/s²)',
+                color: '#00ffcc',
+                gridcolor: 'rgba(0, 255, 204, 0.2)'
+            },
+            plot_bgcolor: 'rgba(0, 0, 0, 0.8)',
+            paper_bgcolor: 'rgba(0, 0, 0, 0)',
+            font: { color: '#00ffcc' },
+            autosize: true,
+            margin: { l: 60, r: 30, t: 60, b: 60 }
+        };
+
+        const config = { 
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+            displaylogo: false
+        };
+
+        Plotly.newPlot(plotDiv, traces, layout, config).then(() => {
+            // Force resize after plot creation
+            setTimeout(() => {
+                this.resizePlot();
+            }, 100);
+        });
+    }
+
+    createHistogramVisualization() {
+        const plotDiv = this.dataVizContainer.querySelector('#accelerationPlot');
+        if (!plotDiv || !this.currentData) return;
+
+        const traces = [{
+            x: this.currentData.absoluteAcceleration,
+            type: 'histogram',
+            name: 'Acceleration Distribution',
+            marker: { color: '#00ffcc', opacity: 0.7 },
+            nbinsx: 50
+        }];
+
+        const layout = {
+            title: {
+                text: '📊 Acceleration Distribution',
+                font: { color: '#00ffcc', size: 18 }
+            },
+            xaxis: { 
+                title: 'Absolute Acceleration (m/s²)',
+                color: '#00ffcc',
+                gridcolor: 'rgba(0, 255, 204, 0.2)'
+            },
+            yaxis: { 
+                title: 'Frequency',
+                color: '#00ffcc',
+                gridcolor: 'rgba(0, 255, 204, 0.2)'
+            },
+            plot_bgcolor: 'rgba(0, 0, 0, 0.8)',
+            paper_bgcolor: 'rgba(0, 0, 0, 0)',
+            font: { color: '#00ffcc' },
+            autosize: true,
+            margin: { l: 60, r: 30, t: 60, b: 60 }
+        };
+
+        const config = { 
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+            displaylogo: false
+        };
+
+        Plotly.newPlot(plotDiv, traces, layout, config).then(() => {
+            // Force resize after plot creation
+            setTimeout(() => {
+                this.resizePlot();
+            }, 100);
+        });
+    }
+
+    createHeatMapVisualization() {
+        const plotDiv = this.dataVizContainer.querySelector('#accelerationPlot');
+        if (!plotDiv || !this.currentData) return;
+
+        const { time, absoluteAcceleration } = this.currentData;
         
-        const trace = {
+        // Create 2D heatmap data by windowing
+        const windowSize = 100;
+        const stepSize = 20;
+        const heatmapData = [];
+        const xLabels = [];
+
+        for (let i = 0; i < time.length - windowSize; i += stepSize) {
+            const window = absoluteAcceleration.slice(i, i + windowSize);
+            heatmapData.push(window);
+            xLabels.push(time[i].toFixed(1));
+        }
+
+        const traces = [{
             z: heatmapData,
             type: 'heatmap',
-            colorscale: 'Viridis',
+            colorscale: [
+                [0, '#000033'],
+                [0.3, '#000066'],
+                [0.5, '#0066cc'],
+                [0.7, '#00ffcc'],
+                [1, '#ffffff']
+            ],
             showscale: true
-        };
-        
+        }];
+
         const layout = {
-            title: 'Acceleration Intensity Heatmap',
-            xaxis: { title: 'Sample Window' },
-            yaxis: { title: 'Time Window', tickvals: Array.from({length: timeLabels.length}, (_, i) => i), ticktext: timeLabels },
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            paper_bgcolor: 'rgba(0,0,0,0)'
-        };
-        
-        Plotly.newPlot(plotDiv, [trace], layout);
-    }
-    
-    createPolarPlot(plotDiv) {
-        const data = this.wearVisualizer.currentData;
-        
-        const trace = {
-            r: data.acceleration,
-            theta: data.time.map(t => t * 10), // Convert time to angle
-            type: 'scatterpolar',
-            mode: 'lines',
-            name: 'Acceleration',
-            line: { color: '#667eea' }
-        };
-        
-        const layout = {
-            title: 'Polar Acceleration View',
-            polar: {
-                radialaxis: { title: 'Acceleration (g)' },
-                angularaxis: { title: 'Time (scaled)' }
+            title: {
+                text: '🔥 Acceleration Intensity Heat Map',
+                font: { color: '#00ffcc', size: 18 }
             },
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            paper_bgcolor: 'rgba(0,0,0,0)'
+            xaxis: {
+                title: 'Time Windows',
+                color: '#00ffcc'
+            },
+            yaxis: {
+                title: 'Sample Index',
+                color: '#00ffcc'
+            },
+            paper_bgcolor: 'rgba(0, 0, 0, 0)',
+            plot_bgcolor: 'rgba(0, 0, 0, 0.8)',
+            font: { color: '#00ffcc' },
+            autosize: true,
+            margin: { l: 60, r: 30, t: 60, b: 60 }
         };
-        
-        Plotly.newPlot(plotDiv, [trace], layout);
+
+        const config = { 
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+            displaylogo: false
+        };
+
+        Plotly.newPlot(plotDiv, traces, layout, config).then(() => {
+            // Force resize after plot creation
+            setTimeout(() => {
+                this.resizePlot();
+            }, 100);
+        });
     }
-    
-    create3DPlot(plotDiv) {
-        const data = this.wearVisualizer.currentData;
+
+    detectMoves(time, acceleration, threshold) {
+        const moves = [];
+        const minMoveDuration = 0.5; // minimum seconds between moves
         
-        // Create 3D surface data
-        const size = Math.floor(Math.sqrt(data.acceleration.length));
-        const z = [];
+        let lastMoveTime = -minMoveDuration;
         
-        for (let i = 0; i < size; i++) {
-            const row = [];
-            for (let j = 0; j < size; j++) {
-                const index = i * size + j;
-                row.push(data.acceleration[index] || 0);
+        for (let i = 1; i < acceleration.length - 1; i++) {
+            const currentAccel = acceleration[i];
+            const currentTime = time[i];
+            
+            // Look for peaks above threshold
+            if (currentAccel > threshold && 
+                currentAccel > acceleration[i-1] && 
+                currentAccel > acceleration[i+1] &&
+                (currentTime - lastMoveTime) > minMoveDuration) {
+                
+                moves.push({
+                    time: currentTime,
+                    acceleration: currentAccel
+                });
+                
+                lastMoveTime = currentTime;
             }
-            z.push(row);
         }
         
-        const trace = {
-            z: z,
-            type: 'surface',
-            colorscale: 'Viridis'
-        };
-        
-        const layout = {
-            title: '3D Acceleration Surface',
-            scene: {
-                xaxis: { title: 'X' },
-                yaxis: { title: 'Y' },
-                zaxis: { title: 'Acceleration (g)' }
-            },
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            paper_bgcolor: 'rgba(0,0,0,0)'
-        };
-        
-        Plotly.newPlot(plotDiv, [trace], layout);
+        return moves;
     }
-    
+
     updateStatistics() {
-        if (!this.wearVisualizer.currentData) return;
+        if (!this.currentData) return;
+
+        const { absoluteAcceleration, duration, sampleCount } = this.currentData;
         
-        const stats = this.wearVisualizer.calculateStats(this.wearVisualizer.currentData);
+        const maxAccel = Math.max(...absoluteAcceleration);
+        const avgAccel = absoluteAcceleration.reduce((a, b) => a + b, 0) / absoluteAcceleration.length;
         
-        this.dataVizContainer.querySelector('#maxAccel').textContent = stats.maxAccel;
-        this.dataVizContainer.querySelector('#avgAccel').textContent = stats.avgAccel;
-        this.dataVizContainer.querySelector('#peakCount').textContent = stats.peakCount;
-        this.dataVizContainer.querySelector('#duration').textContent = stats.duration;
+        // Count moves with current threshold
+        const thresholdRange = this.dataVizContainer.querySelector('#thresholdRange');
+        const threshold = thresholdRange ? parseFloat(thresholdRange.value) : 12;
+        const moves = this.detectMoves(this.currentData.time, absoluteAcceleration, threshold);
+
+        // Update statistics display
+        const maxAccelEl = this.dataVizContainer.querySelector('#maxAccel');
+        const avgAccelEl = this.dataVizContainer.querySelector('#avgAccel');
+        const moveCountEl = this.dataVizContainer.querySelector('#moveCount');
+        const durationEl = this.dataVizContainer.querySelector('#duration');
+        const sampleCountEl = this.dataVizContainer.querySelector('#sampleCount');
+
+        if (maxAccelEl) maxAccelEl.textContent = maxAccel.toFixed(2);
+        if (avgAccelEl) avgAccelEl.textContent = avgAccel.toFixed(2);
+        if (moveCountEl) moveCountEl.textContent = moves.length;
+        if (durationEl) durationEl.textContent = duration.toFixed(1);
+        if (sampleCountEl) sampleCountEl.textContent = sampleCount;
     }
-    
+
+    async handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        console.log('Loading file:', file.name);
+        
+        try {
+            const text = await file.text();
+            const parsedData = this.parsePhyphoxCSV(text, file.name);
+            
+            if (parsedData) {
+                this.currentData = parsedData;
+                this.updateVisualization();
+                this.updateStatistics();
+                
+                this.showNotification('File loaded successfully!', 'success');
+            } else {
+                this.showNotification('Failed to parse CSV file. Please check the format.', 'error');
+            }
+        } catch (error) {
+            console.error('Error loading file:', error);
+            this.showNotification('Error loading file: ' + error.message, 'error');
+        }
+        
+        // Reset file input
+        event.target.value = '';
+    }
+
+    parsePhyphoxCSV(csvText, filename) {
+        const lines = csvText.trim().split('\n');
+        if (lines.length < 2) return null;
+
+        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+        console.log('CSV Headers:', headers);
+
+        // Find required columns
+        let timeCol = -1, absAccelCol = -1;
+        
+        for (let i = 0; i < headers.length; i++) {
+            const header = headers[i].toLowerCase();
+            if (header.includes('time') && header.includes('s')) {
+                timeCol = i;
+            } else if (header.includes('absolute acceleration')) {
+                absAccelCol = i;
+            }
+        }
+
+        if (timeCol === -1 || absAccelCol === -1) {
+            console.error('Could not find required columns');
+            return null;
+        }
+
+        const time = [];
+        const absoluteAcceleration = [];
+
+        for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(',').map(v => {
+                const num = parseFloat(v.trim().replace(/"/g, ''));
+                return isNaN(num) ? 0 : num;
+            });
+
+            if (values.length <= Math.max(timeCol, absAccelCol)) continue;
+
+            const timeVal = values[timeCol];
+            const accelVal = values[absAccelCol];
+
+            if (!isNaN(timeVal) && !isNaN(accelVal) && accelVal > 0) {
+                time.push(timeVal);
+                absoluteAcceleration.push(accelVal);
+            }
+        }
+
+        if (time.length === 0) return null;
+
+        return {
+            time,
+            absoluteAcceleration,
+            filename,
+            duration: Math.max(...time) - Math.min(...time),
+            maxAcceleration: Math.max(...absoluteAcceleration),
+            avgAcceleration: absoluteAcceleration.reduce((a, b) => a + b, 0) / absoluteAcceleration.length,
+            sampleCount: time.length
+        };
+    }
+
     exportData() {
-        if (!this.wearVisualizer.currentData) {
-            alert('No data to export');
+        if (!this.currentData) {
+            this.showNotification('No data to export', 'error');
+            return;
+        }
+
+        const { time, absoluteAcceleration } = this.currentData;
+
+        // Create CSV content
+        let csvContent = 'Time (s),Absolute Acceleration (m/s²)\n';
+        
+        for (let i = 0; i < time.length; i++) {
+            csvContent += `${time[i]},${absoluteAcceleration[i]}\n`;
+        }
+
+        // Download file
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `climbing_analysis_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+
+        this.showNotification('Data exported successfully!', 'success');
+    }
+
+    showNotification(message, type = 'info') {
+        // Remove existing notification
+        const existing = document.querySelector('.dataviz-notification');
+        if (existing) existing.remove();
+
+        const notification = document.createElement('div');
+        notification.className = 'dataviz-notification';
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            color: white;
+            font-family: Arial, sans-serif;
+            z-index: 1004;
+            max-width: 300px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s ease-out;
+        `;
+
+        const colors = {
+            success: 'rgba(40, 167, 69, 0.95)',
+            error: 'rgba(220, 53, 69, 0.95)',
+            info: 'rgba(23, 162, 184, 0.95)'
+        };
+
+        notification.style.background = colors[type] || colors.info;
+        notification.textContent = message;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            if (notification.parentElement) {
+                notification.remove();
+            }
+        }, 3000);
+    }
+
+    // Show the DataViz interface
+    show() {
+        if (this.dataVizContainer) {
+            this.dataVizContainer.style.display = 'block';
+            console.log('DataViz interface shown');
+            
+            // Force resize after showing to fix width issues
+            setTimeout(() => {
+                this.resizePlot();
+            }, 200);
+        }
+    }
+
+    // Hide the DataViz interface
+    hide() {
+        if (this.dataVizContainer) {
+            this.dataVizContainer.style.display = 'none';
+            console.log('DataViz interface hidden');
+        }
+    }
+
+    // Update with boulder data from the 3D visualizer
+    async updateWithBoulderData(boulder) {
+        console.log('Updating DataViz with boulder data:', boulder.name);
+        
+        if (!boulder || !boulder.csvData) {
+            console.log('No valid CSV data in boulder');
             return;
         }
         
-        const data = this.wearVisualizer.currentData;
-        const csvContent = this.generateCSV(data);
+        // Store current boulder for move regeneration
+        this.currentBoulder = boulder;
         
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'climbing_acceleration_data.csv';
-        link.click();
-        URL.revokeObjectURL(url);
-    }
-    
-    generateCSV(data) {
-        let csv = 'time,acceleration\n';
-        for (let i = 0; i < data.time.length; i++) {
-            csv += `${data.time[i]},${data.acceleration[i]}\n`;
-        }
-        return csv;
-    }
-    
-    // Get current data for integration with boulder visualizer
-    getCurrentMoveAverages() {
-        return this.wearVisualizer.currentData?.moveAverages || [];
-    }
-    
-    getCurrentHeatmapData() {
-        if (!this.wearVisualizer.currentData) return null;
-        
-        const data = this.wearVisualizer.currentData;
-        const peaks = this.detectPeaks(data.acceleration);
-        
-        return {
-            peaks: peaks,
-            maxAcceleration: Math.max(...data.acceleration),
-            avgAcceleration: data.acceleration.reduce((sum, val) => sum + val, 0) / data.acceleration.length,
-            intensityMap: data.acceleration
-        };
-    }
-    
-    show() {
-        this.dataVizContainer.style.display = 'block';
-        this.isVisible = true;
-    }
-    
-    hide() {
-        this.dataVizContainer.style.display = 'none';
-        this.isVisible = false;
+        await this.loadCSVData(boulder);
     }
 
-    /**
-     * Update DataViz integration with boulder data
-     * @param {Object} boulder - Processed boulder data with moves
-     */
-    updateWithBoulderData(boulder) {
-        console.log('DataVizIntegration: Updating with boulder data:', boulder.name);
-        
-        if (!boulder || !boulder.moves) {
-            console.warn('DataVizIntegration: No valid boulder data provided');
+    // Destroy the DataViz integration
+    destroy() {
+        if (this.dataVizContainer && this.dataVizContainer.parentElement) {
+            this.dataVizContainer.remove();
+        }
+        console.log('DataViz integration destroyed');
+    }
+
+    // Emit control change event
+    emitControlChange(controlName, value) {
+        // Emit global event for cross-view sync
+        document.dispatchEvent(new CustomEvent('controlChanged', {
+            detail: { 
+                source: 'dataviz', 
+                controlName, 
+                value 
+            }
+        }));
+    }
+    
+    syncCSVSelection(boulderId) {
+        // Update the CSV file selection dropdown without triggering onChange
+        const csvFileSelect = this.dataVizContainer.querySelector('#csvFileSelect');
+        if (csvFileSelect && csvFileSelect.value != boulderId) {
+            csvFileSelect.value = boulderId;
+            console.log(`DataViz synced to boulder ID: ${boulderId}`);
+        }
+    }
+
+    async regenerateMovesAndSync() {
+        if (!this.currentData || !this.currentBoulder) {
+            console.log('No current data or boulder to regenerate moves for');
             return;
         }
         
         try {
-            // Convert boulder moves to acceleration data format for DataViz
-            const accelerationData = this.convertBoulderToAccelerationData(boulder);
+            // Get current threshold
+            const thresholdRange = this.dataVizContainer.querySelector('#thresholdRange');
+            const threshold = thresholdRange ? parseFloat(thresholdRange.value) : 12;
             
-            // Update the WEARVisualizer with the new data
-            if (this.wearVisualizer) {
-                this.wearVisualizer.currentData = accelerationData;
-                this.updateVisualization();
-                this.updateStatistics();
-            }
+            console.log(`Regenerating moves with threshold: ${threshold}`);
             
-            console.log('DataVizIntegration: Successfully updated with boulder data');
+            // Detect new moves with current threshold
+            const newMoves = this.detectMoves(this.currentData.time, this.currentData.absoluteAcceleration, threshold);
             
-        } catch (error) {
-            console.error('DataVizIntegration: Error updating with boulder data:', error);
-        }
-    }
-
-    /**
-     * Convert boulder move data to acceleration data format
-     * @param {Object} boulder - Boulder with moves data
-     * @returns {Object} - Acceleration data format for visualization
-     */
-    convertBoulderToAccelerationData(boulder) {
-        const moves = boulder.moves || [];
-        const time = [];
-        const acceleration = [];
-        
-        // Generate time series data based on moves
-        moves.forEach((move, index) => {
-            const baseTime = index * 2; // 2 seconds per move
-            const baseDuration = 1.5; // 1.5 seconds per move
-            const samples = 50; // 50 samples per move
-            
-            for (let i = 0; i < samples; i++) {
-                const t = baseTime + (i / samples) * baseDuration;
-                time.push(t);
+            // Convert DataViz moves to Boulder visualizer format
+            const boulderMoves = newMoves.map((move, index) => {
+                // Determine move type based on acceleration magnitude
+                let moveType, dynamics, isCrux;
                 
-                // Create acceleration curve based on move dynamics
-                const progress = i / samples;
-                const peakPosition = 0.3 + (move.dynamics * 0.4); // Peak between 30-70% of move
-                
-                let accel;
-                if (progress < peakPosition) {
-                    // Rising to peak
-                    accel = 9.8 + (move.dynamics * 15) * (progress / peakPosition);
+                if (move.acceleration > 30) {
+                    moveType = 'dyno';
+                    dynamics = 0.9;
+                    isCrux = true;
+                } else if (move.acceleration > 20) {
+                    moveType = 'dynamic';
+                    dynamics = 0.8;
+                    isCrux = move.acceleration > 25;
+                } else if (move.acceleration > 15) {
+                    moveType = 'powerful';
+                    dynamics = 0.7;
+                    isCrux = false;
                 } else {
-                    // Falling from peak
-                    accel = 9.8 + (move.dynamics * 15) * ((1 - progress) / (1 - peakPosition));
+                    moveType = 'static';
+                    dynamics = 0.6;
+                    isCrux = false;
                 }
                 
-                // Add some noise for realism
-                accel += (Math.random() - 0.5) * 2;
-                
-                // Ensure minimum acceleration
-                accel = Math.max(accel, 8.0);
-                
-                acceleration.push(accel);
-            }
-        });
-        
-        return {
-            time,
-            acceleration,
-            metadata: {
-                boulderName: boulder.name,
-                grade: boulder.grade,
-                moveCount: moves.length,
-                source: 'real_sensor_data'
-            }
-        };
+                return {
+                    time: move.time,
+                    type: moveType,
+                    dynamics,
+                    isCrux,
+                    acceleration: move.acceleration,
+                    description: `${moveType} move (${move.acceleration.toFixed(1)} m/s²)`
+                };
+            });
+            
+            // Update the current boulder with new moves
+            this.currentBoulder.moves = boulderMoves;
+            
+            console.log(`Updated boulder with ${boulderMoves.length} moves (threshold: ${threshold})`);
+            
+            // Emit data update event to sync with Boulder visualizer
+            document.dispatchEvent(new CustomEvent('dataUpdated', {
+                detail: { 
+                    source: 'dataviz', 
+                    data: { 
+                        boulder: this.currentBoulder,
+                        threshold: threshold,
+                        moveCount: boulderMoves.length
+                    }
+                }
+            }));
+            
+        } catch (error) {
+            console.error('Error regenerating moves:', error);
+        }
     }
 } 

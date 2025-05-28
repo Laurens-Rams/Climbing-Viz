@@ -12,9 +12,10 @@
         }
         
         body {
-            font-family: 'Arial', sans-serif;
-            background: #0a0a0a;
-            color: #ffffff;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            font-family: Arial, sans-serif;
             overflow: hidden;
         }
         
@@ -63,17 +64,91 @@
         }
         
         #loading {
-            position: absolute;
+            position: fixed;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            z-index: 200;
             color: #00ffcc;
             font-size: 18px;
+            z-index: 1000;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #00ffcc;
         }
         
         .hidden {
-            display: none;
+            display: none !important;
+        }
+        
+        /* Tab system animations */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .tab-button {
+            /* Removed transition for instant view switching */
+        }
+        
+        /* DataViz container styling */
+        #dataviz-container {
+            /* Removed animation for instant view switching */
+        }
+        
+        /* Notification animations */
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+        
+        .global-notification {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        .global-notification.fade-out {
+            animation: slideOut 0.3s ease-in;
+        }
+        
+        /* Auto-update toggle pulse effect when active */
+        .auto-update-toggle.active {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(0, 170, 0, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(0, 170, 0, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 170, 0, 0);
+            }
         }
     </style>
 </head>
@@ -92,6 +167,8 @@
             <p>• Center = Grade with color coding</p>
             <p><strong>Controls:</strong></p>
             <p>• Mouse: Rotate view | Scroll: Zoom</p>
+            <p>• R: Random CSV | O: Toggle UI</p>
+            <p>• ↑↓ Arrow Keys: Navigate CSV files</p>
             <p>• Use control panel to select boulders & adjust settings</p>
         </div>
         
