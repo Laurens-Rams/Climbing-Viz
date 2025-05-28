@@ -134,13 +134,6 @@ class BoulderVisualizerApp {
             if (this.controlPanel) {
                 this.controlPanel.show();
             }
-            
-            // Refresh the boulder visualizer with latest acceleration data
-            if (this.currentBoulder && this.visualizer) {
-                console.log('Refreshing boulder visualizer with acceleration data');
-                this.visualizer.updateDynamicsFromAcceleration();
-                this.visualizer.createVisualization();
-            }
         } else if (view === 'dataviz') {
             // Show DataViz
             this.container.style.display = 'none';
@@ -167,22 +160,6 @@ class BoulderVisualizerApp {
     
     setupControls() {
         this.controlPanel = new BoulderControlPanel(this.visualizer, this.dataVizIntegration);
-        
-        // Set up boulder change listener
-        this.controlPanel.onBoulderChange = (boulder) => {
-            this.updateCurrentBoulder(boulder);
-        };
-    }
-    
-    updateCurrentBoulder(boulder) {
-        this.currentBoulder = boulder;
-        
-        // Notify DataViz integration if it exists
-        if (this.dataVizIntegration) {
-            this.dataVizIntegration.updateFromMainApp(boulder);
-        }
-        
-        console.log('Current boulder updated:', boulder.name);
     }
     
     showLoading(message = 'Loading...') {
@@ -320,15 +297,12 @@ class BoulderVisualizerApp {
 
 // Initialize the application when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    const app = new BoulderVisualizerApp();
-    
-    // Expose app globally for DataViz integration
-    window.app = app;
+    window.boulderApp = new BoulderVisualizerApp();
 });
 
 // Handle page visibility changes to pause/resume animation
 document.addEventListener('visibilitychange', () => {
-    if (window.app && window.app.visualizer) {
+    if (window.boulderApp && window.boulderApp.visualizer) {
         if (document.hidden) {
             // Page is hidden, could pause animation here if needed
         } else {

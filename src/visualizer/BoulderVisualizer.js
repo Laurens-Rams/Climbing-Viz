@@ -38,24 +38,24 @@ export class BoulderVisualizer {
             ringCount: 45,           // Number of concentric circles (10-70)
             ringSpacing: 0.005,      // Spacing between rings
             opacity: 1.0,            // Line opacity
-            curveResolution: 180,    // Smoothness of curves - now 180 points for better graphics
-            dynamicsMultiplier: 2.0, // How much dynamics affect radius (reduced from 8.0 for less skew)
+            curveResolution: 480,    // Smoothness of curves (always maximum)
+            dynamicsMultiplier: 4.4, // How much dynamics affect radius
             centerTextSize: 1.0,     // Size of center grade text
             showMoveNumbers: true,   // Show move sequence numbers
             liquidEffect: true,      // Enable liquid wave effect
-            organicNoise: 0.5,       // Amount of organic noise (reduced from 1.0)
-            cruxEmphasis: 1.5,       // How much to emphasize crux moves (reduced from 3.0)
+            organicNoise: 1.0,       // Amount of organic noise
+            cruxEmphasis: 3.0,       // How much to emphasize crux moves
             moveEmphasis: 0.0,       // How much to emphasize all moves equally
-            waveComplexity: 0.5,     // Complexity of wave patterns (reduced from 1.0)
-            depthEffect: 0.3,        // 3D depth effect strength (reduced from 0.6)
-            centerFade: 0.8,         // How much lines fade near center (reduced from 0.95)
+            waveComplexity: 1.0,     // Complexity of wave patterns
+            depthEffect: 0.6,        // 3D depth effect strength
+            centerFade: 0.95,        // How much lines fade near center (slab effect)
             showMoveSegments: false, // Show background move segments
             segmentOpacity: 0.15,    // Opacity of move segments
             segmentGap: 0.06,        // Gap between segments (0.0-0.2)
             showMoveLines: true,     // Show radial lines at move peaks
             lineLength: 4,           // Length of radial lines
             lineOpacity: 1,          // Opacity of move lines
-            dotSize: 0.1,            // Size of dots at line ends (increased from 0.07)
+            dotSize: 0.07,           // Size of dots at line ends
             dotOpacity: 1,           // Opacity of dots
             radiusMultiplier: 1.0,   // Overall radius multiplier for the entire visualization
             showAttempts: true,      // Show attempt visualization layer
@@ -65,8 +65,7 @@ export class BoulderVisualizer {
             attemptThickness: 0.3,   // Base thickness of attempt lines
             attemptIntensity: 2,     // Visual intensity multiplier
             maxAttempts: 45,         // Maximum number of attempts to show
-            attemptRadius: 1.3,      // Multiplier for attempt end radius (relative to max radius)
-            timelineSubdivision: 50  // Subdivision strength (0-100%) - controls smoothness between moves
+            attemptRadius: 1.3       // Multiplier for attempt end radius (relative to max radius)
         };
         
         this.init();
@@ -180,79 +179,9 @@ export class BoulderVisualizer {
         console.log('Number of moves:', boulder.moves?.length);
         
         this.boulder = boulder;
-        
-        // Try to get acceleration data from DataViz integration
-        this.updateDynamicsFromAcceleration();
-        
         this.createVisualization();
         
         console.log('BoulderVisualizer.createVisualization completed');
-    }
-    
-    updateDynamicsFromAcceleration() {
-        // Try to get acceleration data from the DataViz integration
-        if (window.app && window.app.dataVizIntegration) {
-            const moveAverages = window.app.dataVizIntegration.getCurrentMoveAverages();
-            const heatmapData = window.app.dataVizIntegration.getCurrentHeatmapData();
-            
-            console.log('=== ACCELERATION DATA DEBUG ===');
-            console.log('DataViz integration found:', !!window.app.dataVizIntegration);
-            console.log('Move averages:', moveAverages);
-            console.log('Move averages length:', moveAverages?.length);
-            console.log('Heatmap data:', heatmapData);
-            console.log('Current boulder moves:', this.boulder?.moves?.length);
-            
-            if (moveAverages && moveAverages.length > 0) {
-                console.log('Using acceleration data for circle radius:', moveAverages);
-                
-                // Update boulder moves with real acceleration data
-                this.boulder.moves.forEach((move, index) => {
-                    if (moveAverages[index]) {
-                        // Scale acceleration average to dynamics range
-                        const accelAvg = moveAverages[index].average;
-                        const maxAccel = heatmapData ? heatmapData.maxAcceleration : 1.0;
-                        
-                        console.log(`Processing move ${index + 1}: accelAvg=${accelAvg}, maxAccel=${maxAccel}`);
-                        
-                        // Validate acceleration values to prevent NaN
-                        if (!isFinite(accelAvg) || !isFinite(maxAccel) || maxAccel <= 0) {
-                            console.warn(`Invalid acceleration data for move ${index + 1}, using default dynamics`);
-                            return; // Keep original dynamics
-                        }
-                        
-                        // Use a much wider range (0.2 to 3.0) for more dramatic effect
-                        // Apply exponential scaling to make high acceleration moves much more prominent
-                        const normalizedAccel = Math.max(0, Math.min(1, accelAvg / maxAccel));
-                        const exponentialScaling = Math.pow(normalizedAccel, 0.7); // Less aggressive curve
-                        const dramaticDynamics = 0.2 + exponentialScaling * 2.8; // Range: 0.2 to 3.0
-                        
-                        console.log(`Move ${index + 1} scaling: normalized=${normalizedAccel.toFixed(3)}, exponential=${exponentialScaling.toFixed(3)}, final=${dramaticDynamics.toFixed(3)}`);
-                        
-                        // Final validation to ensure no NaN values
-                        if (isFinite(dramaticDynamics)) {
-                            const oldDynamics = move.dynamics;
-                            move.dynamics = dramaticDynamics;
-                            console.log(`Move ${index + 1}: accel=${accelAvg.toFixed(3)}, normalized=${normalizedAccel.toFixed(3)}, dynamics=${dramaticDynamics.toFixed(3)} (was ${oldDynamics.toFixed(3)})`);
-                        } else {
-                            console.warn(`Computed NaN dynamics for move ${index + 1}, keeping original value`);
-                        }
-                    } else {
-                        console.log(`No acceleration data for move ${index + 1}`);
-                    }
-                });
-                
-                console.log('Final dynamics values:');
-                this.boulder.moves.forEach((move, index) => {
-                    console.log(`  Move ${index + 1}: dynamics=${move.dynamics.toFixed(3)}`);
-                });
-            } else {
-                console.log('No acceleration data available, using default dynamics');
-                console.log('Reason: moveAverages =', moveAverages, 'length =', moveAverages?.length);
-            }
-            console.log('=== END ACCELERATION DATA DEBUG ===');
-        } else {
-            console.log('No DataViz integration found');
-        }
     }
     
     createVisualization() {
@@ -260,12 +189,6 @@ export class BoulderVisualizer {
         this.clearScene();
         
         if (!this.boulder) return;
-        
-        // Debug: Log current dynamics values
-        console.log('Creating visualization with dynamics values:');
-        this.boulder.moves.forEach((move, index) => {
-            console.log(`  Move ${index + 1}: dynamics=${move.dynamics.toFixed(3)}, isCrux=${move.isCrux}`);
-        });
         
         // Create background move segments (pizza slices)
         this.createMoveSegments();
@@ -395,15 +318,14 @@ export class BoulderVisualizer {
         // Validate radii
         if (innerRadius >= maxRadius) return;
         
-        // Calculate angle per move using the new timeline mapping
+        // Calculate angle per move
         const anglePerMove = (Math.PI * 2) / moveCount;
         const gapAngle = Math.min(anglePerMove * this.settings.segmentGap, anglePerMove * 0.8); // Cap gap at 80% of segment
         const segmentAngle = Math.max(anglePerMove - gapAngle, 0.01); // Minimum segment angle
         
         for (let i = 0; i < moveCount; i++) {
-            // Use the new timeline mapping: start at top (0°) and distribute evenly
-            const normalizedPosition = i / moveCount;
-            const startAngle = normalizedPosition * Math.PI * 2 - Math.PI / 2 + gapAngle / 2; // -PI/2 puts 0° at top
+            // Start at 12 o'clock (top) by adding PI/2 to the angle
+            const startAngle = i * anglePerMove + gapAngle / 2 + Math.PI / 2;
             
             // Create segment using custom geometry to avoid RingGeometry issues
             const segmentGeometry = this.createSegmentGeometry(innerRadius, maxRadius, startAngle, segmentAngle);
@@ -479,25 +401,10 @@ export class BoulderVisualizer {
     }
     
     createMoveLines() {
-        if (!this.settings.showMoveLines) {
-            console.log('Move lines disabled in settings');
-            return;
-        }
+        if (!this.settings.showMoveLines) return;
         
         const moveCount = this.boulder.moves.length;
-        if (moveCount <= 0) {
-            console.log('No moves to create lines for');
-            return;
-        }
-        
-        console.log(`Creating move lines and dots for ${moveCount} moves`);
-        console.log('Line settings:', {
-            showMoveLines: this.settings.showMoveLines,
-            lineLength: this.settings.lineLength,
-            lineOpacity: this.settings.lineOpacity,
-            dotSize: this.settings.dotSize,
-            dotOpacity: this.settings.dotOpacity
-        });
+        if (moveCount <= 0) return;
         
         this.moveLines = [];
         
@@ -505,15 +412,14 @@ export class BoulderVisualizer {
         const startRadius = this.settings.baseRadius * this.settings.radiusMultiplier;
         const lineEndRadius = startRadius + (this.settings.lineLength * this.settings.radiusMultiplier);
         
-        console.log(`Line radius: ${startRadius} to ${lineEndRadius}`);
-        
         for (let i = 0; i < moveCount; i++) {
             const move = this.boulder.moves[i];
             
-            // Calculate angle for this move using the new timeline mapping
-            // Map moves evenly around the full 360° circle, starting at top (0°)
-            const normalizedPosition = i / moveCount; // 0 to 1 for this move
-            const moveAngle = normalizedPosition * Math.PI * 2 - Math.PI / 2; // -PI/2 puts 0° at top
+            // Calculate angle for this move (center of the move segment)
+            // Start at 12 o'clock (top) - when i=0, angle should be -PI/2 + PI/2 = 0 (which is 3 o'clock)
+            // But we want i=0 to be at top, so we need to add PI/2 to get to 12 o'clock
+            const anglePerMove = (Math.PI * 2) / moveCount;
+            const moveAngle = i * anglePerMove + Math.PI / 2;
             
             // Calculate line start and end positions (now starting from center going outward)
             const startX = Math.cos(moveAngle) * startRadius;
@@ -545,16 +451,14 @@ export class BoulderVisualizer {
             this.moveLines.push(line);
             this.scene.add(line);
             
-            console.log(`Created line ${i + 1} at angle ${(moveAngle * 180 / Math.PI).toFixed(1)}°`);
-            
             // Create dot/arrow at the end of the line
             if (i === 0) {
-                // First move gets a bigger, brighter dot (START marker)
+                // First move gets a bigger, brighter dot
                 const dotGeometry = new THREE.SphereGeometry(this.settings.dotSize * 2, 32, 16);
                 const dotMaterial = new THREE.MeshBasicMaterial({
-                    color: 0x00ff00, // Green for start
+                    color: lineColor,
                     transparent: true,
-                    opacity: 1.0 // Full opacity for start dot
+                    opacity: 1.0 // Full opacity for first dot
                 });
                 
                 const dot = new THREE.Mesh(dotGeometry, dotMaterial);
@@ -562,13 +466,10 @@ export class BoulderVisualizer {
                 
                 this.moveLines.push(dot);
                 this.scene.add(dot);
-                
-                console.log(`Created START DOT at position (${endX.toFixed(2)}, ${endY.toFixed(2)}) with size ${this.settings.dotSize * 2}`);
             } else {
                 // Other moves get arrows pointing in the direction of movement
                 const nextMoveIndex = (i + 1) % moveCount;
-                const nextNormalizedPosition = nextMoveIndex / moveCount;
-                const nextAngle = nextNormalizedPosition * Math.PI * 2 - Math.PI / 2;
+                const nextAngle = nextMoveIndex * anglePerMove + Math.PI / 2;
                 
                 // Calculate direction vector for arrow
                 const directionAngle = nextAngle - moveAngle;
@@ -576,14 +477,10 @@ export class BoulderVisualizer {
                 const arrow = this.createArrow(endX, endY, directionAngle, lineColor);
                 this.moveLines.push(arrow);
                 this.scene.add(arrow);
-                
-                console.log(`Created ARROW ${i + 1} at position (${endX.toFixed(2)}, ${endY.toFixed(2)})`);
             }
         }
         
-        console.log(`Total move line objects created: ${this.moveLines.length}`);
-        
-        // No need for start label - first dot will be bigger and green
+        // No need for start label - first dot will be bigger and brighter
     }
     
     createArrow(x, y, directionAngle, color) {
@@ -616,18 +513,7 @@ export class BoulderVisualizer {
         const moveCount = this.boulder.moves.length;
         
         // Use boulder ID as seed for consistent attempt positioning
-        // Convert boulder ID to a consistent numeric seed (handle both string and numeric IDs)
-        let boulderSeed;
-        if (typeof this.boulder.id === 'string') {
-            // Convert string ID to a hash number
-            boulderSeed = 0;
-            for (let i = 0; i < this.boulder.id.length; i++) {
-                boulderSeed = ((boulderSeed << 5) - boulderSeed + this.boulder.id.charCodeAt(i)) & 0xffffffff;
-            }
-            boulderSeed = Math.abs(boulderSeed) * 0.001; // Scale to reasonable range
-        } else {
-            boulderSeed = this.boulder.id * 789.123;
-        }
+        const boulderSeed = this.boulder.id * 789.123;
         
         // Generate random number of people based on maxAttempts setting
         const basePeople = Math.floor(this.settings.maxAttempts / 3.0); // Base number of people
@@ -635,10 +521,9 @@ export class BoulderVisualizer {
         const numPeople = Math.max(1, Math.floor(basePeople * (1 + randomVariation)));
         
         for (let i = 0; i < numPeople; i++) {
-            // Deterministic angle around the circle for this person using new timeline mapping
-            // Distribute people evenly around the full 360° circle, starting at top (0°)
-            const normalizedPosition = this.seededRandom(boulderSeed + i * 100);
-            const baseAngle = normalizedPosition * Math.PI * 2 - Math.PI / 2; // -PI/2 puts 0° at top
+            // Deterministic angle around the circle for this person
+            // Add PI/2 to align with 12 o'clock start like other elements
+            const baseAngle = this.seededRandom(boulderSeed + i * 100) * Math.PI * 2 + Math.PI / 2;
             
             // Number of attempts for this person - random but scales with maxAttempts setting
             const baseAttemptsPerPerson = Math.max(1, Math.floor(this.settings.maxAttempts / numPeople));
@@ -912,145 +797,113 @@ export class BoulderVisualizer {
         const baseRadius = (this.settings.baseRadius + (ringIndex * this.settings.ringSpacing)) * this.settings.radiusMultiplier;
         const points = [];
         
-        // Validate boulder moves to prevent NaN issues
-        if (!this.boulder || !this.boulder.moves || this.boulder.moves.length === 0) {
-            console.warn('No valid boulder moves found, creating default ring');
-            // Create a simple circular ring as fallback
-            for (let i = 0; i < 32; i++) {
-                const angle = (i / 32) * Math.PI * 2;
-                const x = Math.cos(angle) * baseRadius;
-                const y = Math.sin(angle) * baseRadius;
-                points.push(new THREE.Vector3(x, y, 0));
-            }
-        } else {
-            // Validate and fix any invalid dynamics values
-            this.boulder.moves.forEach((move, index) => {
-                if (!isFinite(move.dynamics) || move.dynamics < 0) {
-                    console.warn(`Invalid dynamics value for move ${index + 1}: ${move.dynamics}, setting to 0.5`);
-                    move.dynamics = 0.5;
-                }
-                // Clamp dynamics to valid range
-                move.dynamics = Math.max(0.1, Math.min(1.0, move.dynamics));
-            });
-            
-            this.createRingPoints(points, baseRadius, ringIndex, moveCount);
-        }
-        
-        // Validate that we have valid points
-        if (points.length === 0) {
-            console.error('No valid points created for ring, creating fallback');
-            for (let i = 0; i < 32; i++) {
-                const angle = (i / 32) * Math.PI * 2;
-                const x = Math.cos(angle) * baseRadius;
-                const y = Math.sin(angle) * baseRadius;
-                points.push(new THREE.Vector3(x, y, 0));
-            }
-        }
-        
-        return this.createRingGeometry(points, ringIndex);
-    }
-    
-    createRingPoints(points, baseRadius, ringIndex, moveCount) {
-        // Create 180 points around the circumference for smooth graphics
-        const detailLevel = 180; // Fixed at 180 points for optimal smoothness
-        
-        console.log(`Creating ring points for ${moveCount} moves`);
+        // Create much more detailed points for dramatic effect
+        const detailLevel = moveCount * 8; // Much higher resolution for organic curves
         
         for (let i = 0; i < detailLevel; i++) {
-            // Map the entire 360-degree circle to the data timeline
-            // 0° (top) = start of data, 360° = end of data
-            const normalizedPosition = i / detailLevel; // 0 to 1 representing full timeline
+            const normalizedPosition = i / detailLevel;
+            // Start at 12 o'clock (top) by adding PI/2 to the angle
+            const angle = normalizedPosition * Math.PI * 2 + Math.PI / 2;
             
-            // Start at 12 o'clock (top) - this is now the START of our data timeline
-            const angle = normalizedPosition * Math.PI * 2 - Math.PI / 2; // -PI/2 puts 0° at top
+            // Find the closest moves for interpolation
+            const movePosition = normalizedPosition * moveCount;
+            const moveIndex1 = Math.floor(movePosition) % moveCount;
+            const moveIndex2 = (moveIndex1 + 1) % moveCount;
+            const lerpFactor = movePosition - Math.floor(movePosition);
             
-            // Find which move this position corresponds to
-            const exactMovePosition = normalizedPosition * moveCount; // 0 to moveCount
-            const moveIndex = Math.floor(exactMovePosition) % moveCount;
-            const nextMoveIndex = (moveIndex + 1) % moveCount;
+            const move1 = this.boulder.moves[moveIndex1];
+            const move2 = this.boulder.moves[moveIndex2];
             
-            // Calculate how far we are between this move and the next
-            const positionInMove = exactMovePosition - Math.floor(exactMovePosition);
+            // Interpolate dynamics between moves
+            const dynamics = move1.dynamics * (1 - lerpFactor) + move2.dynamics * lerpFactor;
             
-            const currentMove = this.boulder.moves[moveIndex];
-            const nextMove = this.boulder.moves[nextMoveIndex];
-            
-            // Get dynamics values
-            let dynamics;
-            
-            // Apply timeline subdivision for smoother transitions
-            const subdivisionStrength = this.settings.timelineSubdivision / 100.0; // Convert 0-100 to 0-1
-            
-            if (subdivisionStrength > 0) {
-                // Smooth interpolation between moves
-                dynamics = currentMove.dynamics * (1 - positionInMove) + nextMove.dynamics * positionInMove;
-                
-                // Add some smoothing
-                const smoothingFactor = subdivisionStrength * 0.3;
-                const avgDynamics = (currentMove.dynamics + nextMove.dynamics) / 2;
-                dynamics = dynamics * (1 - smoothingFactor) + avgDynamics * smoothingFactor;
-            } else {
-                // Sharp transitions - use the current move's dynamics
-                dynamics = currentMove.dynamics;
-            }
-            
-            // Validate dynamics value to prevent NaN propagation
-            if (!isFinite(dynamics) || dynamics < 0) {
-                console.warn(`Invalid dynamics value: ${dynamics}, using fallback`);
-                dynamics = 0.5; // Safe fallback
-            }
-            
-            // Calculate radius based on dynamics
+            // Calculate base radius for this ring
             let radius = baseRadius;
             
-            // Add dynamics effect
+            // Add dramatic dynamics effect with exponential scaling
             const ringProgress = ringIndex / this.settings.ringCount;
-            const effectMultiplier = 0.3 + Math.pow(ringProgress, 0.4) * 0.7; // Range: 0.3 to 1.0
-            const dynamicsEffect = dynamics * this.settings.dynamicsMultiplier * effectMultiplier;
+            const dynamicsEffect = Math.pow(dynamics, 1.8) * this.settings.dynamicsMultiplier;
             
-            radius += dynamicsEffect;
+            // Create liquid wave effect - outer rings get more dramatic
+            const waveAmplitude = dynamicsEffect * Math.pow(ringProgress, 0.6);
+            radius += waveAmplitude;
             
-            // Add crux emphasis at exact move positions
+            // Add complex organic noise for more natural look
+            const complexity = this.settings.waveComplexity;
+            const noiseFreq1 = normalizedPosition * Math.PI * (8 * complexity);
+            const noiseFreq2 = normalizedPosition * Math.PI * (12 * complexity);
+            const noiseFreq3 = normalizedPosition * Math.PI * (16 * complexity);
+            
+            const noise = (
+                Math.sin(noiseFreq1) * 0.15 + 
+                Math.sin(noiseFreq2) * 0.08 + 
+                Math.sin(noiseFreq3) * 0.04
+            ) * waveAmplitude * this.settings.organicNoise;
+            radius += noise;
+            
+            // Add crux emphasis - only at the exact crux move positions
             let cruxBoost = 0;
-            if (currentMove.isCrux) {
-                // Check if we're close to the exact move position
-                const distanceToMoveCenter = Math.abs(positionInMove - 0.5); // Distance from center of move
-                if (distanceToMoveCenter < 0.3) { // Within 30% of move center
-                    const cruxStrength = 1 - (distanceToMoveCenter / 0.3);
-                    cruxBoost = currentMove.dynamics * this.settings.cruxEmphasis * 0.5 * cruxStrength;
+            for (let j = 0; j < moveCount; j++) {
+                if (this.boulder.moves[j].isCrux) {
+                    const cruxPosition = j / moveCount;
+                    let distance = Math.abs(normalizedPosition - cruxPosition);
+                    
+                    // Handle wrap-around distance
+                    distance = Math.min(distance, 1 - distance);
+                    
+                    // Very tight range for crux emphasis - only affects the exact move
+                    const cruxRange = 0.02; // Much smaller range than color fade
+                    if (distance < cruxRange) {
+                        const cruxStrength = 1 - (distance / cruxRange);
+                        const moveBoost = this.boulder.moves[j].dynamics * this.settings.cruxEmphasis * 0.3 * cruxStrength;
+                        cruxBoost = Math.max(cruxBoost, moveBoost);
+                    }
                 }
             }
             radius += cruxBoost * ringProgress;
             
-            // Add organic noise for natural look
-            const noiseFreq = normalizedPosition * Math.PI * 8;
-            const noise = Math.sin(noiseFreq) * 0.1 * dynamics * this.settings.organicNoise;
-            radius += noise;
-            
-            // Final validation
-            if (!isFinite(radius) || radius <= 0) {
-                radius = baseRadius;
+            // Add move emphasis - applies to all moves equally
+            let moveBoost = 0;
+            if (this.settings.moveEmphasis > 0) {
+                for (let j = 0; j < moveCount; j++) {
+                    const movePosition = j / moveCount;
+                    let distance = Math.abs(normalizedPosition - movePosition);
+                    
+                    // Handle wrap-around distance
+                    distance = Math.min(distance, 1 - distance);
+                    
+                    // Same range as crux emphasis for consistency
+                    const moveRange = 0.02;
+                    if (distance < moveRange) {
+                        const moveStrength = 1 - (distance / moveRange);
+                        const boost = this.boulder.moves[j].dynamics * this.settings.moveEmphasis * 0.3 * moveStrength;
+                        moveBoost = Math.max(moveBoost, boost);
+                    }
+                }
             }
+            radius += moveBoost * ringProgress;
             
-            // Calculate position
+            // Add turbulence for more dramatic effect
+            const turbulence1 = Math.sin(normalizedPosition * Math.PI * 20 + ringIndex * 0.5) * 0.05;
+            const turbulence2 = Math.cos(normalizedPosition * Math.PI * 15 + ringIndex * 0.3) * 0.03;
+            radius += (turbulence1 + turbulence2) * waveAmplitude;
+            
+            // Add subtle randomness for organic feel (but consistent per ring and boulder)
+            const boulderSeed = this.boulder.id * 123.456; // Use boulder ID as seed for consistency
+            const seedValue = Math.sin(normalizedPosition * 1000 + ringIndex * 100 + boulderSeed);
+            const randomness = seedValue * 0.08 * waveAmplitude;
+            radius += randomness;
+            
+            // Calculate position with enhanced Z variation for 3D effect
             const x = Math.cos(angle) * radius;
             const y = Math.sin(angle) * radius;
-            const z = 0; // Keep it simple for now
+            const zWave1 = Math.sin(angle * 4 + ringIndex * 0.2) * ringProgress;
+            const zWave2 = Math.cos(angle * 6 + ringIndex * 0.15) * ringProgress * 0.5;
+            const z = (zWave1 + zWave2) * this.settings.depthEffect;
             
-            // Validate all position values
-            if (!isFinite(x) || !isFinite(y) || !isFinite(z)) {
-                const fallbackX = Math.cos(angle) * baseRadius;
-                const fallbackY = Math.sin(angle) * baseRadius;
-                points.push(new THREE.Vector3(fallbackX, fallbackY, 0));
-            } else {
-                points.push(new THREE.Vector3(x, y, z));
-            }
+            points.push(new THREE.Vector3(x, y, z));
         }
         
-        console.log(`Created ${points.length} points for ring ${ringIndex}`);
-    }
-    
-    createRingGeometry(points, ringIndex) {
         // Create smooth curve with higher tension for more dramatic curves
         const curve = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.3);
         const smoothPoints = curve.getPoints(this.settings.curveResolution);
@@ -1059,15 +912,15 @@ export class BoulderVisualizer {
         // Create geometry with vertex colors
         const geometry = new THREE.BufferGeometry().setFromPoints(smoothPoints);
         const colors = [];
-        const pointsPerMove = this.settings.curveResolution / this.boulder.moves.length;
+        const pointsPerMove = this.settings.curveResolution / moveCount;
         
         for (let i = 0; i < smoothPoints.length; i++) {
             const normalizedPosition = i / smoothPoints.length;
             
             // Find the closest moves for color interpolation
-            const movePosition = normalizedPosition * this.boulder.moves.length;
-            const moveIndex1 = Math.floor(movePosition) % this.boulder.moves.length;
-            const moveIndex2 = (moveIndex1 + 1) % this.boulder.moves.length;
+            const movePosition = normalizedPosition * moveCount;
+            const moveIndex1 = Math.floor(movePosition) % moveCount;
+            const moveIndex2 = (moveIndex1 + 1) % moveCount;
             const lerpFactor = movePosition - Math.floor(movePosition);
             
             const move1 = this.boulder.moves[moveIndex1];
@@ -1077,9 +930,9 @@ export class BoulderVisualizer {
             let cruxInfluence = 0;
             
             // Check distance to nearest crux moves
-            for (let j = 0; j < this.boulder.moves.length; j++) {
+            for (let j = 0; j < moveCount; j++) {
                 if (this.boulder.moves[j].isCrux) {
-                    const cruxPosition = j / this.boulder.moves.length;
+                    const cruxPosition = j / moveCount;
                     let distance = Math.abs(normalizedPosition - cruxPosition);
                     
                     // Handle wrap-around distance
