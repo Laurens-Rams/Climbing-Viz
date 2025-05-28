@@ -31,7 +31,7 @@ class BoulderVisualizerApp {
             this.dataVizIntegration = new DataVizIntegration(this.container);
             
             // Load initial boulder
-            this.showLoading('Loading boulder data...');
+            this.showLoading('Loading acceleration data...');
             await this.loadInitialBoulder();
             
             // Setup control panel
@@ -145,17 +145,32 @@ class BoulderVisualizerApp {
     }
     
     async loadInitialBoulder() {
-        return new Promise((resolve) => {
-            // Simulate loading time for better UX
-            setTimeout(() => {
-                this.currentBoulder = getBoulderById(1); // Load first boulder
-                if (this.currentBoulder) {
-                    this.visualizer.loadBoulder(this.currentBoulder);
-                    console.log('Loaded initial boulder:', this.currentBoulder);
+        try {
+            console.log('Loading initial boulder...');
+            
+            // Load first boulder (now async)
+            this.currentBoulder = await getBoulderById(1);
+            
+            if (this.currentBoulder) {
+                console.log('Loaded initial boulder:', this.currentBoulder.name);
+                console.log('Boulder moves:', this.currentBoulder.moves?.length || 0);
+                
+                // Load into visualizer
+                this.visualizer.loadBoulder(this.currentBoulder);
+                
+                // Update DataViz integration
+                if (this.dataVizIntegration && this.currentBoulder.type === 'csv') {
+                    this.dataVizIntegration.updateWithBoulderData(this.currentBoulder);
                 }
-                resolve();
-            }, 500);
-        });
+            } else {
+                console.error('Failed to load initial boulder');
+                throw new Error('No boulder data available');
+            }
+            
+        } catch (error) {
+            console.error('Error loading initial boulder:', error);
+            throw error;
+        }
     }
     
     setupControls() {
@@ -198,118 +213,78 @@ class BoulderVisualizerApp {
         
         welcome.innerHTML = `
             <h2 style="margin: 0 0 15px 0; color: #00ffcc;">🧗‍♂️ Climbing Visualizer Ready!</h2>
-            <p style="margin: 0 0 15px 0; color: #cccccc;">
-                Two visualization modes available:<br>
-                <strong>Boulder Visualizer:</strong> Liquid-like concentric rings<br>
-                <strong>Acceleration Data:</strong> Real sensor data analysis
+            <p style="margin: 0 0 15px 0; line-height: 1.4;">
+                Real acceleration data from climbing sensors is now being analyzed and visualized.
             </p>
-            <p style="margin: 0 0 15px 0; color: #cccccc; font-size: 14px;">
-                • <span style="color: #00ffcc;">Turquoise</span> = Crux moves<br>
-                • <span style="color: #ffffff;">White</span> = Normal moves<br>
-                • Spikes = Dynamic/powerful moves<br>
-                • Switch tabs to explore both views<br>
-                • Upload CSV files for real data analysis
-            </p>
-            <button id="start-exploring" style="
-                background: #00ffcc;
-                color: #000;
-                border: none;
-                padding: 10px 20px;
-                border-radius: 5px;
-                font-weight: bold;
-                cursor: pointer;
-                font-size: 16px;
-            ">Start Exploring</button>
+            <div style="font-size: 14px; color: #888; margin-bottom: 20px;">
+                <strong>Features:</strong><br>
+                • Real-time move detection from acceleration data<br>
+                • Dynamic visualization based on climbing intensity<br>
+                • Adjustable analysis parameters<br>
+                • Switch between Boulder and Data views
+            </div>
+            <div style="font-size: 12px; color: #666;">
+                <strong>Controls:</strong> R = Random Boulder | C = Reset Camera | 1/2/3 = Camera Views
+            </div>
+            <button onclick="this.parentElement.remove()" 
+                    style="margin-top: 20px; background: #00ffcc; color: #000; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                Start Exploring
+            </button>
         `;
         
         document.body.appendChild(welcome);
         
-        // Remove welcome message when button is clicked
-        document.getElementById('start-exploring').addEventListener('click', () => {
-            welcome.remove();
-        });
-        
-        // Auto-remove after 15 seconds
+        // Auto-remove after 8 seconds
         setTimeout(() => {
-            if (welcome.parentNode) {
+            if (welcome.parentElement) {
                 welcome.remove();
             }
-        }, 15000);
+        }, 8000);
     }
     
-    // Export boulder data functionality
+    // Export boulder data (for future use)
     exportBoulder() {
-        if (this.currentBoulder) {
-            const dataStr = JSON.stringify(this.currentBoulder, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(dataBlob);
-            
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `boulder-${this.currentBoulder.name.replace(/\s+/g, '-').toLowerCase()}.json`;
-            link.click();
-            
-            URL.revokeObjectURL(url);
-        }
+        if (!this.currentBoulder) return;
+        
+        const dataStr = JSON.stringify(this.currentBoulder, null, 2);
+        const dataBlob = new Blob([dataStr], {type: 'application/json'});
+        
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(dataBlob);
+        link.download = `${this.currentBoulder.name.replace(/\s+/g, '_')}_boulder_data.json`;
+        link.click();
     }
     
-    // Import boulder data functionality
+    // Import boulder data (for future use)
     importBoulder(file) {
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
-                const boulder = JSON.parse(e.target.result);
-                this.currentBoulder = boulder;
-                this.visualizer.loadBoulder(boulder);
-                console.log('Imported boulder:', boulder);
+                const boulderData = JSON.parse(e.target.result);
+                this.visualizer.loadBoulder(boulderData);
+                this.currentBoulder = boulderData;
+                console.log('Imported boulder:', boulderData.name);
             } catch (error) {
-                console.error('Failed to import boulder:', error);
-                alert('Failed to import boulder data. Please check the file format.');
+                console.error('Error importing boulder:', error);
+                alert('Error importing boulder file');
             }
         };
         reader.readAsText(file);
     }
     
-    // Method to update boulder visualizer with DataViz data
+    // Update boulder with DataViz data (for integration)
     updateBoulderWithDataVizData(boulder) {
-        if (boulder.type === 'csv' && this.dataVizIntegration) {
-            // Get move averages from DataViz
-            const moveAverages = this.dataVizIntegration.getCurrentMoveAverages();
-            const heatmapData = this.dataVizIntegration.getCurrentHeatmapData();
-            
-            if (moveAverages.length > 0) {
-                // Convert DataViz move averages to boulder moves format
-                boulder.moves = moveAverages.map(avg => ({
-                    sequence: avg.sequence,
-                    dynamics: Math.min(avg.average, 1.0), // Normalize to 0-1 range
-                    isCrux: avg.average > (heatmapData?.avgAcceleration || 0.5), // Use heatmap for crux detection
-                    type: avg.type || (avg.average > 0.7 ? 'dynamic' : 'static'),
-                    description: `Move ${avg.sequence} - ${avg.average.toFixed(2)}g`
-                }));
-                
-                console.log('Updated boulder with DataViz data:', boulder);
-            }
+        if (this.dataVizIntegration) {
+            this.dataVizIntegration.updateWithBoulderData(boulder);
         }
-        
-        return boulder;
     }
 }
 
-// Initialize the application when the page loads
+// Initialize the app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    window.boulderApp = new BoulderVisualizerApp();
+    console.log('DOM loaded, initializing Boulder Visualizer App...');
+    new BoulderVisualizerApp();
 });
 
-// Handle page visibility changes to pause/resume animation
-document.addEventListener('visibilitychange', () => {
-    if (window.boulderApp && window.boulderApp.visualizer) {
-        if (document.hidden) {
-            // Page is hidden, could pause animation here if needed
-        } else {
-            // Page is visible again
-        }
-    }
-});
-
-// Export for potential external use
-export { BoulderVisualizerApp }; 
+// Export for global access if needed
+window.BoulderVisualizerApp = BoulderVisualizerApp; 
