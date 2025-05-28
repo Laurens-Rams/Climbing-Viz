@@ -223,25 +223,18 @@ export class BoulderControlPanel {
                 this.emitControlChange('lineLength', this.visualizer.settings.lineLength);
             });
             
+        linesFolder.add(this.visualizer.settings, 'lineWidth', 0.005, 0.1, 0.005)
+            .name('Line Width')
+            .onChange(() => {
+                this.updateVisualization();
+                this.emitControlChange('lineWidth', this.visualizer.settings.lineWidth);
+            });
+            
         linesFolder.add(this.visualizer.settings, 'lineOpacity', 0.0, 1.0, 0.05)
             .name('Line Opacity')
             .onChange(() => {
                 this.updateVisualization();
                 this.emitControlChange('lineOpacity', this.visualizer.settings.lineOpacity);
-            });
-            
-        linesFolder.add(this.visualizer.settings, 'dotSize', 0.02, 0.2, 0.01)
-            .name('Dot Size')
-            .onChange(() => {
-                this.updateVisualization();
-                this.emitControlChange('dotSize', this.visualizer.settings.dotSize);
-            });
-            
-        linesFolder.add(this.visualizer.settings, 'dotOpacity', 0.0, 1.0, 0.05)
-            .name('Dot Opacity')
-            .onChange(() => {
-                this.updateVisualization();
-                this.emitControlChange('dotOpacity', this.visualizer.settings.dotOpacity);
             });
             
         linesFolder.close();

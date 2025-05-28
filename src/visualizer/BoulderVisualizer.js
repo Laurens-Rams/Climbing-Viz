@@ -69,7 +69,8 @@ export class BoulderVisualizer {
             moveDetectionThreshold: 15.0, // Added for live data detection
             magnitudeThreshold: 1.5,   // Lowered for live accelerometer data (was 15)
             minMoveDuration: 0.2,    // Reduced minimum duration for more responsive detection (was 0.3)
-            maxTimeBetweenMoves: 1.5  // Reduced max time between moves for live data (was 2.0)
+            maxTimeBetweenMoves: 1.5,  // Reduced max time between moves for live data (was 2.0)
+            lineWidth: 0.02           // Added for line width setting
         };
         
         this.init();
@@ -498,8 +499,8 @@ export class BoulderVisualizer {
             const endX = Math.cos(moveAngle) * lineEndRadius;
             const endY = Math.sin(moveAngle) * lineEndRadius;
             
-            // Calculate line thickness based on move dynamics (similar to circle radius)
-            const baseThickness = 0.02; // Base thickness
+            // Calculate line thickness based on move dynamics and global lineWidth setting
+            const baseThickness = this.settings.lineWidth; // Use global line width setting
             const dynamicsThickness = baseThickness * (0.5 + enhancedDynamics * 2.0); // Variable thickness
             const cruxThickness = move.isCrux ? dynamicsThickness * 1.5 : dynamicsThickness; // Crux moves get thicker lines
             
@@ -512,8 +513,13 @@ export class BoulderVisualizer {
             const curve = new THREE.CatmullRomCurve3(linePoints);
             const tubeGeometry = new THREE.TubeGeometry(curve, 1, cruxThickness, 8, false);
             
-            // Line color based on move type (crux vs normal)
-            const lineColor = move.isCrux ? this.colors.cruxMove : this.colors.normalMove;
+            // Get base move color (crux vs normal)
+            const baseMoveColor = move.isCrux ? this.colors.cruxMove : this.colors.normalMove;
+            
+            // Create line color: 90% white + 10% move color
+            const whiteColor = new THREE.Color(0xffffff);
+            const moveColor = new THREE.Color(baseMoveColor);
+            const lineColor = whiteColor.clone().lerp(moveColor, 0.1); // 90% white, 10% move color
             
             // Create line material
             const lineMaterial = new THREE.MeshBasicMaterial({
@@ -526,139 +532,7 @@ export class BoulderVisualizer {
             const line = new THREE.Mesh(tubeGeometry, lineMaterial);
             this.moveLines.push(line);
             this.scene.add(line);
-            
-            // Create dot/arrow at the end of the line with size based on dynamics
-            const dotSize = this.settings.dotSize * (0.5 + enhancedDynamics * 1.5); // Variable dot size
-            
-            if (i === 0) {
-                // First move gets a bigger, brighter dot
-                const dotGeometry = new THREE.SphereGeometry(dotSize * 2, 32, 16);
-                const dotMaterial = new THREE.MeshBasicMaterial({
-                    color: lineColor,
-                    transparent: true,
-                    opacity: 1.0 // Full opacity for first dot
-                });
-                
-                const dot = new THREE.Mesh(dotGeometry, dotMaterial);
-                dot.position.set(endX, endY, 0);
-                
-                this.moveLines.push(dot);
-                this.scene.add(dot);
-            } else {
-                // Other moves get arrows pointing in the direction of movement
-                const nextMoveIndex = (i + 1) % moveCount;
-                const nextAngle = nextMoveIndex * anglePerMove + Math.PI / 2;
-                
-                // Calculate direction vector for arrow
-                const directionAngle = nextAngle - moveAngle;
-                
-                const arrow = this.createArrow(endX, endY, directionAngle, lineColor, dotSize);
-                this.moveLines.push(arrow);
-                this.scene.add(arrow);
-            }
         }
-        
-        // No need for start label - first dot will be bigger and brighter
-    }
-    
-    createArrow(x, y, directionAngle, color, dotSize) {
-        // Create arrow geometry pointing in the direction of movement
-        const arrowGroup = new THREE.Group();
-        
-        // Arrow head (triangle)
-        const arrowHeadGeometry = new THREE.ConeGeometry(dotSize * 0.8, dotSize * 1.5, 8);
-        const arrowMaterial = new THREE.MeshBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: this.settings.dotOpacity
-        });
-        
-        const arrowHead = new THREE.Mesh(arrowHeadGeometry, arrowMaterial);
-        
-        // Rotate arrow to point in the correct direction
-        // The cone points up by default, so we need to rotate it
-        arrowHead.rotation.z = -directionAngle + Math.PI / 2;
-        
-        arrowGroup.add(arrowHead);
-        arrowGroup.position.set(x, y, 0);
-        
-        return arrowGroup;
-    }
-    
-    generateAttemptData() {
-        // Generate realistic attempt data for the boulder
-        const attempts = [];
-        const moveCount = this.boulder.moves.length;
-        
-        // Use boulder ID as seed for consistent attempt positioning
-        const boulderSeed = this.boulder.id * 789.123;
-        
-        // Generate random number of people based on maxAttempts setting
-        const basePeople = Math.floor(this.settings.maxAttempts / 3.0); // Base number of people
-        const randomVariation = this.seededRandom(boulderSeed + 999) * 0.6 - 0.3; // ±30% variation
-        const numPeople = Math.max(1, Math.floor(basePeople * (1 + randomVariation)));
-        
-        for (let i = 0; i < numPeople; i++) {
-            // Deterministic angle around the circle for this person
-            // Add PI/2 to align with 12 o'clock start like other elements
-            const baseAngle = this.seededRandom(boulderSeed + i * 100) * Math.PI * 2 + Math.PI / 2;
-            
-            // Number of attempts for this person - random but scales with maxAttempts setting
-            const baseAttemptsPerPerson = Math.max(1, Math.floor(this.settings.maxAttempts / numPeople));
-            
-            // Create realistic distribution: some people try many times, others just a few
-            const personType = this.seededRandom(boulderSeed + i * 200);
-            let numAttempts;
-            
-            if (personType < 0.3) {
-                // 30% are casual climbers (1-2 attempts)
-                numAttempts = Math.floor(1 + this.seededRandom(boulderSeed + i * 201) * 1);
-            } else if (personType < 0.7) {
-                // 40% are regular climbers (2-4 attempts)
-                numAttempts = Math.floor(2 + this.seededRandom(boulderSeed + i * 202) * 2);
-            } else {
-                // 30% are persistent climbers (3-6 attempts)
-                numAttempts = Math.floor(3 + this.seededRandom(boulderSeed + i * 203) * 3);
-            }
-            
-            // Scale with the controller setting
-            const scaleFactor = this.settings.maxAttempts / 45; // 45 is the default maxAttempts
-            numAttempts = Math.max(1, Math.floor(numAttempts * scaleFactor));
-            
-            // Generate multiple attempts for this person
-            const personAttempts = [];
-            let bestCompletion = 0;
-            
-            for (let attemptIndex = 0; attemptIndex < numAttempts; attemptIndex++) {
-                // Each attempt has different completion percentage
-                let completionPercent;
-                
-                if (attemptIndex === 0) {
-                    // First attempt - usually lower
-                    completionPercent = 0.1 + this.seededRandom(boulderSeed + i * 300 + attemptIndex) * 0.4;
-                } else {
-                    // Subsequent attempts - can improve or stay similar
-                    const improvement = this.seededRandom(boulderSeed + i * 400 + attemptIndex) * 0.3; // Possible improvement
-                    const consistency = this.seededRandom(boulderSeed + i * 500 + attemptIndex) * 0.2; // Some randomness
-                    completionPercent = Math.min(1.0, bestCompletion + improvement - consistency + this.seededRandom(boulderSeed + i * 600 + attemptIndex) * 0.2);
-                    completionPercent = Math.max(0.1, completionPercent); // Minimum 10%
-                }
-                
-                bestCompletion = Math.max(bestCompletion, completionPercent);
-                
-                personAttempts.push({
-                    angle: baseAngle, // Same angle for all attempts from this person
-                    completionPercent: completionPercent,
-                    attemptIndex: attemptIndex,
-                    totalAttempts: numAttempts,
-                    personId: i
-                });
-            }
-            
-            attempts.push(...personAttempts);
-        }
-        
-        return attempts;
     }
     
     createAttemptVisualization() {
@@ -1182,31 +1056,10 @@ export class BoulderVisualizer {
             }
         });
         
-        // Update move line materials
+        // Update move line materials (only tube lines now, no dots or arrows)
         this.moveLines.forEach(line => {
-            if (line.material) {
-                // All move line elements now use MeshBasicMaterial (tubes, dots, arrows)
-                if (line.material.type === 'MeshBasicMaterial') {
-                    // For tube lines, use lineOpacity; for dots/arrows, use dotOpacity
-                    // We can distinguish by checking if it's a Mesh with TubeGeometry
-                    if (line.geometry && line.geometry.type === 'TubeGeometry') {
-                        line.material.opacity = this.settings.lineOpacity;
-                    } else {
-                        line.material.opacity = this.settings.dotOpacity;
-                    }
-                } else if (line.material.type === 'LineBasicMaterial') {
-                    // Legacy support for any remaining line materials
-                    line.material.opacity = this.settings.lineOpacity;
-                }
-            }
-            
-            // Handle arrow groups (which contain child meshes)
-            if (line.children && line.children.length > 0) {
-                line.children.forEach(child => {
-                    if (child.material && child.material.type === 'MeshBasicMaterial') {
-                        child.material.opacity = this.settings.dotOpacity;
-                    }
-                });
+            if (line.material && line.material.type === 'MeshBasicMaterial') {
+                line.material.opacity = this.settings.lineOpacity;
             }
         });
         
@@ -1498,5 +1351,81 @@ export class BoulderVisualizer {
             moves: this.currentBoulder.moves?.length || 0,
             lastUpdate: Date.now()
         };
+    }
+
+    generateAttemptData() {
+        // Generate realistic attempt data for the boulder
+        const attempts = [];
+        const moveCount = this.boulder.moves.length;
+        
+        // Use boulder ID as seed for consistent attempt positioning
+        const boulderSeed = this.boulder.id * 789.123;
+        
+        // Generate random number of people based on maxAttempts setting
+        const basePeople = Math.floor(this.settings.maxAttempts / 3.0); // Base number of people
+        const randomVariation = this.seededRandom(boulderSeed + 999) * 0.6 - 0.3; // ±30% variation
+        const numPeople = Math.max(1, Math.floor(basePeople * (1 + randomVariation)));
+        
+        for (let i = 0; i < numPeople; i++) {
+            // Deterministic angle around the circle for this person
+            // Add PI/2 to align with 12 o'clock start like other elements
+            const baseAngle = this.seededRandom(boulderSeed + i * 100) * Math.PI * 2 + Math.PI / 2;
+            
+            // Number of attempts for this person - random but scales with maxAttempts setting
+            const baseAttemptsPerPerson = Math.max(1, Math.floor(this.settings.maxAttempts / numPeople));
+            
+            // Create realistic distribution: some people try many times, others just a few
+            const personType = this.seededRandom(boulderSeed + i * 200);
+            let numAttempts;
+            
+            if (personType < 0.3) {
+                // 30% are casual climbers (1-2 attempts)
+                numAttempts = Math.floor(1 + this.seededRandom(boulderSeed + i * 201) * 1);
+            } else if (personType < 0.7) {
+                // 40% are regular climbers (2-4 attempts)
+                numAttempts = Math.floor(2 + this.seededRandom(boulderSeed + i * 202) * 2);
+            } else {
+                // 30% are persistent climbers (3-6 attempts)
+                numAttempts = Math.floor(3 + this.seededRandom(boulderSeed + i * 203) * 3);
+            }
+            
+            // Scale with the controller setting
+            const scaleFactor = this.settings.maxAttempts / 45; // 45 is the default maxAttempts
+            numAttempts = Math.max(1, Math.floor(numAttempts * scaleFactor));
+            
+            // Generate multiple attempts for this person
+            const personAttempts = [];
+            let bestCompletion = 0;
+            
+            for (let attemptIndex = 0; attemptIndex < numAttempts; attemptIndex++) {
+                // Each attempt has different completion percentage
+                let completionPercent;
+                
+                if (attemptIndex === 0) {
+                    // First attempt - usually lower
+                    completionPercent = 0.1 + this.seededRandom(boulderSeed + i * 300 + attemptIndex) * 0.4;
+                } else {
+                    // Subsequent attempts - can improve or stay similar
+                    const improvement = this.seededRandom(boulderSeed + i * 400 + attemptIndex) * 0.3; // Possible improvement
+                    const consistency = this.seededRandom(boulderSeed + i * 500 + attemptIndex) * 0.2; // Some randomness
+                    completionPercent = Math.min(1.0, bestCompletion + improvement - consistency + this.seededRandom(boulderSeed + i * 600 + attemptIndex) * 0.2);
+                    completionPercent = Math.max(0.1, completionPercent); // Minimum 10%
+                }
+                
+                bestCompletion = Math.max(bestCompletion, completionPercent);
+                
+                personAttempts.push({
+                    angle: baseAngle, // Same angle for all attempts from this person
+                    completionPercent: completionPercent,
+                    attemptIndex: attemptIndex,
+                    totalAttempts: numAttempts,
+                    personId: i
+                });
+            }
+            
+            attempts.push(...personAttempts);
+        }
+        
+        return attempts;
     }
 } 
