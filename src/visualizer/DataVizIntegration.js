@@ -162,6 +162,17 @@ export class DataVizIntegration {
             
             // Generate climbing data based on boulder moves
             generateClimbingDataFromBoulder: (boulder) => {
+                // Safety check for moves data
+                if (!boulder || !boulder.moves || !Array.isArray(boulder.moves) || boulder.moves.length === 0) {
+                    console.warn('DataVizIntegration: Invalid boulder data, creating fallback');
+                    return {
+                        time: Array.from({length: 100}, (_, i) => i * 0.1),
+                        acceleration: Array.from({length: 100}, () => 0.5 + Math.random() * 0.5),
+                        moveAverages: [],
+                        boulder: boulder || { name: 'Unknown', grade: 'V0' }
+                    };
+                }
+                
                 const duration = boulder.moves.length * 2; // 2 seconds per move
                 const samples = duration * this.wearVisualizer.samplingRate;
                 const time = [];
@@ -261,16 +272,16 @@ export class DataVizIntegration {
         const exportBtn = this.dataVizContainer.querySelector('#exportBtn');
         const visualizationMode = this.dataVizContainer.querySelector('#visualizationMode');
         
-        dataSourceSelect.addEventListener('change', () => {
-            this.handleDataSourceChange();
+        dataSourceSelect.addEventListener('change', async () => {
+            await this.handleDataSourceChange();
         });
         
-        routeSelect.addEventListener('change', () => {
-            this.generateMockData();
+        routeSelect.addEventListener('change', async () => {
+            await this.generateMockData();
         });
         
-        generateBtn.addEventListener('click', () => {
-            this.generateMockData();
+        generateBtn.addEventListener('click', async () => {
+            await this.generateMockData();
         });
         
         exportBtn.addEventListener('click', () => {
@@ -295,28 +306,55 @@ export class DataVizIntegration {
         });
     }
     
-    handleDataSourceChange() {
+    async handleDataSourceChange() {
         const dataSourceSelect = this.dataVizContainer.querySelector('#dataSourceSelect');
         const routeSelectContainer = this.dataVizContainer.querySelector('#routeSelectContainer');
         
         if (dataSourceSelect.value === 'mock') {
             routeSelectContainer.style.display = 'flex';
-            this.generateMockData();
+            await this.generateMockData();
         }
     }
     
-    generateMockData() {
+    async generateMockData() {
         const routeSelect = this.dataVizContainer.querySelector('#routeSelect');
         const selectedBoulderID = parseInt(routeSelect.value);
-        const boulders = getBoulderList();
-        const boulder = boulders.find(b => b.id === selectedBoulderID);
         
-        if (boulder) {
-            const data = this.wearVisualizer.generateClimbingDataFromBoulder(boulder);
-            this.wearVisualizer.currentData = data;
-            this.updateVisualization();
-            this.updateStatistics();
+        try {
+            // Import getBoulderById to get full boulder data with moves
+            const { getBoulderById } = await import('../data/boulderData.js');
+            const boulder = await getBoulderById(selectedBoulderID);
+            
+            if (boulder && boulder.moves) {
+                const data = this.wearVisualizer.generateClimbingDataFromBoulder(boulder);
+                this.wearVisualizer.currentData = data;
+                this.updateVisualization();
+                this.updateStatistics();
+            } else {
+                console.warn('DataVizIntegration: No boulder data with moves found for ID:', selectedBoulderID);
+                // Create fallback data
+                this.createFallbackData();
+            }
+        } catch (error) {
+            console.error('DataVizIntegration: Error generating mock data:', error);
+            this.createFallbackData();
         }
+    }
+    
+    /**
+     * Create fallback data when boulder data is not available
+     */
+    createFallbackData() {
+        const fallbackData = {
+            time: Array.from({length: 100}, (_, i) => i * 0.1),
+            acceleration: Array.from({length: 100}, () => 0.5 + Math.random() * 0.5),
+            moveAverages: [],
+            boulder: { name: 'Fallback Data', grade: 'V0' }
+        };
+        
+        this.wearVisualizer.currentData = fallbackData;
+        this.updateVisualization();
+        this.updateStatistics();
     }
     
     updateVisualization() {
