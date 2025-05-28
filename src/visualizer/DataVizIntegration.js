@@ -956,73 +956,194 @@ export class DataVizIntegration {
     }
 
     async regenerateMovesAndSync() {
-        if (!this.currentData || !this.currentBoulder) {
-            console.log('No current data or boulder to regenerate moves for');
+        if (!this.currentBoulder) return;
+        
+        const thresholdSlider = this.dataVizContainer.querySelector('#thresholdRange');
+        const newThreshold = parseFloat(thresholdSlider.value);
+        
+        console.log(`Regenerating moves with threshold ${newThreshold} for boulder ${this.currentBoulder.name}`);
+        
+        // Regenerate moves with new threshold
+        const { detectMovesFromAcceleration } = await import('../data/boulderData.js');
+        const newMoves = detectMovesFromAcceleration(this.currentBoulder.rawData, newThreshold);
+        
+        // Update the boulder object
+        this.currentBoulder.moves = newMoves;
+        
+        // Sync the updated boulder to the Boulder visualizer
+        document.dispatchEvent(new CustomEvent('dataUpdated', {
+            detail: {
+                source: 'dataviz',
+                data: this.currentBoulder
+            }
+        }));
+        
+        console.log(`Regenerated ${newMoves.length} moves and synced to Boulder visualizer`);
+    }
+
+    // Live data support for remote streaming
+    updateWithLiveData(dataBuffer) {
+        if (!dataBuffer || !dataBuffer.time || dataBuffer.time.length === 0) {
             return;
         }
-        
-        try {
-            // Get current threshold
-            const thresholdRange = this.dataVizContainer.querySelector('#thresholdRange');
-            const threshold = thresholdRange ? parseFloat(thresholdRange.value) : 12;
-            
-            console.log(`Regenerating moves with threshold: ${threshold}`);
-            
-            // Detect new moves with current threshold
-            const newMoves = this.detectMoves(this.currentData.time, this.currentData.absoluteAcceleration, threshold);
-            
-            // Convert DataViz moves to Boulder visualizer format
-            const boulderMoves = newMoves.map((move, index) => {
-                // Determine move type based on acceleration magnitude
-                let moveType, dynamics, isCrux;
-                
-                if (move.acceleration > 30) {
-                    moveType = 'dyno';
-                    dynamics = 0.9;
-                    isCrux = true;
-                } else if (move.acceleration > 20) {
-                    moveType = 'dynamic';
-                    dynamics = 0.8;
-                    isCrux = move.acceleration > 25;
-                } else if (move.acceleration > 15) {
-                    moveType = 'powerful';
-                    dynamics = 0.7;
-                    isCrux = false;
-                } else {
-                    moveType = 'static';
-                    dynamics = 0.6;
-                    isCrux = false;
-                }
-                
-                return {
-                    time: move.time,
-                    type: moveType,
-                    dynamics,
-                    isCrux,
-                    acceleration: move.acceleration,
-                    description: `${moveType} move (${move.acceleration.toFixed(1)} m/s²)`
-                };
-            });
-            
-            // Update the current boulder with new moves
-            this.currentBoulder.moves = boulderMoves;
-            
-            console.log(`Updated boulder with ${boulderMoves.length} moves (threshold: ${threshold})`);
-            
-            // Emit data update event to sync with Boulder visualizer
-            document.dispatchEvent(new CustomEvent('dataUpdated', {
-                detail: { 
-                    source: 'dataviz', 
-                    data: { 
-                        boulder: this.currentBoulder,
-                        threshold: threshold,
-                        moveCount: boulderMoves.length
-                    }
-                }
-            }));
-            
-        } catch (error) {
-            console.error('Error regenerating moves:', error);
+
+        // Create live data traces for plotting
+        this.createLiveDataPlot(dataBuffer);
+    }
+
+    async createLiveDataPlot(dataBuffer) {
+        await this.ensurePlotlyLoaded();
+
+        const plotContainer = this.dataVizContainer.querySelector('#accelerationPlot');
+        if (!plotContainer) {
+            console.warn('Plot container not found for live data');
+            return;
         }
+
+        // Prepare data for plotting
+        const timeData = dataBuffer.time;
+        const accXData = dataBuffer.accX;
+        const accYData = dataBuffer.accY;
+        const accZData = dataBuffer.accZ;
+
+        // Calculate magnitude
+        const magnitudeData = timeData.map((_, i) => {
+            return Math.sqrt(
+                accXData[i] * accXData[i] + 
+                accYData[i] * accYData[i] + 
+                accZData[i] * accZData[i]
+            );
+        });
+
+        // Create traces
+        const traces = [
+            {
+                x: timeData,
+                y: accXData,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Acceleration X',
+                line: { color: '#ff6b6b', width: 2 }
+            },
+            {
+                x: timeData,
+                y: accYData,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Acceleration Y',
+                line: { color: '#4ecdc4', width: 2 }
+            },
+            {
+                x: timeData,
+                y: accZData,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Acceleration Z',
+                line: { color: '#45b7d1', width: 2 }
+            },
+            {
+                x: timeData,
+                y: magnitudeData,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Magnitude',
+                line: { color: '#f9ca24', width: 3 }
+            }
+        ];
+
+        // Layout configuration
+        const layout = {
+            title: {
+                text: 'Live Acceleration Data Stream',
+                font: { color: '#00ffcc', size: 18 }
+            },
+            xaxis: {
+                title: 'Time (s)',
+                color: '#00ffcc',
+                gridcolor: '#444444'
+            },
+            yaxis: {
+                title: 'Acceleration (m/s²)',
+                color: '#00ffcc',
+                gridcolor: '#444444'
+            },
+            plot_bgcolor: 'rgba(0,0,0,0.8)',
+            paper_bgcolor: 'rgba(0,0,0,0.8)',
+            font: { color: '#00ffcc' },
+            legend: {
+                font: { color: '#00ffcc' }
+            },
+            margin: { t: 50, r: 50, b: 50, l: 50 }
+        };
+
+        // Plot configuration
+        const config = {
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['pan2d', 'select2d', 'lasso2d', 'autoScale2d'],
+            displaylogo: false
+        };
+
+        try {
+            // Create or update the plot
+            await Plotly.react(plotContainer, traces, layout, config);
+
+            // Update live data statistics
+            this.updateLiveDataStatistics(dataBuffer, magnitudeData);
+
+            console.log(`Live data plot updated with ${timeData.length} data points`);
+
+        } catch (error) {
+            console.error('Error creating live data plot:', error);
+        }
+    }
+
+    updateLiveDataStatistics(dataBuffer, magnitudeData) {
+        // Update statistics display with live data
+        const maxAccel = Math.max(...magnitudeData);
+        const avgAccel = magnitudeData.reduce((a, b) => a + b, 0) / magnitudeData.length;
+        const duration = dataBuffer.time.length > 0 ? 
+            dataBuffer.time[dataBuffer.time.length - 1] - dataBuffer.time[0] : 0;
+
+        // Detect moves in live data
+        const threshold = parseFloat(this.dataVizContainer.querySelector('#thresholdRange')?.value || 12);
+        const moves = this.detectMoves(dataBuffer.time, magnitudeData, threshold);
+
+        // Update UI elements
+        const maxAccelEl = this.dataVizContainer.querySelector('#maxAccel');
+        const avgAccelEl = this.dataVizContainer.querySelector('#avgAccel');
+        const moveCountEl = this.dataVizContainer.querySelector('#moveCount');
+        const durationEl = this.dataVizContainer.querySelector('#duration');
+        const sampleCountEl = this.dataVizContainer.querySelector('#sampleCount');
+
+        if (maxAccelEl) maxAccelEl.textContent = maxAccel.toFixed(1);
+        if (avgAccelEl) avgAccelEl.textContent = avgAccel.toFixed(1);
+        if (moveCountEl) moveCountEl.textContent = moves.length;
+        if (durationEl) durationEl.textContent = duration.toFixed(1);
+        if (sampleCountEl) sampleCountEl.textContent = dataBuffer.time.length;
+    }
+
+    // Check if currently displaying live data
+    isDisplayingLiveData() {
+        return this.currentData && this.currentData.isLive;
+    }
+
+    // Clear live data and return to normal mode
+    clearLiveData() {
+        if (this.isDisplayingLiveData()) {
+            this.currentData = null;
+            const plotContainer = this.dataVizContainer.querySelector('#accelerationPlot');
+            if (plotContainer) {
+                Plotly.purge(plotContainer);
+            }
+        }
+    }
+
+    // Get live data status
+    getLiveDataStatus() {
+        return {
+            isDisplayingLive: this.isDisplayingLiveData(),
+            lastUpdate: Date.now()
+        };
     }
 } 

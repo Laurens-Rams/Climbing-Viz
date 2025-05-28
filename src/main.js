@@ -4,6 +4,7 @@ import { BoulderVisualizer } from './visualizer/BoulderVisualizer.js';
 import { BoulderControlPanel } from './controls/BoulderControlPanel.js';
 import { getBoulderById } from './data/boulderData.js';
 import { DataVizIntegration } from './visualizer/DataVizIntegration.js';
+import RemoteDataHandler from './data/RemoteDataHandler.js';
 
 console.log('main.js imports completed');
 
@@ -23,6 +24,7 @@ class BoulderVisualizerApp {
             this.dataVizIntegration = null;
             this.currentBoulder = null;
             this.currentView = 'boulder'; // 'boulder' or 'dataviz'
+            this.isRemoteMode = false;
             
             // Global state management
             this.globalState = {
@@ -65,6 +67,10 @@ class BoulderVisualizerApp {
             this.dataVizIntegration = new DataVizIntegration(this.container);
             console.log('DataViz integration created');
             
+            // Initialize remote data handler
+            this.remoteHandler = new RemoteDataHandler();
+            this.setupRemoteHandlers();
+            
             // Load initial boulder
             this.showLoading('Loading acceleration data...');
             console.log('Loading initial boulder...');
@@ -86,6 +92,9 @@ class BoulderVisualizerApp {
             // Hide loading
             this.hideLoading();
             console.log('Loading hidden');
+            
+            // Setup cross-view synchronization
+            this.setupGlobalSync();
             
             console.log('BoulderVisualizerApp.init() completed successfully');
             
@@ -111,6 +120,7 @@ class BoulderVisualizerApp {
             border-radius: 10px;
             padding: 5px;
             gap: 5px;
+            align-items: center;
         `;
         
         // Create boulder tab
@@ -142,6 +152,85 @@ class BoulderVisualizerApp {
             cursor: pointer;
             transition: all 0.3s ease;
         `;
+
+        // Create remote toggle button
+        const remoteToggle = document.createElement('button');
+        remoteToggle.id = 'remote-toggle';
+        remoteToggle.textContent = '📱 Remote: OFF';
+        remoteToggle.className = 'tab-button remote-off';
+        remoteToggle.style.cssText = `
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(239, 68, 68, 0.8);
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-left: 10px;
+        `;
+        remoteToggle.onclick = () => this.toggleRemoteMode();
+
+        // Create recording controls container (initially hidden)
+        const recordingControls = document.createElement('div');
+        recordingControls.id = 'recording-controls';
+        recordingControls.style.cssText = `
+            display: none;
+            gap: 5px;
+            align-items: center;
+            margin-left: 10px;
+        `;
+
+        // Start recording button
+        const startRecordingBtn = document.createElement('button');
+        startRecordingBtn.id = 'start-recording';
+        startRecordingBtn.textContent = '🔴 Start';
+        startRecordingBtn.style.cssText = `
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(34, 197, 94, 0.8);
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        `;
+        startRecordingBtn.onclick = () => this.startRecording();
+
+        // Stop recording button
+        const stopRecordingBtn = document.createElement('button');
+        stopRecordingBtn.id = 'stop-recording';
+        stopRecordingBtn.textContent = '⏹️ Stop';
+        stopRecordingBtn.style.cssText = `
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(239, 68, 68, 0.8);
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: none;
+        `;
+        stopRecordingBtn.onclick = () => this.stopRecording();
+
+        // Recording status
+        const recordingStatus = document.createElement('div');
+        recordingStatus.id = 'recording-status';
+        recordingStatus.style.cssText = `
+            color: #fff;
+            font-size: 12px;
+            padding: 5px 10px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 4px;
+            min-width: 120px;
+            text-align: center;
+        `;
+
+        // Add elements to recording controls
+        recordingControls.appendChild(startRecordingBtn);
+        recordingControls.appendChild(stopRecordingBtn);
+        recordingControls.appendChild(recordingStatus);
         
         // Tab switching logic
         boulderTab.addEventListener('click', () => {
@@ -160,16 +249,49 @@ class BoulderVisualizerApp {
             boulderTab.style.color = '#fff';
         });
         
+        // Add all elements to tab container
         tabContainer.appendChild(boulderTab);
         tabContainer.appendChild(dataVizTab);
+        tabContainer.appendChild(remoteToggle);
+        tabContainer.appendChild(recordingControls);
         document.body.appendChild(tabContainer);
         
         this.tabContainer = tabContainer;
         this.boulderTab = boulderTab;
         this.dataVizTab = dataVizTab;
+        this.remoteToggle = remoteToggle;
+        this.recordingControls = recordingControls;
+        
+        // Add CSS for remote button states
+        this.addRemoteStyles();
         
         // Add keyboard controls
         this.setupKeyboardControls();
+    }
+    
+    addRemoteStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
+            .remote-on {
+                background: rgba(34, 197, 94, 0.8) !important;
+                box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+            }
+            
+            .remote-off {
+                background: rgba(239, 68, 68, 0.8) !important;
+            }
+            
+            .recording-active {
+                animation: pulse 2s infinite;
+            }
+            
+            @keyframes pulse {
+                0% { opacity: 1; }
+                50% { opacity: 0.7; }
+                100% { opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
     }
     
     switchToView(view) {
@@ -553,6 +675,140 @@ class BoulderVisualizerApp {
                     break;
             }
         });
+    }
+
+    setupRemoteHandlers() {
+        // Set up remote data callbacks
+        this.remoteHandler.setDataCallback((data) => {
+            this.handleRemoteData(data);
+        });
+        
+        this.remoteHandler.setRecordingStateCallback((isRecording) => {
+            this.updateRemoteUI(isRecording);
+        });
+    }
+
+    handleRemoteData(data) {
+        if (!this.isRemoteMode) return;
+        
+        // Update boulder visualizer with live data
+        if (this.currentView === 'boulder' && this.visualizer) {
+            this.visualizer.updateWithLiveData(data.buffer);
+        }
+        
+        // Update data viz with live data
+        if (this.currentView === 'dataviz' && this.dataVizIntegration) {
+            this.dataVizIntegration.updateWithLiveData(data.buffer);
+        }
+        
+        // Update status display
+        const status = this.remoteHandler.getRecordingStatus();
+        this.updateRecordingStatus(status);
+    }
+
+    async toggleRemoteMode() {
+        this.isRemoteMode = !this.isRemoteMode;
+        const remoteToggle = document.getElementById('remote-toggle');
+        const recordingControls = document.getElementById('recording-controls');
+        
+        if (this.isRemoteMode) {
+            // Check connection first
+            const isConnected = await this.remoteHandler.checkRemoteConnection();
+            if (!isConnected) {
+                alert('Cannot connect to remote device at ' + this.remoteHandler.getRemoteUrl());
+                this.isRemoteMode = false;
+                return;
+            }
+            
+            remoteToggle.textContent = '📱 Remote: ON';
+            remoteToggle.className = 'tab-button remote-on';
+            recordingControls.style.display = 'flex';
+            
+            this.showNotification('Remote mode enabled - Connected to ' + this.remoteHandler.getRemoteUrl(), 'success');
+        } else {
+            // Stop recording if active
+            if (this.remoteHandler.isRecording) {
+                await this.stopRecording();
+            }
+            
+            remoteToggle.textContent = '📱 Remote: OFF';
+            remoteToggle.className = 'tab-button remote-off';
+            recordingControls.style.display = 'none';
+            
+            this.showNotification('Remote mode disabled', 'info');
+        }
+    }
+
+    async startRecording() {
+        try {
+            await this.remoteHandler.startRecording();
+            
+            document.getElementById('start-recording').style.display = 'none';
+            document.getElementById('stop-recording').style.display = 'block';
+            
+            this.showNotification('Recording started', 'success');
+        } catch (error) {
+            console.error('Failed to start recording:', error);
+            this.showNotification('Failed to start recording: ' + error.message, 'error');
+        }
+    }
+
+    async stopRecording() {
+        try {
+            const result = await this.remoteHandler.stopRecording();
+            
+            document.getElementById('start-recording').style.display = 'block';
+            document.getElementById('stop-recording').style.display = 'none';
+            
+            if (result) {
+                this.showNotification(`Recording saved as ${result.filename}`, 'success');
+                
+                // Optionally load the new data into the visualizer
+                if (confirm('Load the recorded data into the visualizer?')) {
+                    await this.loadRecordedData(result);
+                }
+            } else {
+                this.showNotification('Recording stopped (no data recorded)', 'info');
+            }
+        } catch (error) {
+            console.error('Failed to stop recording:', error);
+            this.showNotification('Failed to stop recording: ' + error.message, 'error');
+        }
+    }
+
+    async loadRecordedData(recordingResult) {
+        // Convert the recorded data to boulder format and load it
+        // This would integrate with the existing CSV loading system
+        console.log('Loading recorded data:', recordingResult.filename);
+        // Implementation would depend on how you want to integrate with existing boulder loading
+    }
+
+    updateRemoteUI(isRecording) {
+        const startBtn = document.getElementById('start-recording');
+        const stopBtn = document.getElementById('stop-recording');
+        
+        if (isRecording) {
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'block';
+            stopBtn.classList.add('recording-active');
+        } else {
+            startBtn.style.display = 'block';
+            stopBtn.style.display = 'none';
+            stopBtn.classList.remove('recording-active');
+        }
+    }
+
+    updateRecordingStatus(status) {
+        const statusElement = document.getElementById('recording-status');
+        if (statusElement && status.isRecording) {
+            statusElement.textContent = `Recording: ${status.dataPoints} points (${status.duration.toFixed(1)}s)`;
+        } else if (statusElement) {
+            statusElement.textContent = '';
+        }
+    }
+
+    setupGlobalSync() {
+        // Implement cross-view synchronization logic here
     }
 }
 

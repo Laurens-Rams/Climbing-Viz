@@ -65,7 +65,8 @@ export class BoulderVisualizer {
             attemptThickness: 0.3,   // Base thickness of attempt lines
             attemptIntensity: 2,     // Visual intensity multiplier
             maxAttempts: 45,         // Maximum number of attempts to show
-            attemptRadius: 1.3       // Multiplier for attempt end radius (relative to max radius)
+            attemptRadius: 1.3,       // Multiplier for attempt end radius (relative to max radius)
+            moveDetectionThreshold: 15.0 // Added for live data detection
         };
         
         this.init();
@@ -1109,5 +1110,123 @@ export class BoulderVisualizer {
     
     start() {
         this.animate();
+    }
+
+    // Live data support for remote streaming
+    updateWithLiveData(dataBuffer) {
+        if (!dataBuffer || !dataBuffer.time || dataBuffer.time.length === 0) {
+            return;
+        }
+
+        // Create a temporary boulder object from live data
+        const liveBoulder = this.createLiveBoulder(dataBuffer);
+        
+        // Update the visualization with live data
+        this.loadBoulder(liveBoulder);
+    }
+
+    createLiveBoulder(dataBuffer) {
+        // Convert live acceleration data to boulder format
+        const rawData = [];
+        for (let i = 0; i < dataBuffer.time.length; i++) {
+            rawData.push({
+                time: dataBuffer.time[i],
+                accX: dataBuffer.accX[i],
+                accY: dataBuffer.accY[i],
+                accZ: dataBuffer.accZ[i]
+            });
+        }
+
+        // Detect moves from live data using the same algorithm as CSV processing
+        const moves = this.detectMovesFromLiveData(rawData);
+
+        return {
+            id: 'live',
+            name: 'Live Data Stream',
+            type: 'live',
+            grade: 'V?',
+            moves: moves,
+            rawData: rawData,
+            isLive: true
+        };
+    }
+
+    detectMovesFromLiveData(rawData) {
+        if (!rawData || rawData.length < 10) {
+            return [];
+        }
+
+        // Use the same move detection algorithm as in boulderData.js
+        const threshold = this.settings.moveDetectionThreshold || 15.0;
+        const moves = [];
+        let moveIndex = 0;
+
+        // Add starting position at time 0
+        if (rawData.length > 0) {
+            moves.push({
+                id: moveIndex++,
+                time: 0,
+                type: 'start',
+                dynamics: 0.5,
+                isCrux: false,
+                accX: rawData[0].accX,
+                accY: rawData[0].accY,
+                accZ: rawData[0].accZ
+            });
+        }
+
+        // Calculate acceleration magnitude for each point
+        const accelerationMagnitudes = rawData.map(point => {
+            return Math.sqrt(point.accX * point.accX + point.accY * point.accY + point.accZ * point.accZ);
+        });
+
+        // Find peaks above threshold
+        for (let i = 1; i < accelerationMagnitudes.length - 1; i++) {
+            const current = accelerationMagnitudes[i];
+            const prev = accelerationMagnitudes[i - 1];
+            const next = accelerationMagnitudes[i + 1];
+
+            // Check if this is a peak above threshold
+            if (current > threshold && current > prev && current > next) {
+                // Avoid moves too close together (minimum 0.5 seconds apart)
+                const lastMoveTime = moves.length > 0 ? moves[moves.length - 1].time : -1;
+                if (rawData[i].time - lastMoveTime > 0.5) {
+                    const dynamics = Math.min((current - 10) / 20, 1.0); // Normalize to 0-1
+                    
+                    moves.push({
+                        id: moveIndex++,
+                        time: rawData[i].time,
+                        type: 'move',
+                        dynamics: Math.max(0.1, dynamics),
+                        isCrux: current > threshold * 1.5,
+                        accX: rawData[i].accX,
+                        accY: rawData[i].accY,
+                        accZ: rawData[i].accZ
+                    });
+                }
+            }
+        }
+
+        console.log(`Detected ${moves.length} moves from live data (${rawData.length} data points)`);
+        return moves;
+    }
+
+    // Check if currently displaying live data
+    isDisplayingLiveData() {
+        return this.currentBoulder && this.currentBoulder.isLive;
+    }
+
+    // Get live data status
+    getLiveDataStatus() {
+        if (!this.isDisplayingLiveData()) {
+            return { isLive: false };
+        }
+
+        return {
+            isLive: true,
+            dataPoints: this.currentBoulder.rawData?.length || 0,
+            moves: this.currentBoulder.moves?.length || 0,
+            lastUpdate: Date.now()
+        };
     }
 } 
