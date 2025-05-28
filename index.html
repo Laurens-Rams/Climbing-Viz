@@ -102,6 +102,14 @@
         </div>
     </div>
     
-    <script type="module" src="/src/main.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+                "dat.gui": "https://unpkg.com/dat.gui@0.7.9/build/dat.gui.module.js"
+            }
+        }
+    </script>
+    <script type="module" src="/src/main.js?v=2024-12-19-12-05"></script>
 </body>
 </html> 

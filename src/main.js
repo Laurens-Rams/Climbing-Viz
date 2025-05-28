@@ -1,6 +1,7 @@
 import { BoulderVisualizer } from './visualizer/BoulderVisualizer.js';
 import { BoulderControlPanel } from './controls/BoulderControlPanel.js';
 import { getBoulderById } from './data/boulderData.js';
+import { DataVizIntegration } from './visualizer/DataVizIntegration.js';
 
 class BoulderVisualizerApp {
     constructor() {
@@ -8,7 +9,9 @@ class BoulderVisualizerApp {
         this.loadingElement = document.getElementById('loading');
         this.visualizer = null;
         this.controlPanel = null;
+        this.dataVizIntegration = null;
         this.currentBoulder = null;
+        this.currentView = 'boulder'; // 'boulder' or 'dataviz'
         
         this.init();
     }
@@ -16,10 +19,16 @@ class BoulderVisualizerApp {
     async init() {
         try {
             // Show loading
-            this.showLoading('Initializing 3D boulder visualizer...');
+            this.showLoading('Initializing climbing visualizer...');
             
-            // Initialize visualizer
+            // Create tab system
+            this.createTabSystem();
+            
+            // Initialize boulder visualizer
             this.visualizer = new BoulderVisualizer(this.container);
+            
+            // Initialize DataViz integration
+            this.dataVizIntegration = new DataVizIntegration(this.container);
             
             // Load initial boulder
             this.showLoading('Loading boulder data...');
@@ -45,6 +54,103 @@ class BoulderVisualizerApp {
         }
     }
     
+    createTabSystem() {
+        // Create tab container
+        const tabContainer = document.createElement('div');
+        tabContainer.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            display: flex;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            padding: 5px;
+            gap: 5px;
+        `;
+        
+        // Create boulder tab
+        const boulderTab = document.createElement('button');
+        boulderTab.textContent = '🧗‍♂️ Boulder Visualizer';
+        boulderTab.style.cssText = `
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #00ffcc;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        `;
+        
+        // Create DataViz tab
+        const dataVizTab = document.createElement('button');
+        dataVizTab.textContent = '📊 Acceleration Data';
+        dataVizTab.style.cssText = `
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        `;
+        
+        // Tab switching logic
+        boulderTab.addEventListener('click', () => {
+            this.switchToView('boulder');
+            boulderTab.style.background = '#00ffcc';
+            boulderTab.style.color = '#000';
+            dataVizTab.style.background = 'rgba(255, 255, 255, 0.2)';
+            dataVizTab.style.color = '#fff';
+        });
+        
+        dataVizTab.addEventListener('click', () => {
+            this.switchToView('dataviz');
+            dataVizTab.style.background = '#00ffcc';
+            dataVizTab.style.color = '#000';
+            boulderTab.style.background = 'rgba(255, 255, 255, 0.2)';
+            boulderTab.style.color = '#fff';
+        });
+        
+        tabContainer.appendChild(boulderTab);
+        tabContainer.appendChild(dataVizTab);
+        document.body.appendChild(tabContainer);
+        
+        this.tabContainer = tabContainer;
+        this.boulderTab = boulderTab;
+        this.dataVizTab = dataVizTab;
+    }
+    
+    switchToView(view) {
+        this.currentView = view;
+        
+        if (view === 'boulder') {
+            // Show boulder visualizer
+            this.container.style.display = 'block';
+            this.dataVizIntegration.hide();
+            if (this.controlPanel) {
+                this.controlPanel.show();
+            }
+            
+            // Refresh the boulder visualizer with latest acceleration data
+            if (this.currentBoulder && this.visualizer) {
+                console.log('Refreshing boulder visualizer with acceleration data');
+                this.visualizer.updateDynamicsFromAcceleration();
+                this.visualizer.createVisualization();
+            }
+        } else if (view === 'dataviz') {
+            // Show DataViz
+            this.container.style.display = 'none';
+            this.dataVizIntegration.show();
+            if (this.controlPanel) {
+                this.controlPanel.hide();
+            }
+        }
+    }
+    
     async loadInitialBoulder() {
         return new Promise((resolve) => {
             // Simulate loading time for better UX
@@ -60,7 +166,23 @@ class BoulderVisualizerApp {
     }
     
     setupControls() {
-        this.controlPanel = new BoulderControlPanel(this.visualizer);
+        this.controlPanel = new BoulderControlPanel(this.visualizer, this.dataVizIntegration);
+        
+        // Set up boulder change listener
+        this.controlPanel.onBoulderChange = (boulder) => {
+            this.updateCurrentBoulder(boulder);
+        };
+    }
+    
+    updateCurrentBoulder(boulder) {
+        this.currentBoulder = boulder;
+        
+        // Notify DataViz integration if it exists
+        if (this.dataVizIntegration) {
+            this.dataVizIntegration.updateFromMainApp(boulder);
+        }
+        
+        console.log('Current boulder updated:', boulder.name);
     }
     
     showLoading(message = 'Loading...') {
@@ -94,21 +216,22 @@ class BoulderVisualizerApp {
             text-align: center;
             z-index: 1000;
             font-family: Arial, sans-serif;
-            max-width: 450px;
+            max-width: 500px;
         `;
         
         welcome.innerHTML = `
-            <h2 style="margin: 0 0 15px 0; color: #00ffcc;">🧗‍♂️ Boulder Visualizer Ready!</h2>
+            <h2 style="margin: 0 0 15px 0; color: #00ffcc;">🧗‍♂️ Climbing Visualizer Ready!</h2>
             <p style="margin: 0 0 15px 0; color: #cccccc;">
-                Visualize boulder problems with liquid-like concentric rings.<br>
-                Each ring shows the move sequence and dynamics.
+                Two visualization modes available:<br>
+                <strong>Boulder Visualizer:</strong> Liquid-like concentric rings<br>
+                <strong>Acceleration Data:</strong> Real sensor data analysis
             </p>
-            <p style="margin: 0 0 20px 0; color: #cccccc; font-size: 14px;">
+            <p style="margin: 0 0 15px 0; color: #cccccc; font-size: 14px;">
                 • <span style="color: #00ffcc;">Turquoise</span> = Crux moves<br>
                 • <span style="color: #ffffff;">White</span> = Normal moves<br>
                 • Spikes = Dynamic/powerful moves<br>
-                • Center = Grade with color coding<br>
-                • Use controls to change boulders & settings
+                • Switch tabs to explore both views<br>
+                • Upload CSV files for real data analysis
             </p>
             <button id="start-exploring" style="
                 background: #00ffcc;
@@ -129,12 +252,12 @@ class BoulderVisualizerApp {
             welcome.remove();
         });
         
-        // Auto-remove after 12 seconds
+        // Auto-remove after 15 seconds
         setTimeout(() => {
             if (welcome.parentNode) {
                 welcome.remove();
             }
-        }, 12000);
+        }, 15000);
     }
     
     // Export boulder data functionality
@@ -169,16 +292,43 @@ class BoulderVisualizerApp {
         };
         reader.readAsText(file);
     }
+    
+    // Method to update boulder visualizer with DataViz data
+    updateBoulderWithDataVizData(boulder) {
+        if (boulder.type === 'csv' && this.dataVizIntegration) {
+            // Get move averages from DataViz
+            const moveAverages = this.dataVizIntegration.getCurrentMoveAverages();
+            const heatmapData = this.dataVizIntegration.getCurrentHeatmapData();
+            
+            if (moveAverages.length > 0) {
+                // Convert DataViz move averages to boulder moves format
+                boulder.moves = moveAverages.map(avg => ({
+                    sequence: avg.sequence,
+                    dynamics: Math.min(avg.average, 1.0), // Normalize to 0-1 range
+                    isCrux: avg.average > (heatmapData?.avgAcceleration || 0.5), // Use heatmap for crux detection
+                    type: avg.type || (avg.average > 0.7 ? 'dynamic' : 'static'),
+                    description: `Move ${avg.sequence} - ${avg.average.toFixed(2)}g`
+                }));
+                
+                console.log('Updated boulder with DataViz data:', boulder);
+            }
+        }
+        
+        return boulder;
+    }
 }
 
 // Initialize the application when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    window.boulderApp = new BoulderVisualizerApp();
+    const app = new BoulderVisualizerApp();
+    
+    // Expose app globally for DataViz integration
+    window.app = app;
 });
 
 // Handle page visibility changes to pause/resume animation
 document.addEventListener('visibilitychange', () => {
-    if (window.boulderApp && window.boulderApp.visualizer) {
+    if (window.app && window.app.visualizer) {
         if (document.hidden) {
             // Page is hidden, could pause animation here if needed
         } else {
