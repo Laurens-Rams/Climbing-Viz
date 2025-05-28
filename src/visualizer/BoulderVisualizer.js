@@ -251,8 +251,10 @@ export class BoulderVisualizer {
     }
     
     createCenterGrade() {
-        // Create a colored circle in the center with the grade
-        const gradeColor = this.colors.gradeColors[this.boulder.grade] || 0xffffff;
+        // Create a colored circle in the center with the CSV name or move count
+        // Since we no longer have grades, we'll use a default color or base it on move count
+        const moveCount = this.boulder.moves?.length || 0;
+        const gradeColor = this.getColorForMoveCount(moveCount);
         
         // Create center circle that fills the base radius completely
         const centerGeometry = new THREE.CircleGeometry(this.settings.baseRadius * this.settings.radiusMultiplier, 64);
@@ -264,11 +266,20 @@ export class BoulderVisualizer {
         this.centerCircle = new THREE.Mesh(centerGeometry, centerMaterial);
         this.scene.add(this.centerCircle);
         
-        // Create grade text using canvas texture
-        this.createGradeText(this.boulder.grade, gradeColor);
+        // Create text using move count or CSV name
+        this.createCenterText(moveCount, gradeColor);
     }
     
-    createGradeText(grade, gradeColor) {
+    getColorForMoveCount(moveCount) {
+        // Color based on move count (difficulty estimation)
+        if (moveCount <= 5) return 0x4CAF50;      // Green - Easy
+        if (moveCount <= 8) return 0xFFC107;      // Yellow - Moderate  
+        if (moveCount <= 12) return 0xFF9800;     // Orange - Hard
+        if (moveCount <= 16) return 0xF44336;     // Red - Very Hard
+        return 0x9C27B0;                          // Purple - Extreme
+    }
+    
+    createCenterText(moveCount, gradeColor) {
         // Create high-resolution canvas for text
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
@@ -276,15 +287,20 @@ export class BoulderVisualizer {
         canvas.height = 512;
         
         // Set font and text properties with higher resolution
-        context.font = 'bold 320px Arial';
+        context.font = 'bold 280px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         
         // Fill text with white color
         context.fillStyle = '#ffffff';
-        // Extract just the number from the grade (V1 -> 1, V7 -> 7, etc.)
-        const gradeNumber = grade.replace('V', '');
-        context.fillText(gradeNumber, canvas.width / 2, canvas.height / 2 + 20);
+        
+        // Display move count in the center
+        const displayText = moveCount.toString();
+        context.fillText(displayText, canvas.width / 2, canvas.height / 2);
+        
+        // Add small label below the number
+        context.font = 'bold 80px Arial';
+        context.fillText('moves', canvas.width / 2, canvas.height / 2 + 120);
         
         // Create texture from canvas
         const texture = new THREE.CanvasTexture(canvas);
