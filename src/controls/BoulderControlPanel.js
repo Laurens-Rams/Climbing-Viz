@@ -12,15 +12,17 @@ export class BoulderControlPanel {
         this.setupControls();
     }
     
-    setupControls() {
+    async setupControls() {
         // Boulder Selection
         const boulderFolder = this.gui.addFolder('🧗 Boulder Selection');
         
-        const boulderList = getBoulderList();
+        // Get boulder list asynchronously
+        const boulderList = await getBoulderList();
         console.log('Available boulders:', boulderList);
         const boulderNames = {};
         boulderList.forEach(boulder => {
-            const displayName = `${boulder.name} (${boulder.grade}) - Real Data`;
+            // Use CSV filename as the display name
+            const displayName = `${boulder.name} - ${boulder.csvFile}`;
             boulderNames[displayName] = boulder.id;
         });
         console.log('Boulder names for dropdown:', boulderNames);
@@ -29,7 +31,7 @@ export class BoulderControlPanel {
         this.boulderSelection = { boulder: this.currentBoulderId };
         
         boulderFolder.add(this.boulderSelection, 'boulder', boulderNames)
-            .name('Select Boulder')
+            .name('Select CSV Data')
             .onChange((boulderId) => {
                 console.log('Boulder selection changed to:', boulderId);
                 this.currentBoulderId = boulderId;
@@ -41,11 +43,11 @@ export class BoulderControlPanel {
             reloadCurrent: () => this.loadBoulder(this.currentBoulderId)
         };
         
-        boulderFolder.add(boulderControls, 'randomBoulder').name('🎲 Random Boulder');
+        boulderFolder.add(boulderControls, 'randomBoulder').name('🎲 Random CSV');
         boulderFolder.add(boulderControls, 'reloadCurrent').name('🔄 Reload');
         
         boulderFolder.open();
-
+        
         // Acceleration Analysis Settings
         const analysisFolder = this.gui.addFolder('🔬 Analysis Settings');
         
@@ -365,7 +367,7 @@ export class BoulderControlPanel {
         
         infoElement.innerHTML = `
             <h3 style="margin: 0 0 10px 0; color: #00ffcc;">${boulder.name}</h3>
-            <div><strong>Grade:</strong> ${boulder.grade}</div>
+            <div><strong>CSV File:</strong> ${boulder.csvFile || 'Unknown'}</div>
             <div><strong>Type:</strong> ${boulder.type === 'csv' ? 'Real Sensor Data' : 'Mock Data'}</div>
             <div><strong>Moves:</strong> ${moveCount}</div>
             <div style="margin-top: 8px; font-size: 12px;">${boulder.description}</div>

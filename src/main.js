@@ -36,7 +36,7 @@ class BoulderVisualizerApp {
             
             // Setup control panel
             this.showLoading('Setting up controls...');
-            this.setupControls();
+            await this.setupControls();
             
             // Start the visualization
             this.showLoading('Starting visualization...');
@@ -173,8 +173,9 @@ class BoulderVisualizerApp {
         }
     }
     
-    setupControls() {
+    async setupControls() {
         this.controlPanel = new BoulderControlPanel(this.visualizer, this.dataVizIntegration);
+        // The control panel now handles its own async setup
     }
     
     showLoading(message = 'Loading...') {
@@ -214,17 +215,18 @@ class BoulderVisualizerApp {
         welcome.innerHTML = `
             <h2 style="margin: 0 0 15px 0; color: #00ffcc;">🧗‍♂️ Climbing Visualizer Ready!</h2>
             <p style="margin: 0 0 15px 0; line-height: 1.4;">
-                Real acceleration data from climbing sensors is now being analyzed and visualized.
+                Real acceleration data from CSV files is now being analyzed and visualized.
             </p>
             <div style="font-size: 14px; color: #888; margin-bottom: 20px;">
                 <strong>Features:</strong><br>
-                • Real-time move detection from acceleration data<br>
+                • Real-time move detection from CSV acceleration data<br>
                 • Dynamic visualization based on climbing intensity<br>
                 • Adjustable analysis parameters<br>
-                • Switch between Boulder and Data views
+                • Switch between Boulder and Data views<br>
+                • Support for multiple CSV files (Raw Data.csv, Raw Data1.csv, etc.)
             </div>
             <div style="font-size: 12px; color: #666;">
-                <strong>Controls:</strong> R = Random Boulder | C = Reset Camera | 1/2/3 = Camera Views
+                <strong>Controls:</strong> R = Random CSV | C = Reset Camera | 1/2/3 = Camera Views
             </div>
             <button onclick="this.parentElement.remove()" 
                     style="margin-top: 20px; background: #00ffcc; color: #000; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">

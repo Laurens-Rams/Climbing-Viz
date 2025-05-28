@@ -134,7 +134,7 @@ export class DataVizIntegration {
             this.setupEventListeners();
             
             // Populate boulder routes
-            this.populateBoulderRoutes();
+            await this.populateBoulderRoutes();
             
             // Generate initial data
             this.generateMockData();
@@ -293,15 +293,15 @@ export class DataVizIntegration {
         });
     }
     
-    populateBoulderRoutes() {
+    async populateBoulderRoutes() {
         const routeSelect = this.dataVizContainer.querySelector('#routeSelect');
-        const boulders = getBoulderList();
+        const boulders = await getBoulderList();
         
         routeSelect.innerHTML = '';
         boulders.forEach(boulder => {
             const option = document.createElement('option');
             option.value = boulder.id;
-            option.textContent = `${boulder.name} (${boulder.grade}) - Real Data`;
+            option.textContent = `${boulder.name} - ${boulder.csvFile}`;
             routeSelect.appendChild(option);
         });
     }
