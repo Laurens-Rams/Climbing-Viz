@@ -2,7 +2,7 @@ console.log('main.js file started executing');
 
 import { BoulderVisualizer } from './visualizer/BoulderVisualizer.js';
 import { BoulderControlPanel } from './controls/BoulderControlPanel.js';
-import { getBoulderById } from './data/boulderData.js';
+import { getBoulderById, addBoulderFromRemoteData } from './data/boulderData.js';
 import { DataVizIntegration } from './visualizer/DataVizIntegration.js';
 import RemoteDataHandler from './data/RemoteDataHandler.js';
 
@@ -181,56 +181,38 @@ class BoulderVisualizerApp {
             margin-left: 10px;
         `;
 
-        // Start recording button
-        const startRecordingBtn = document.createElement('button');
-        startRecordingBtn.id = 'start-recording';
-        startRecordingBtn.textContent = '🔴 Start';
-        startRecordingBtn.style.cssText = `
+        // "Get All Remote Data" button (replaces Start/Stop)
+        const getAllRemoteDataBtn = document.createElement('button');
+        getAllRemoteDataBtn.id = 'get-all-remote-data';
+        getAllRemoteDataBtn.textContent = '📥 Get All Data';
+        getAllRemoteDataBtn.style.cssText = `
             padding: 8px 16px;
             border: none;
             border-radius: 6px;
-            background: rgba(34, 197, 94, 0.8);
+            background: rgba(59, 130, 246, 0.8); // Blueish color
             color: #fff;
             font-weight: bold;
             cursor: pointer;
             transition: all 0.3s ease;
         `;
-        startRecordingBtn.onclick = () => this.startRecording();
+        getAllRemoteDataBtn.onclick = () => this.fetchAllRemoteData();
 
-        // Stop recording button
-        const stopRecordingBtn = document.createElement('button');
-        stopRecordingBtn.id = 'stop-recording';
-        stopRecordingBtn.textContent = '⏹️ Stop';
-        stopRecordingBtn.style.cssText = `
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            background: rgba(239, 68, 68, 0.8);
-            color: #fff;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: none;
-        `;
-        stopRecordingBtn.onclick = () => this.stopRecording();
-
-        // Recording status
-        const recordingStatus = document.createElement('div');
-        recordingStatus.id = 'recording-status';
-        recordingStatus.style.cssText = `
+        // Polling status (replaces recording status)
+        const pollingStatus = document.createElement('div');
+        pollingStatus.id = 'polling-status'; // Renamed from recording-status
+        pollingStatus.style.cssText = `
             color: #fff;
             font-size: 12px;
             padding: 5px 10px;
             background: rgba(0,0,0,0.7);
             border-radius: 4px;
-            min-width: 120px;
+            min-width: 150px; // Adjusted width
             text-align: center;
         `;
 
         // Add elements to recording controls
-        recordingControls.appendChild(startRecordingBtn);
-        recordingControls.appendChild(stopRecordingBtn);
-        recordingControls.appendChild(recordingStatus);
+        recordingControls.appendChild(getAllRemoteDataBtn);
+        recordingControls.appendChild(pollingStatus);
         
         // Tab switching logic
         boulderTab.addEventListener('click', () => {
@@ -311,6 +293,12 @@ class BoulderVisualizerApp {
                 this.visualizer.loadBoulder(this.currentBoulder);
             }
             
+            // For live data, ensure boulder visualizer gets current data
+            if (this.isRemoteMode && this.remoteHandler?.accumulatedData) {
+                console.log('Updating boulder visualizer with current live data');
+                this.visualizer.updateWithLiveData(this.remoteHandler.accumulatedData);
+            }
+            
             // Ensure Three.js renderer is properly resized after showing (immediate)
             if (this.visualizer && this.visualizer.renderer) {
                 this.visualizer.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -322,9 +310,15 @@ class BoulderVisualizerApp {
         } else if (view === 'dataviz') {
             // Show DataViz (instant switch)
             this.container.style.display = 'none';
-            this.dataVizIntegration.show();
+            this.dataVizIntegration.show(); // This now auto-refreshes data
             if (this.controlPanel) {
                 this.controlPanel.hide();
+            }
+            
+            // For live data, ensure DataViz gets current data
+            if (this.isRemoteMode && this.remoteHandler?.accumulatedData) {
+                console.log('Updating DataViz with current live data');
+                this.dataVizIntegration.updateWithLiveData(this.remoteHandler.accumulatedData);
             }
         }
     }
@@ -462,6 +456,25 @@ class BoulderVisualizerApp {
             console.log(`Data updated from ${source}`);
             if (this.globalState.autoUpdateEnabled) {
                 this.syncDataBetweenViews(source, data);
+            }
+        });
+        
+        // Listen for threshold changes from DataViz for live data
+        document.addEventListener('thresholdChanged', (event) => {
+            const { source, threshold, isLiveData } = event.detail;
+            console.log(`Threshold changed to ${threshold} from ${source} (live: ${isLiveData})`);
+            
+            // Update boulder visualizer with new threshold for live data
+            if (isLiveData && this.visualizer && this.isRemoteMode) {
+                console.log('Updating boulder visualizer threshold for live data');
+                // Force boulder visualizer to update with new threshold
+                if (this.visualizer.isDisplayingLiveData && this.visualizer.isDisplayingLiveData()) {
+                    // Get current live data buffer and update with new threshold
+                    const currentBuffer = this.remoteHandler?.accumulatedData;
+                    if (currentBuffer) {
+                        this.visualizer.updateWithLiveData(currentBuffer);
+                    }
+                }
             }
         });
     }
@@ -653,11 +666,13 @@ class BoulderVisualizerApp {
 
         document.body.appendChild(notification);
 
+        // Show error messages longer for better readability
+        const duration = type === 'error' ? 6000 : 3000;
         setTimeout(() => {
             if (notification.parentElement) {
                 notification.remove();
             }
-        }, 3000);
+        }, duration);
     }
     
     // Add keyboard controls
@@ -683,27 +698,36 @@ class BoulderVisualizerApp {
             this.handleRemoteData(data);
         });
         
-        this.remoteHandler.setRecordingStateCallback((isRecording) => {
-            this.updateRemoteUI(isRecording);
+        // Use setPollingStateCallback
+        this.remoteHandler.setPollingStateCallback((isPolling, errorMessage) => {
+            this.updateRemoteUI(isPolling, errorMessage);
         });
     }
 
     handleRemoteData(data) {
-        if (!this.isRemoteMode) return;
+        if (!this.isRemoteMode || !data) return;
         
-        // Update boulder visualizer with live data
-        if (this.currentView === 'boulder' && this.visualizer) {
+        // data.newPoints is an array of {time, accX, accY, accZ}
+        // data.buffer is the complete accumulated data {time:[], accX:[], ...}
+        // data.displayBuffer is the performance buffer for visualization
+        
+        if (data.newPoints && data.newPoints.length > 0) {
+            console.log(`Received ${data.newPoints.length} new data points. Total accumulated: ${data.totalAccumulated}`);
+        }
+
+        // Update boulder visualizer with live data (using the complete buffer for move detection)
+        if (this.currentView === 'boulder' && this.visualizer && data.buffer) {
             this.visualizer.updateWithLiveData(data.buffer);
         }
         
-        // Update data viz with live data
-        if (this.currentView === 'dataviz' && this.dataVizIntegration) {
+        // Update data viz with live data (using the complete buffer for complete timeline)
+        if (this.currentView === 'dataviz' && this.dataVizIntegration && data.buffer) {
             this.dataVizIntegration.updateWithLiveData(data.buffer);
         }
         
         // Update status display
-        const status = this.remoteHandler.getRecordingStatus();
-        this.updateRecordingStatus(status);
+        const status = this.remoteHandler.getPollingStatus();
+        this.updatePollingStatus(status);
     }
 
     async toggleRemoteMode() {
@@ -712,98 +736,153 @@ class BoulderVisualizerApp {
         const recordingControls = document.getElementById('recording-controls');
         
         if (this.isRemoteMode) {
-            // Check connection first
-            const isConnected = await this.remoteHandler.checkRemoteConnection();
-            if (!isConnected) {
-                alert('Cannot connect to remote device at ' + this.remoteHandler.getRemoteUrl());
-                this.isRemoteMode = false;
-                return;
+            try {
+                // Start polling when remote mode is enabled
+                await this.remoteHandler.startPolling();
+                
+                remoteToggle.textContent = '📱 Remote: POLLING';
+                remoteToggle.className = 'tab-button remote-on recording-active'; // Add recording-active for pulse
+                recordingControls.style.display = 'flex';
+                this.updatePollingStatus(this.remoteHandler.getPollingStatus());
+                
+                this.showNotification('Remote polling started - Connected to ' + this.remoteHandler.getRemoteUrl(), 'success');
+            } catch (error) {
+                this.isRemoteMode = false; // Revert on error
+                remoteToggle.textContent = '📱 Remote: OFF';
+                remoteToggle.className = 'tab-button remote-off';
+                recordingControls.style.display = 'none';
+                
+                this.showNotification('Failed to start remote polling: ' + error.message, 'error');
+                console.error('Remote polling start error:', error);
             }
-            
-            remoteToggle.textContent = '📱 Remote: ON';
-            remoteToggle.className = 'tab-button remote-on';
-            recordingControls.style.display = 'flex';
-            
-            this.showNotification('Remote mode enabled - Connected to ' + this.remoteHandler.getRemoteUrl(), 'success');
         } else {
-            // Stop recording if active
-            if (this.remoteHandler.isRecording) {
-                await this.stopRecording();
-            }
+            // Stop polling when remote mode is disabled
+            await this.remoteHandler.stopPolling();
             
             remoteToggle.textContent = '📱 Remote: OFF';
             remoteToggle.className = 'tab-button remote-off';
+            remoteToggle.classList.remove('recording-active');
             recordingControls.style.display = 'none';
+            this.updatePollingStatus(this.remoteHandler.getPollingStatus());
             
-            this.showNotification('Remote mode disabled', 'info');
+            this.showNotification('Remote polling stopped', 'info');
         }
     }
 
-    async startRecording() {
-        try {
-            await this.remoteHandler.startRecording();
-            
-            document.getElementById('start-recording').style.display = 'none';
-            document.getElementById('stop-recording').style.display = 'block';
-            
-            this.showNotification('Recording started', 'success');
-        } catch (error) {
-            console.error('Failed to start recording:', error);
-            this.showNotification('Failed to start recording: ' + error.message, 'error');
+    // Repurposed to fetch all data from Phyphox after user stops recording on phone
+    async fetchAllRemoteData() {
+        if (!this.isRemoteMode) {
+            this.showNotification('Enable remote mode first.', 'warn');
+            return;
         }
-    }
+        // No longer checking this.remoteHandler.isPolling here, as getPhyphoxExperimentData should work independently.
 
-    async stopRecording() {
+        this.showNotification('Fetching all data from Phyphox...', 'info');
         try {
-            const result = await this.remoteHandler.stopRecording();
+            const result = await this.remoteHandler.getPhyphoxExperimentData(); // This returns { filename, data, blob, dataPoints }
             
-            document.getElementById('start-recording').style.display = 'block';
-            document.getElementById('stop-recording').style.display = 'none';
-            
-            if (result) {
-                this.showNotification(`Recording saved as ${result.filename}`, 'success');
+            if (result && result.dataPoints > 0) {
+                this.showNotification(`Fetched ${result.dataPoints} points. Original filename: ${result.filename}`, 'success');
                 
-                // Optionally load the new data into the visualizer
-                if (confirm('Load the recorded data into the visualizer?')) {
-                    await this.loadRecordedData(result);
+                // Use addBoulderFromRemoteData to process and add the boulder
+                // result.data is the CSV text, result.filename can be used as base
+                const addedBoulder = await addBoulderFromRemoteData(result.data, result.filename);
+
+                if (addedBoulder) {
+                    this.showNotification(`New boulder "${addedBoulder.name}" (ID: ${addedBoulder.id}) created.`, 'success');
+                    // Refresh the dropdown in the control panel to include the new boulder
+                    if (this.controlPanel) {
+                        await this.controlPanel.rebuildBoulderDropdown();
+                    }
+
+                    if (confirm('Load the newly recorded boulder?')) {
+                        // Ensure controlPanel is available and has loadBoulder method
+                        if (this.controlPanel && typeof this.controlPanel.loadBoulder === 'function') {
+                            await this.controlPanel.loadBoulder(addedBoulder.id, 'remote-fetch');
+                        } else {
+                            console.error('ControlPanel or loadBoulder method not available.');
+                            this.showNotification('Could not auto-load new boulder: Control panel issue.', 'error');
+                        }
+                    } else {
+                         // If not loading, ensure the dropdown is at least updated
+                         // (already called rebuildBoulderDropdown above, so this is slightly redundant but safe)
+                         if (this.controlPanel) await this.controlPanel.rebuildBoulderDropdown();
+                    }
+                } else {
+                     this.showNotification('Could not process new boulder data from remote source.', 'error');
                 }
+
             } else {
-                this.showNotification('Recording stopped (no data recorded)', 'info');
+                this.showNotification('No new data fetched from Phyphox or recording was empty.', 'info');
             }
         } catch (error) {
-            console.error('Failed to stop recording:', error);
-            this.showNotification('Failed to stop recording: ' + error.message, 'error');
+            console.error('Failed to fetch/process all remote data:', error);
+            this.showNotification('Failed to get or process remote data: ' + error.message, 'error');
         }
     }
 
     async loadRecordedData(recordingResult) {
-        // Convert the recorded data to boulder format and load it
-        // This would integrate with the existing CSV loading system
-        console.log('Loading recorded data:', recordingResult.filename);
-        // Implementation would depend on how you want to integrate with existing boulder loading
-    }
-
-    updateRemoteUI(isRecording) {
-        const startBtn = document.getElementById('start-recording');
-        const stopBtn = document.getElementById('stop-recording');
-        
-        if (isRecording) {
-            startBtn.style.display = 'none';
-            stopBtn.style.display = 'block';
-            stopBtn.classList.add('recording-active');
-        } else {
-            startBtn.style.display = 'block';
-            stopBtn.style.display = 'none';
-            stopBtn.classList.remove('recording-active');
+        // This method is now less relevant as fetchAllRemoteData handles processing.
+        // Kept for now, can be removed or refactored if a separate "load this specific file" is needed.
+        console.log('loadRecordedData called with:', recordingResult.filename);
+        try {
+            const newBoulder = await parseCSVData(recordingResult.data, recordingResult.filename);
+            if (newBoulder) {
+                const addedBoulder = await addNewBoulder(newBoulder);
+                if (addedBoulder) {
+                    this.showNotification(`Loaded remotely recorded data as "${addedBoulder.name}".`, 'success');
+                    await this.controlPanel.loadBoulder(addedBoulder.id, 'remote-load');
+                }
+            }
+        } catch (error) {
+            this.showNotification(`Error loading recorded data: ${error.message}`, 'error');
         }
     }
 
-    updateRecordingStatus(status) {
-        const statusElement = document.getElementById('recording-status');
-        if (statusElement && status.isRecording) {
-            statusElement.textContent = `Recording: ${status.dataPoints} points (${status.duration.toFixed(1)}s)`;
-        } else if (statusElement) {
-            statusElement.textContent = '';
+    // Update UI based on polling state
+    updateRemoteUI(isPolling, errorMessage) { // Added errorMessage
+        const remoteToggle = document.getElementById('remote-toggle');
+        const recordingControls = document.getElementById('recording-controls');
+        const getAllRemoteDataBtn = document.getElementById('get-all-remote-data');
+
+        if (isPolling) {
+            remoteToggle.textContent = '📱 Remote: POLLING';
+            remoteToggle.className = 'tab-button remote-on recording-active';
+            recordingControls.style.display = 'flex';
+            if(getAllRemoteDataBtn) getAllRemoteDataBtn.disabled = false; // Enable when polling
+        } else {
+            remoteToggle.textContent = '📱 Remote: OFF';
+            remoteToggle.className = 'tab-button remote-off';
+            remoteToggle.classList.remove('recording-active');
+            // Keep controls visible if remote mode is technically on but polling failed/stopped
+            // recordingControls.style.display = this.isRemoteMode ? 'flex' : 'none';
+            if(getAllRemoteDataBtn) getAllRemoteDataBtn.disabled = !this.isRemoteMode; // Disable if not in remote mode
+
+            if (errorMessage) {
+                 this.showNotification(`Polling stopped: ${errorMessage}`, 'error');
+            }
+        }
+        this.updatePollingStatus(this.remoteHandler.getPollingStatus());
+    }
+
+    // Renamed from updateRecordingStatus
+    updatePollingStatus(status) {
+        const statusElement = document.getElementById('polling-status'); // Renamed ID
+        if (statusElement) {
+            if (status.isPolling) {
+                // Show both display buffer and total accumulated data
+                const totalAccumulated = this.remoteHandler.accumulatedData ? this.remoteHandler.accumulatedData.time.length : 0;
+                const timeRange = totalAccumulated > 0 && this.remoteHandler.accumulatedData ? 
+                    `${(this.remoteHandler.accumulatedData.time[this.remoteHandler.accumulatedData.time.length - 1] - this.remoteHandler.accumulatedData.time[0]).toFixed(1)}s` : '0s';
+                statusElement.textContent = `🔴 LIVE: ${totalAccumulated} points (${timeRange} accumulated)`;
+            } else {
+                 if (this.isRemoteMode) { // If remote mode is on, but not polling (e.g. error or just stopped)
+                    const totalAccumulated = this.remoteHandler.accumulatedData ? this.remoteHandler.accumulatedData.time.length : 0;
+                    statusElement.textContent = `Polling OFF. Total accumulated: ${totalAccumulated} points`;
+                 } else {
+                    statusElement.textContent = 'Polling OFF';
+                 }
+            }
         }
     }
 

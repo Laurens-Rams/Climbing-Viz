@@ -27,8 +27,24 @@ async function discoverCSVFiles() {
         try {
             const response = await fetch(filepath);
             if (response.ok) {
-                csvFiles.push(filepath);
-                console.log(`Found CSV file: ${filepath}`);
+                // Validate that the response contains actual CSV data, not HTML
+                const text = await response.text();
+                if (text.trim().startsWith('<!DOCTYPE html>') || 
+                    text.trim().startsWith('<html') ||
+                    text.includes('<title>404</title>') ||
+                    text.includes('Not Found')) {
+                    // This is an HTML error page, not a CSV file
+                    continue;
+                }
+                
+                // Basic CSV validation - should have comma-separated headers
+                const firstLine = text.split('\n')[0];
+                if (firstLine && firstLine.includes(',') && 
+                    (firstLine.toLowerCase().includes('time') || 
+                     firstLine.toLowerCase().includes('acceleration'))) {
+                    csvFiles.push(filepath);
+                    console.log(`Found CSV file: ${filepath}`);
+                }
             }
         } catch (error) {
             // File doesn't exist, continue
@@ -327,6 +343,45 @@ export async function getRandomBoulder() {
 export function clearCache() {
     csvFileCache.clear();
     console.log('CSV file cache cleared');
+}
+
+// Add new boulder from remote data
+export async function addBoulderFromRemoteData(csvText, baseFilename) {
+    try {
+        console.log(`Adding new boulder from remote data: ${baseFilename}`);
+        const csvData = parsePhyphoxCSV(csvText, baseFilename); // Use existing parser
+
+        // Get current boulders to determine next ID
+        const currentBoulders = await getBoulderList();
+        let nextId = 1;
+        if (currentBoulders.length > 0) {
+            nextId = Math.max(...currentBoulders.map(b => parseInt(b.id))) + 1;
+        }
+
+        const newBoulder = convertCSVToBoulder(csvData, nextId);
+        
+        // Add to cache so it's immediately available
+        // The cache key should be unique, use the generated filename perhaps, or a special prefix
+        // For simplicity, let's use its new ID as part of a unique key for now, though
+        // discoverCSVFiles won't find it. This makes it available via getBoulderById.
+        // A more robust solution might involve saving the CSV and re-discovering.
+        const cacheKey = `remote_${newBoulder.csvFile}_${newBoulder.id}`;
+        csvFileCache.set(cacheKey, {
+            boulder: newBoulder,
+            timestamp: Date.now()
+        });
+        
+        console.log('Added new remote boulder:', newBoulder);
+        // Manually add to the list of boulders if we want it to appear in dropdowns *without* a full refresh
+        // This is a bit of a hack. The ideal way is to save the file and have discoverCSVFiles pick it up.
+        // For now, returning it and letting UI decide to select it is fine.
+        // The controlPanel.rebuildBoulderDropdown() in main.js will call getBoulderList() which includes cache.
+
+        return newBoulder;
+    } catch (error) {
+        console.error('Error adding boulder from remote data:', error);
+        throw error; // Re-throw for main.js to handle
+    }
 }
 
 // Debug function

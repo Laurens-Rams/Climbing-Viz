@@ -16,7 +16,7 @@ export class DataVizIntegration {
         // Load Plotly and setup
         this.plotlyLoadPromise = this.loadDataVizComponents();
     }
-
+    
     createDataVizContainer() {
         this.dataVizContainer = document.createElement('div');
         this.dataVizContainer.id = 'dataviz-container';
@@ -56,17 +56,18 @@ export class DataVizIntegration {
                                 <option value="">Loading CSV files...</option>
                             </select>
                         </div>
-
+                        
                         <!-- Time Range -->
                         <div>
                             <label style="display: block; margin-bottom: 5px; color: #00ffcc;">View Duration: <span id="timeValue">All</span></label>
                             <input type="range" id="timeRange" min="0" max="100" value="100" style="width: 100%;">
                         </div>
-
+                        
                         <!-- Acceleration Threshold -->
-                        <div>
-                            <label style="display: block; margin-bottom: 5px; color: #00ffcc;">Move Threshold: <span id="thresholdValue">12</span> m/s²</label>
-                            <input type="range" id="thresholdRange" min="8" max="25" value="12" style="width: 100%;">
+                        <div class="control-group">
+                            <label for="threshold">Move Detection Threshold:</label>
+                            <input type="range" id="threshold" min="8" max="25" step="0.5" value="12">
+                            <span id="thresholdValue">12</span> m/s²
                         </div>
 
                         <!-- Visualization Mode -->
@@ -79,7 +80,7 @@ export class DataVizIntegration {
                                 <option value="heatmap">Intensity Heat Map</option>
                             </select>
                         </div>
-
+                        
                         <!-- Action Buttons -->
                         <div style="display: flex; gap: 10px;">
                             <button id="refreshBtn" style="flex: 1; padding: 8px; background: #00ffcc; color: #000; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
@@ -131,10 +132,10 @@ export class DataVizIntegration {
                 </div>
             </div>
         `;
-
+        
         document.body.appendChild(this.dataVizContainer);
     }
-
+    
     async loadDataVizComponents() {
         try {
             // Load Plotly
@@ -169,7 +170,7 @@ export class DataVizIntegration {
             console.error('Failed to load DataViz components:', error);
         }
     }
-
+    
     async loadAvailableCSVFiles() {
         try {
             const csvFileSelect = this.dataVizContainer.querySelector('#csvFileSelect');
@@ -253,19 +254,55 @@ export class DataVizIntegration {
         }
 
         // Threshold slider
-        const thresholdRange = this.dataVizContainer.querySelector('#thresholdRange');
+        const thresholdRange = this.dataVizContainer.querySelector('#threshold');
         const thresholdValue = this.dataVizContainer.querySelector('#thresholdValue');
         if (thresholdRange && thresholdValue) {
             thresholdRange.addEventListener('input', async () => {
-                thresholdValue.textContent = thresholdRange.value;
-                this.updateVisualization();
-                this.updateStatistics(); // Auto-refresh statistics
+                const newThreshold = parseFloat(thresholdRange.value);
+                thresholdValue.textContent = newThreshold;
                 
-                // Regenerate moves with new threshold and sync to Boulder visualizer
-                await this.regenerateMovesAndSync();
+                console.log(`[DataVizIntegration] Threshold changed to: ${newThreshold}`);
                 
-                // Emit control change event
-                this.emitControlChange('threshold', parseFloat(thresholdRange.value));
+                // Update visualization for both CSV and live data
+                if (this.isDisplayingLiveData()) {
+                    console.log('[DataVizIntegration] Updating live data visualization with new threshold');
+                    // For live data, recreate the plot with new threshold
+                    const liveBuffer = this.currentData.buffer;
+                    if (liveBuffer) {
+                        await this.createLiveDataPlot(liveBuffer);
+                        
+                        // Update live data statistics with new threshold
+                        const magnitudeData = liveBuffer.time.map((_, i) => {
+                            const mag = Math.sqrt(
+                                liveBuffer.accX[i] * liveBuffer.accX[i] + 
+                                liveBuffer.accY[i] * liveBuffer.accY[i] + 
+                                liveBuffer.accZ[i] * liveBuffer.accZ[i]
+                            );
+                            return isFinite(mag) ? mag : 0;
+                        });
+                        this.updateLiveDataStatistics(liveBuffer, magnitudeData);
+                    }
+                    
+                    // Emit threshold change for boulder visualizer
+                    document.dispatchEvent(new CustomEvent('thresholdChanged', {
+                        detail: {
+                            source: 'dataviz',
+                            threshold: newThreshold,
+                            isLiveData: true
+                        }
+                    }));
+                } else {
+                    // For CSV data, update visualization and statistics
+                    console.log('[DataVizIntegration] Updating CSV data visualization with new threshold');
+                    await this.updateVisualization();
+                    this.updateStatistics(); // This will use the new threshold
+                    
+                    // Regenerate moves with new threshold and sync to Boulder visualizer
+                    await this.regenerateMovesAndSync();
+                }
+                
+                // Emit control change event for global sync
+                this.emitControlChange('threshold', newThreshold);
             });
         }
 
@@ -291,9 +328,9 @@ export class DataVizIntegration {
         // Export button
         const exportBtn = this.dataVizContainer.querySelector('#exportBtn');
         if (exportBtn) {
-            exportBtn.addEventListener('click', () => {
-                this.exportData();
-            });
+        exportBtn.addEventListener('click', () => {
+            this.exportData();
+        });
         }
 
         // File upload
@@ -311,7 +348,7 @@ export class DataVizIntegration {
             }, 100);
         });
     }
-
+    
     async loadCSVData(boulder) {
         try {
             console.log('Loading CSV data for boulder:', boulder.name);
@@ -336,7 +373,7 @@ export class DataVizIntegration {
             // Wait for Plotly to be loaded before updating visualization
             await this.ensurePlotlyLoaded();
             await this.updateVisualization();
-            this.updateStatistics();
+                this.updateStatistics();
             
             this.showNotification(`Loaded ${boulder.name}`, 'success');
 
@@ -400,10 +437,31 @@ export class DataVizIntegration {
     resizePlot() {
         const plotDiv = this.dataVizContainer.querySelector('#accelerationPlot');
         if (plotDiv && typeof Plotly !== 'undefined') {
-            // Get the container dimensions
+            // Get the container dimensions with better fallbacks
             const container = plotDiv.parentElement;
-            const containerWidth = container.offsetWidth - 40; // Account for padding
-            const containerHeight = 500; // Fixed height
+            let containerWidth = 800; // Default fallback width
+            let containerHeight = 500; // Default height
+            
+            if (container) {
+                // Try multiple ways to get the width
+                const computedStyle = window.getComputedStyle(container);
+                const clientWidth = container.clientWidth;
+                const offsetWidth = container.offsetWidth;
+                const boundingWidth = container.getBoundingClientRect().width;
+                
+                // Use the largest valid width we can find
+                containerWidth = Math.max(
+                    clientWidth - 40,
+                    offsetWidth - 40,
+                    boundingWidth - 40,
+                    400 // Minimum width
+                );
+                
+                // Ensure we have a positive width
+                if (containerWidth <= 0) {
+                    containerWidth = 800;
+                }
+            }
             
             // Update the plot size
             Plotly.relayout(plotDiv, {
@@ -487,8 +545,8 @@ export class DataVizIntegration {
         const plotDiv = this.dataVizContainer.querySelector('#accelerationPlot');
         if (!plotDiv || !this.currentData) return;
 
-        const thresholdRange = this.dataVizContainer.querySelector('#thresholdRange');
-        const threshold = thresholdRange ? parseFloat(thresholdRange.value) : 12;
+        const thresholdRange = this.dataVizContainer.querySelector('#threshold');
+        const threshold = thresholdRange ? parseFloat(thresholdRange.value) : 12.0;
 
         const { time, absoluteAcceleration } = this.currentData;
         
@@ -500,9 +558,9 @@ export class DataVizIntegration {
             {
                 x: time,
                 y: absoluteAcceleration,
-                type: 'scatter',
-                mode: 'lines',
-                name: 'Acceleration',
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Acceleration',
                 line: { color: '#00ffcc', width: 2 }
             },
             // Threshold line
@@ -534,7 +592,7 @@ export class DataVizIntegration {
 
         const layout = {
             title: {
-                text: `🎯 Move Detection (${moves.length} moves found)`,
+                text: `🎯 Move Detection (${moves.length} positions: start + ${moves.length - 1} moves)`,
                 font: { color: '#00ffcc', size: 18 }
             },
             xaxis: { 
@@ -580,7 +638,7 @@ export class DataVizIntegration {
             marker: { color: '#00ffcc', opacity: 0.7 },
             nbinsx: 50
         }];
-
+        
         const layout = {
             title: {
                 text: '📊 Acceleration Distribution',
@@ -609,7 +667,7 @@ export class DataVizIntegration {
             modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
             displaylogo: false
         };
-
+        
         Plotly.newPlot(plotDiv, traces, layout, config).then(() => {
             // Force resize after plot creation
             setTimeout(() => {
@@ -629,13 +687,13 @@ export class DataVizIntegration {
         const stepSize = 20;
         const heatmapData = [];
         const xLabels = [];
-
+        
         for (let i = 0; i < time.length - windowSize; i += stepSize) {
             const window = absoluteAcceleration.slice(i, i + windowSize);
             heatmapData.push(window);
             xLabels.push(time[i].toFixed(1));
         }
-
+        
         const traces = [{
             z: heatmapData,
             type: 'heatmap',
@@ -648,7 +706,7 @@ export class DataVizIntegration {
             ],
             showscale: true
         }];
-
+        
         const layout = {
             title: {
                 text: '🔥 Acceleration Intensity Heat Map',
@@ -675,7 +733,7 @@ export class DataVizIntegration {
             modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
             displaylogo: false
         };
-
+        
         Plotly.newPlot(plotDiv, traces, layout, config).then(() => {
             // Force resize after plot creation
             setTimeout(() => {
@@ -685,11 +743,12 @@ export class DataVizIntegration {
     }
 
     detectMoves(time, acceleration, threshold) {
-        const moves = [];
+        const detectedMoves = [];
         const minMoveDuration = 0.5; // minimum seconds between moves
         
         let lastMoveTime = -minMoveDuration;
         
+        // First, detect all the actual moves
         for (let i = 1; i < acceleration.length - 1; i++) {
             const currentAccel = acceleration[i];
             const currentTime = time[i];
@@ -700,7 +759,7 @@ export class DataVizIntegration {
                 currentAccel > acceleration[i+1] &&
                 (currentTime - lastMoveTime) > minMoveDuration) {
                 
-                moves.push({
+                detectedMoves.push({
                     time: currentTime,
                     acceleration: currentAccel
                 });
@@ -709,22 +768,70 @@ export class DataVizIntegration {
             }
         }
         
+        // Create the complete moves array including starting position
+        const moves = [];
+        
+        // Add starting position at time 0 (position 0)
+        moves.push({
+            time: 0,
+            acceleration: acceleration[0] || 9.8 // Use first acceleration value or gravity
+        });
+        
+        // Add all detected moves (positions 1, 2, 3, etc.)
+        moves.push(...detectedMoves);
+        
         return moves;
     }
 
     updateStatistics() {
         if (!this.currentData) return;
 
-        const { absoluteAcceleration, duration, sampleCount } = this.currentData;
+        let absoluteAcceleration, time, duration, sampleCount;
+        
+        // Handle different data structures (live data vs CSV data)
+        if (this.currentData.isLive && this.currentData.buffer) {
+            // Live data structure
+            const buffer = this.currentData.buffer;
+            time = buffer.time;
+            
+            // Calculate magnitude from live data components
+            if (buffer.accX && buffer.accY && buffer.accZ && 
+                buffer.accX.length === buffer.accY.length && 
+                buffer.accY.length === buffer.accZ.length) {
+                
+                absoluteAcceleration = buffer.accX.map((x, i) => {
+                    const mag = Math.sqrt(x * x + buffer.accY[i] * buffer.accY[i] + buffer.accZ[i] * buffer.accZ[i]);
+                    return isFinite(mag) ? mag : 0;
+                });
+            } else {
+                console.warn('[DataVizIntegration] Invalid live data structure for statistics');
+                return;
+            }
+            
+            duration = time.length > 0 ? time[time.length - 1] - time[0] : 0;
+            sampleCount = time.length;
+        } else {
+            // Regular CSV data structure
+            absoluteAcceleration = this.currentData.absoluteAcceleration;
+            time = this.currentData.time;
+            duration = this.currentData.duration;
+            sampleCount = this.currentData.sampleCount;
+        }
+        
+        // Validate data before processing
+        if (!absoluteAcceleration || !Array.isArray(absoluteAcceleration) || absoluteAcceleration.length === 0) {
+            console.warn('[DataVizIntegration] No valid acceleration data for statistics');
+            return;
+        }
         
         const maxAccel = Math.max(...absoluteAcceleration);
         const avgAccel = absoluteAcceleration.reduce((a, b) => a + b, 0) / absoluteAcceleration.length;
         
         // Count moves with current threshold
-        const thresholdRange = this.dataVizContainer.querySelector('#thresholdRange');
-        const threshold = thresholdRange ? parseFloat(thresholdRange.value) : 12;
-        const moves = this.detectMoves(this.currentData.time, absoluteAcceleration, threshold);
-
+        const thresholdRange = this.dataVizContainer.querySelector('#threshold'); // Fixed ID
+        const threshold = thresholdRange ? parseFloat(thresholdRange.value) : 12.0; // Updated default
+        const moves = this.detectMoves(time || [], absoluteAcceleration, threshold);
+        
         // Update statistics display
         const maxAccelEl = this.dataVizContainer.querySelector('#maxAccel');
         const avgAccelEl = this.dataVizContainer.querySelector('#avgAccel');
@@ -735,8 +842,8 @@ export class DataVizIntegration {
         if (maxAccelEl) maxAccelEl.textContent = maxAccel.toFixed(2);
         if (avgAccelEl) avgAccelEl.textContent = avgAccel.toFixed(2);
         if (moveCountEl) moveCountEl.textContent = moves.length;
-        if (durationEl) durationEl.textContent = duration.toFixed(1);
-        if (sampleCountEl) sampleCountEl.textContent = sampleCount;
+        if (durationEl) durationEl.textContent = (duration || 0).toFixed(1);
+        if (sampleCountEl) sampleCountEl.textContent = sampleCount || 0;
     }
 
     async handleFileUpload(event) {
@@ -766,11 +873,11 @@ export class DataVizIntegration {
         // Reset file input
         event.target.value = '';
     }
-
+    
     parsePhyphoxCSV(csvText, filename) {
         const lines = csvText.trim().split('\n');
         if (lines.length < 2) return null;
-
+        
         const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
         console.log('CSV Headers:', headers);
 
@@ -823,13 +930,13 @@ export class DataVizIntegration {
             sampleCount: time.length
         };
     }
-
+    
     exportData() {
         if (!this.currentData) {
             this.showNotification('No data to export', 'error');
             return;
         }
-
+        
         const { time, absoluteAcceleration } = this.currentData;
 
         // Create CSV content
@@ -889,7 +996,7 @@ export class DataVizIntegration {
             }
         }, 3000);
     }
-
+    
     // Show the DataViz interface
     show() {
         if (this.dataVizContainer) {
@@ -899,16 +1006,38 @@ export class DataVizIntegration {
             // Force resize after showing to fix width issues
             setTimeout(() => {
                 this.resizePlot();
+                
+                // Auto-refresh data when switching to this view
+                this.refreshCurrentData();
             }, 200);
+        }
+    }
+    
+    // Auto-refresh current data when switching views
+    async refreshCurrentData() {
+        console.log('[DataVizIntegration] Auto-refreshing data on view switch');
+        
+        if (this.isDisplayingLiveData()) {
+            // For live data, refresh with current buffer
+            const currentBuffer = this.currentData?.buffer;
+            if (currentBuffer) {
+                console.log('[DataVizIntegration] Refreshing live data visualization');
+                await this.createLiveDataPlot(currentBuffer);
+            }
+        } else if (this.currentBoulder && this.currentData) {
+            // For CSV data, refresh visualization and statistics
+            console.log('[DataVizIntegration] Refreshing CSV data visualization');
+            await this.updateVisualization();
+            this.updateStatistics();
         }
     }
 
     // Hide the DataViz interface
     hide() {
         if (this.dataVizContainer) {
-            this.dataVizContainer.style.display = 'none';
+        this.dataVizContainer.style.display = 'none';
             console.log('DataViz interface hidden');
-        }
+    }
     }
 
     // Update with boulder data from the 3D visualizer
@@ -956,29 +1085,67 @@ export class DataVizIntegration {
     }
 
     async regenerateMovesAndSync() {
-        if (!this.currentBoulder) return;
+        // Get the current threshold value
+        const thresholdSlider = this.dataVizContainer.querySelector('#threshold'); // Fixed ID
+        const newThreshold = thresholdSlider ? parseFloat(thresholdSlider.value) : 12.0;
         
-        const thresholdSlider = this.dataVizContainer.querySelector('#thresholdRange');
-        const newThreshold = parseFloat(thresholdSlider.value);
+        // Handle live data differently than CSV data
+        if (this.isDisplayingLiveData()) {
+            console.log(`[DataVizIntegration] Updating live data threshold to ${newThreshold}`);
+            
+            // For live data, emit threshold change to boulder visualizer
+            document.dispatchEvent(new CustomEvent('thresholdChanged', {
+                detail: {
+                    source: 'dataviz',
+                    threshold: newThreshold,
+                    isLiveData: true
+                }
+            }));
+            
+            return; // Live data doesn't need move regeneration here
+        }
         
-        console.log(`Regenerating moves with threshold ${newThreshold} for boulder ${this.currentBoulder.name}`);
+        // Handle CSV data
+        if (!this.currentBoulder) {
+            console.warn('[DataVizIntegration] No current boulder for move regeneration');
+            return;
+        }
         
-        // Regenerate moves with new threshold
-        const { detectMovesFromAcceleration } = await import('../data/boulderData.js');
-        const newMoves = detectMovesFromAcceleration(this.currentBoulder.rawData, newThreshold);
+        console.log(`[DataVizIntegration] Regenerating moves with threshold ${newThreshold} for boulder ${this.currentBoulder.name}`);
         
-        // Update the boulder object
-        this.currentBoulder.moves = newMoves;
-        
-        // Sync the updated boulder to the Boulder visualizer
-        document.dispatchEvent(new CustomEvent('dataUpdated', {
-            detail: {
-                source: 'dataviz',
-                data: this.currentBoulder
+        try {
+            // Use the detectMoves method from this class instead of importing
+            if (this.currentData && this.currentData.time && this.currentData.absoluteAcceleration) {
+                const newMoves = this.detectMoves(this.currentData.time, this.currentData.absoluteAcceleration, newThreshold);
+                
+                // Update the boulder object with new moves
+                this.currentBoulder.moves = newMoves.map((move, index) => ({
+                    id: index,
+                    time: move.time,
+                    type: index === 0 ? 'start' : 'move', // First move is always start, others are moves
+                    dynamics: index === 0 ? 0.5 : Math.max(0.1, Math.min(1.0, move.acceleration / 30)), // Starting position has neutral dynamics
+                    isCrux: index === 0 ? false : move.acceleration > (newThreshold * 1.5), // Starting position is never crux
+                    x: Math.cos(index * 0.8) * (25 + index * 5),
+                    y: Math.sin(index * 0.8) * (25 + index * 5),
+                    z: Math.max(0, index * 2),
+                    magnitude: move.acceleration
+                }));
+                
+                // Sync the updated boulder to the Boulder visualizer
+                document.dispatchEvent(new CustomEvent('dataUpdated', {
+                    detail: {
+                        source: 'dataviz',
+                        data: this.currentBoulder
+                    }
+                }));
+                
+                console.log(`[DataVizIntegration] Regenerated ${newMoves.length} moves and synced to Boulder visualizer`);
+            } else {
+                console.warn('[DataVizIntegration] No valid current data for move regeneration');
             }
-        }));
-        
-        console.log(`Regenerated ${newMoves.length} moves and synced to Boulder visualizer`);
+        } catch (error) {
+            console.error('[DataVizIntegration] Error regenerating moves:', error);
+        }
     }
 
     // Live data support for remote streaming
@@ -987,43 +1154,80 @@ export class DataVizIntegration {
             return;
         }
 
+        // Mark as live data
+        this.currentData = {
+            isLive: true,
+            buffer: dataBuffer,
+            lastUpdate: Date.now()
+        };
+
+        // Auto-adjust time range for live data to show recent data
+        this.autoAdjustTimeRangeForLiveData(dataBuffer);
+
         // Create live data traces for plotting
         this.createLiveDataPlot(dataBuffer);
     }
 
-    async createLiveDataPlot(dataBuffer) {
-        await this.ensurePlotlyLoaded();
-
-        const plotContainer = this.dataVizContainer.querySelector('#accelerationPlot');
-        if (!plotContainer) {
-            console.warn('Plot container not found for live data');
+    autoAdjustTimeRangeForLiveData(dataBuffer) {
+        const timeRangeSlider = this.dataVizContainer.querySelector('#timeRange');
+        const timeValueDisplay = this.dataVizContainer.querySelector('#timeValue');
+        
+        if (!timeRangeSlider || !timeValueDisplay || !dataBuffer.time.length) {
             return;
         }
 
-        // Prepare data for plotting
-        const timeData = dataBuffer.time;
-        const accXData = dataBuffer.accX;
-        const accYData = dataBuffer.accY;
-        const accZData = dataBuffer.accZ;
+        const totalDuration = dataBuffer.time[dataBuffer.time.length - 1] - dataBuffer.time[0];
+        
+        // For live data, show the complete accumulated timeline
+        // The timeline grows from left to right as data accumulates
+        timeRangeSlider.value = 100; // Always show 100% of accumulated data
+        
+        // Display the actual duration of accumulated data
+        timeValueDisplay.textContent = `${totalDuration.toFixed(1)}s Total 🔴 LIVE`;
+    }
 
-        // Calculate magnitude
+    async createLiveDataPlot(dataBuffer) {
+        await this.ensurePlotlyLoaded();
+        
+        const plotDiv = this.dataVizContainer.querySelector('#accelerationPlot');
+        if (!plotDiv || !dataBuffer) return;
+
+        const { time: timeData, accX: accXData, accY: accYData, accZ: accZData } = dataBuffer;
+        
+        if (!timeData || !accXData || !accYData || !accZData || timeData.length === 0) {
+            console.warn('[DataVizIntegration] Invalid live data buffer for plotting');
+            return;
+        }
+
+        // Calculate absolute acceleration magnitude (like CSV files)
         const magnitudeData = timeData.map((_, i) => {
-            return Math.sqrt(
+            const mag = Math.sqrt(
                 accXData[i] * accXData[i] + 
                 accYData[i] * accYData[i] + 
                 accZData[i] * accZData[i]
             );
+            return isFinite(mag) ? mag : 0;
         });
 
-        // Create traces
+        // Create traces - show magnitude prominently like CSV files
         const traces = [
+            {
+                x: timeData,
+                y: magnitudeData,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Absolute Acceleration',
+                line: { color: '#00ffcc', width: 3 },
+                visible: true
+            },
             {
                 x: timeData,
                 y: accXData,
                 type: 'scatter',
                 mode: 'lines',
                 name: 'Acceleration X',
-                line: { color: '#ff6b6b', width: 2 }
+                line: { color: '#ff6b6b', width: 1 },
+                visible: 'legendonly' // Hidden by default
             },
             {
                 x: timeData,
@@ -1031,7 +1235,8 @@ export class DataVizIntegration {
                 type: 'scatter',
                 mode: 'lines',
                 name: 'Acceleration Y',
-                line: { color: '#4ecdc4', width: 2 }
+                line: { color: '#4ecdc4', width: 1 },
+                visible: 'legendonly' // Hidden by default
             },
             {
                 x: timeData,
@@ -1039,62 +1244,88 @@ export class DataVizIntegration {
                 type: 'scatter',
                 mode: 'lines',
                 name: 'Acceleration Z',
-                line: { color: '#45b7d1', width: 2 }
-            },
-            {
-                x: timeData,
-                y: magnitudeData,
-                type: 'scatter',
-                mode: 'lines',
-                name: 'Magnitude',
-                line: { color: '#f9ca24', width: 3 }
+                line: { color: '#45b7d1', width: 1 },
+                visible: 'legendonly' // Hidden by default
             }
         ];
 
-        // Layout configuration
+        // Add move detection overlay if enabled
+        const visualizationMode = this.dataVizContainer.querySelector('#visualizationMode')?.value;
+        if (visualizationMode === 'moves') {
+            const threshold = parseFloat(this.dataVizContainer.querySelector('#threshold')?.value) || 12.0;
+            const moves = this.detectMoves(timeData, magnitudeData, threshold); // Use magnitude for move detection
+            
+            if (moves.length > 0) {
+                // Add threshold line
+                traces.push({
+                    x: [timeData[0], timeData[timeData.length - 1]],
+                    y: [threshold, threshold],
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `Threshold (${threshold})`,
+                    line: { color: '#ff4757', width: 2, dash: 'dash' }
+                });
+
+                // Add move markers
+                const moveX = moves.map(move => move.time);
+                const moveY = moves.map(move => move.acceleration);
+                
+                traces.push({
+                    x: moveX,
+                    y: moveY,
+                    type: 'scatter',
+                    mode: 'markers',
+                    name: 'Detected Moves',
+                    marker: { 
+                        color: '#ffa502', 
+                        size: 10,
+                        symbol: 'star'
+                    }
+                });
+            }
+        }
+
         const layout = {
             title: {
-                text: 'Live Acceleration Data Stream',
+                text: '📈 Live Acceleration Data (Absolute Magnitude)',
                 font: { color: '#00ffcc', size: 18 }
             },
-            xaxis: {
-                title: 'Time (s)',
+            xaxis: { 
+                title: 'Time (seconds)',
                 color: '#00ffcc',
-                gridcolor: '#444444'
+                gridcolor: 'rgba(0, 255, 204, 0.2)'
             },
-            yaxis: {
+            yaxis: { 
                 title: 'Acceleration (m/s²)',
                 color: '#00ffcc',
-                gridcolor: '#444444'
+                gridcolor: 'rgba(0, 255, 204, 0.2)'
             },
-            plot_bgcolor: 'rgba(0,0,0,0.8)',
-            paper_bgcolor: 'rgba(0,0,0,0.8)',
+            plot_bgcolor: 'rgba(0, 0, 0, 0.8)',
+            paper_bgcolor: 'rgba(0, 0, 0, 0)',
             font: { color: '#00ffcc' },
+            autosize: true,
+            margin: { l: 60, r: 30, t: 60, b: 60 },
+            showlegend: true,
             legend: {
-                font: { color: '#00ffcc' }
-            },
-            margin: { t: 50, r: 50, b: 50, l: 50 }
+                x: 1,
+                y: 1,
+                bgcolor: 'rgba(0, 0, 0, 0.5)'
+            }
         };
 
-        // Plot configuration
         const config = {
             responsive: true,
-            displayModeBar: true,
-            modeBarButtonsToRemove: ['pan2d', 'select2d', 'lasso2d', 'autoScale2d'],
-            displaylogo: false
+            displayModeBar: false
         };
 
         try {
-            // Create or update the plot
-            await Plotly.react(plotContainer, traces, layout, config);
-
-            // Update live data statistics
+            await Plotly.newPlot(plotDiv, traces, layout, config);
+            
+            // Update statistics with magnitude data
             this.updateLiveDataStatistics(dataBuffer, magnitudeData);
-
-            console.log(`Live data plot updated with ${timeData.length} data points`);
-
+            
         } catch (error) {
-            console.error('Error creating live data plot:', error);
+            console.error('[DataVizIntegration] Error creating live data plot:', error);
         }
     }
 
@@ -1105,8 +1336,10 @@ export class DataVizIntegration {
         const duration = dataBuffer.time.length > 0 ? 
             dataBuffer.time[dataBuffer.time.length - 1] - dataBuffer.time[0] : 0;
 
-        // Detect moves in live data
-        const threshold = parseFloat(this.dataVizContainer.querySelector('#thresholdRange')?.value || 12);
+        // Detect moves in live data using same threshold as backend
+        const thresholdInput = this.dataVizContainer.querySelector('#threshold');
+        const defaultThreshold = 12.0; // Same default as backend for consistency
+        const threshold = thresholdInput ? parseFloat(thresholdInput.value) : defaultThreshold;
         const moves = this.detectMoves(dataBuffer.time, magnitudeData, threshold);
 
         // Update UI elements
@@ -1135,6 +1368,12 @@ export class DataVizIntegration {
             const plotContainer = this.dataVizContainer.querySelector('#accelerationPlot');
             if (plotContainer) {
                 Plotly.purge(plotContainer);
+            }
+            
+            // Remove live indicator from time display
+            const timeValueDisplay = this.dataVizContainer.querySelector('#timeValue');
+            if (timeValueDisplay && timeValueDisplay.textContent.includes('🔴')) {
+                timeValueDisplay.textContent = timeValueDisplay.textContent.replace(' 🔴 LIVE', '');
             }
         }
     }

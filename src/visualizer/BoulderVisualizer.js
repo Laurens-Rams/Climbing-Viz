@@ -66,7 +66,10 @@ export class BoulderVisualizer {
             attemptIntensity: 2,     // Visual intensity multiplier
             maxAttempts: 45,         // Maximum number of attempts to show
             attemptRadius: 1.3,       // Multiplier for attempt end radius (relative to max radius)
-            moveDetectionThreshold: 15.0 // Added for live data detection
+            moveDetectionThreshold: 15.0, // Added for live data detection
+            magnitudeThreshold: 1.5,   // Lowered for live accelerometer data (was 15)
+            minMoveDuration: 0.2,    // Reduced minimum duration for more responsive detection (was 0.3)
+            maxTimeBetweenMoves: 1.5  // Reduced max time between moves for live data (was 2.0)
         };
         
         this.init();
@@ -460,51 +463,76 @@ export class BoulderVisualizer {
         
         // Calculate the base radius where lines start (from center/inner circle)
         const startRadius = this.settings.baseRadius * this.settings.radiusMultiplier;
-        const lineEndRadius = startRadius + (this.settings.lineLength * this.settings.radiusMultiplier);
         
         for (let i = 0; i < moveCount; i++) {
             const move = this.boulder.moves[i];
             
             // Calculate angle for this move (center of the move segment)
-            // Start at 12 o'clock (top) - when i=0, angle should be -PI/2 + PI/2 = 0 (which is 3 o'clock)
-            // But we want i=0 to be at top, so we need to add PI/2 to get to 12 o'clock
             const anglePerMove = (Math.PI * 2) / moveCount;
             const moveAngle = i * anglePerMove + Math.PI / 2;
             
-            // Calculate line start and end positions (now starting from center going outward)
+            // Calculate line length based on move characteristics
+            const baseDynamics = isFinite(move.dynamics) ? move.dynamics : 0.5;
+            
+            // Enhanced dynamics scaling similar to the rings
+            const enhancedDynamics = baseDynamics < 0.3 ? 
+                baseDynamics * 0.8 : // Keep low values even lower
+                Math.pow(baseDynamics, 1.2) * (1 + 0.5); // Amplify higher values
+            
+            // Add crux emphasis to line length
+            let cruxMultiplier = 1.0;
+            if (move.isCrux) {
+                cruxMultiplier = 1.0 + (this.settings.cruxEmphasis * 0.3); // 30% of crux emphasis affects length
+            }
+            
+            // Calculate variable line length based on move characteristics
+            const baseLineLength = this.settings.lineLength;
+            const dynamicsLengthMultiplier = 0.5 + (enhancedDynamics * 1.5); // Range from 0.5x to 2.0x base length
+            const variableLineLength = baseLineLength * dynamicsLengthMultiplier * cruxMultiplier;
+            
+            const lineEndRadius = startRadius + (variableLineLength * this.settings.radiusMultiplier);
+            
+            // Calculate line start and end positions
             const startX = Math.cos(moveAngle) * startRadius;
             const startY = Math.sin(moveAngle) * startRadius;
             const endX = Math.cos(moveAngle) * lineEndRadius;
             const endY = Math.sin(moveAngle) * lineEndRadius;
             
-            // Create line geometry
-            const lineGeometry = new THREE.BufferGeometry();
-            const lineVertices = new Float32Array([
-                startX, startY, 0,
-                endX, endY, 0
-            ]);
-            lineGeometry.setAttribute('position', new THREE.BufferAttribute(lineVertices, 3));
+            // Calculate line thickness based on move dynamics (similar to circle radius)
+            const baseThickness = 0.02; // Base thickness
+            const dynamicsThickness = baseThickness * (0.5 + enhancedDynamics * 2.0); // Variable thickness
+            const cruxThickness = move.isCrux ? dynamicsThickness * 1.5 : dynamicsThickness; // Crux moves get thicker lines
+            
+            // Create thick line using TubeGeometry for proper radius control
+            const linePoints = [
+                new THREE.Vector3(startX, startY, 0),
+                new THREE.Vector3(endX, endY, 0)
+            ];
+            
+            const curve = new THREE.CatmullRomCurve3(linePoints);
+            const tubeGeometry = new THREE.TubeGeometry(curve, 1, cruxThickness, 8, false);
             
             // Line color based on move type (crux vs normal)
             const lineColor = move.isCrux ? this.colors.cruxMove : this.colors.normalMove;
             
             // Create line material
-            const lineMaterial = new THREE.LineBasicMaterial({
+            const lineMaterial = new THREE.MeshBasicMaterial({
                 color: lineColor,
                 transparent: true,
-                opacity: this.settings.lineOpacity,
-                linewidth: 2
+                opacity: this.settings.lineOpacity
             });
             
             // Create line mesh
-            const line = new THREE.Line(lineGeometry, lineMaterial);
+            const line = new THREE.Mesh(tubeGeometry, lineMaterial);
             this.moveLines.push(line);
             this.scene.add(line);
             
-            // Create dot/arrow at the end of the line
+            // Create dot/arrow at the end of the line with size based on dynamics
+            const dotSize = this.settings.dotSize * (0.5 + enhancedDynamics * 1.5); // Variable dot size
+            
             if (i === 0) {
                 // First move gets a bigger, brighter dot
-                const dotGeometry = new THREE.SphereGeometry(this.settings.dotSize * 2, 32, 16);
+                const dotGeometry = new THREE.SphereGeometry(dotSize * 2, 32, 16);
                 const dotMaterial = new THREE.MeshBasicMaterial({
                     color: lineColor,
                     transparent: true,
@@ -524,7 +552,7 @@ export class BoulderVisualizer {
                 // Calculate direction vector for arrow
                 const directionAngle = nextAngle - moveAngle;
                 
-                const arrow = this.createArrow(endX, endY, directionAngle, lineColor);
+                const arrow = this.createArrow(endX, endY, directionAngle, lineColor, dotSize);
                 this.moveLines.push(arrow);
                 this.scene.add(arrow);
             }
@@ -533,12 +561,12 @@ export class BoulderVisualizer {
         // No need for start label - first dot will be bigger and brighter
     }
     
-    createArrow(x, y, directionAngle, color) {
+    createArrow(x, y, directionAngle, color, dotSize) {
         // Create arrow geometry pointing in the direction of movement
         const arrowGroup = new THREE.Group();
         
         // Arrow head (triangle)
-        const arrowHeadGeometry = new THREE.ConeGeometry(this.settings.dotSize * 0.8, this.settings.dotSize * 1.5, 8);
+        const arrowHeadGeometry = new THREE.ConeGeometry(dotSize * 0.8, dotSize * 1.5, 8);
         const arrowMaterial = new THREE.MeshBasicMaterial({
             color: color,
             transparent: true,
@@ -838,17 +866,40 @@ export class BoulderVisualizer {
         // Create multiple concentric rings for liquid effect
         for (let ringIndex = 0; ringIndex < this.settings.ringCount; ringIndex++) {
             const ring = this.createSingleRing(ringIndex, moveCount);
-            this.rings.push(ring);
-            this.scene.add(ring);
+            if (ring) {
+                this.rings.push(ring);
+                this.scene.add(ring);
+            } else {
+                console.warn(`[BoulderVisualizer] Failed to create ring ${ringIndex}`);
+            }
         }
     }
     
     createSingleRing(ringIndex, moveCount) {
+        // Safety checks for valid boulder and moves
+        if (!this.boulder || !this.boulder.moves || this.boulder.moves.length === 0) {
+            console.warn('[BoulderVisualizer] No boulder moves available for ring creation');
+            return null;
+        }
+
+        // Ensure we have enough moves for meaningful visualization
+        if (moveCount < 2) {
+            console.warn('[BoulderVisualizer] Insufficient moves for ring creation, need at least 2 moves');
+            return null;
+        }
+
         const baseRadius = (this.settings.baseRadius + (ringIndex * this.settings.ringSpacing)) * this.settings.radiusMultiplier;
+        
+        // Validate base radius
+        if (!isFinite(baseRadius) || baseRadius <= 0) {
+            console.warn('[BoulderVisualizer] Invalid base radius calculated:', baseRadius);
+            return null;
+        }
+        
         const points = [];
         
         // Create much more detailed points for dramatic effect
-        const detailLevel = moveCount * 8; // Much higher resolution for organic curves
+        const detailLevel = Math.max(moveCount * 8, 16); // Ensure minimum detail level
         
         for (let i = 0; i < detailLevel; i++) {
             const normalizedPosition = i / detailLevel;
@@ -861,11 +912,25 @@ export class BoulderVisualizer {
             const moveIndex2 = (moveIndex1 + 1) % moveCount;
             const lerpFactor = movePosition - Math.floor(movePosition);
             
+            // Safety check for move existence
             const move1 = this.boulder.moves[moveIndex1];
             const move2 = this.boulder.moves[moveIndex2];
             
-            // Interpolate dynamics between moves
-            const dynamics = move1.dynamics * (1 - lerpFactor) + move2.dynamics * lerpFactor;
+            if (!move1 || !move2) {
+                console.warn(`[BoulderVisualizer] Missing move data at indices ${moveIndex1}, ${moveIndex2}`);
+                continue;
+            }
+            
+            // Interpolate dynamics between moves (with fallback values and validation)
+            const dynamics1 = isFinite(move1.dynamics) ? move1.dynamics : 0.5;
+            const dynamics2 = isFinite(move2.dynamics) ? move2.dynamics : 0.5;
+            const dynamics = dynamics1 * (1 - lerpFactor) + dynamics2 * lerpFactor;
+            
+            // Validate dynamics value
+            if (!isFinite(dynamics)) {
+                console.warn('[BoulderVisualizer] Invalid dynamics calculated, using fallback');
+                continue;
+            }
             
             // Calculate base radius for this ring
             let radius = baseRadius;
@@ -880,6 +945,12 @@ export class BoulderVisualizer {
                 Math.pow(dynamics, 1.2) * (1 + ringProgress * 2); // Amplify higher values more on outer rings
             
             const dynamicsEffect = enhancedDynamics * this.settings.dynamicsMultiplier;
+            
+            // Validate dynamics effect
+            if (!isFinite(dynamicsEffect)) {
+                console.warn('[BoulderVisualizer] Invalid dynamics effect, skipping');
+                continue;
+            }
             
             // Create liquid wave effect - outer rings get more dramatic
             const waveAmplitude = dynamicsEffect * Math.pow(ringProgress, 0.6);
@@ -901,7 +972,8 @@ export class BoulderVisualizer {
             // Add crux emphasis - only at the exact crux move positions
             let cruxBoost = 0;
             for (let j = 0; j < moveCount; j++) {
-                if (this.boulder.moves[j].isCrux) {
+                const move = this.boulder.moves[j];
+                if (move && move.isCrux) {
                     const cruxPosition = j / moveCount;
                     let distance = Math.abs(normalizedPosition - cruxPosition);
                     
@@ -912,7 +984,8 @@ export class BoulderVisualizer {
                     const cruxRange = 0.02; // Much smaller range than color fade
                     if (distance < cruxRange) {
                         const cruxStrength = 1 - (distance / cruxRange);
-                        const moveBoost = this.boulder.moves[j].dynamics * this.settings.cruxEmphasis * 0.3 * cruxStrength;
+                        const moveDynamics = isFinite(move.dynamics) ? move.dynamics : 0.5;
+                        const moveBoost = moveDynamics * this.settings.cruxEmphasis * 0.3 * cruxStrength;
                         cruxBoost = Math.max(cruxBoost, moveBoost);
                     }
                 }
@@ -923,18 +996,22 @@ export class BoulderVisualizer {
             let moveBoost = 0;
             if (this.settings.moveEmphasis > 0) {
                 for (let j = 0; j < moveCount; j++) {
-                    const movePosition = j / moveCount;
-                    let distance = Math.abs(normalizedPosition - movePosition);
-                    
-                    // Handle wrap-around distance
-                    distance = Math.min(distance, 1 - distance);
-                    
-                    // Same range as crux emphasis for consistency
-                    const moveRange = 0.02;
-                    if (distance < moveRange) {
-                        const moveStrength = 1 - (distance / moveRange);
-                        const boost = this.boulder.moves[j].dynamics * this.settings.moveEmphasis * 0.3 * moveStrength;
-                        moveBoost = Math.max(moveBoost, boost);
+                    const move = this.boulder.moves[j];
+                    if (move) {
+                        const movePosition = j / moveCount;
+                        let distance = Math.abs(normalizedPosition - movePosition);
+                        
+                        // Handle wrap-around distance
+                        distance = Math.min(distance, 1 - distance);
+                        
+                        // Same range as crux emphasis for consistency
+                        const moveRange = 0.02;
+                        if (distance < moveRange) {
+                            const moveStrength = 1 - (distance / moveRange);
+                            const moveDynamics = isFinite(move.dynamics) ? move.dynamics : 0.5;
+                            const boost = moveDynamics * this.settings.moveEmphasis * 0.3 * moveStrength;
+                            moveBoost = Math.max(moveBoost, boost);
+                        }
                     }
                 }
             }
@@ -946,10 +1023,16 @@ export class BoulderVisualizer {
             radius += (turbulence1 + turbulence2) * waveAmplitude;
             
             // Add subtle randomness for organic feel (but consistent per ring and boulder)
-            const boulderSeed = this.boulder.id * 123.456; // Use boulder ID as seed for consistency
+            const boulderSeed = this.boulder.id ? (typeof this.boulder.id === 'string' ? this.boulder.id.length * 123.456 : this.boulder.id * 123.456) : 123.456;
             const seedValue = Math.sin(normalizedPosition * 1000 + ringIndex * 100 + boulderSeed);
             const randomness = seedValue * 0.08 * waveAmplitude;
             radius += randomness;
+            
+            // Final validation of radius
+            if (!isFinite(radius) || radius <= 0) {
+                console.warn('[BoulderVisualizer] Invalid radius calculated, using base radius');
+                radius = baseRadius;
+            }
             
             // Calculate position with enhanced Z variation for 3D effect
             const x = Math.cos(angle) * radius;
@@ -958,82 +1041,113 @@ export class BoulderVisualizer {
             const zWave2 = Math.cos(angle * 6 + ringIndex * 0.15) * ringProgress * 0.5;
             const z = (zWave1 + zWave2) * this.settings.depthEffect;
             
-            points.push(new THREE.Vector3(x, y, z));
+            // Validate all coordinates
+            if (isFinite(x) && isFinite(y) && isFinite(z)) {
+                points.push(new THREE.Vector3(x, y, z));
+            } else {
+                console.warn('[BoulderVisualizer] Invalid coordinates calculated, skipping point:', { x, y, z });
+            }
         }
         
-        // Create smooth curve with higher tension for more dramatic curves
-        const curve = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.3);
-        const smoothPoints = curve.getPoints(this.settings.curveResolution);
-        smoothPoints.pop(); // Remove duplicate point
+        // Ensure we have enough points for CatmullRomCurve3
+        if (points.length < 4) {
+            console.warn('[BoulderVisualizer] Insufficient valid points for curve creation:', points.length);
+            return null;
+        }
         
-        // Create geometry with vertex colors
-        const geometry = new THREE.BufferGeometry().setFromPoints(smoothPoints);
-        const colors = [];
-        const pointsPerMove = this.settings.curveResolution / moveCount;
-        
-        for (let i = 0; i < smoothPoints.length; i++) {
-            const normalizedPosition = i / smoothPoints.length;
+        try {
+            // Create smooth curve with higher tension for more dramatic curves
+            const curve = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.3);
+            const smoothPoints = curve.getPoints(this.settings.curveResolution);
             
-            // Find the closest moves for color interpolation
-            const movePosition = normalizedPosition * moveCount;
-            const moveIndex1 = Math.floor(movePosition) % moveCount;
-            const moveIndex2 = (moveIndex1 + 1) % moveCount;
-            const lerpFactor = movePosition - Math.floor(movePosition);
-            
-            const move1 = this.boulder.moves[moveIndex1];
-            const move2 = this.boulder.moves[moveIndex2];
-            
-            // Calculate crux influence with smooth fade
-            let cruxInfluence = 0;
-            
-            // Check distance to nearest crux moves
-            for (let j = 0; j < moveCount; j++) {
-                if (this.boulder.moves[j].isCrux) {
-                    const cruxPosition = j / moveCount;
-                    let distance = Math.abs(normalizedPosition - cruxPosition);
-                    
-                    // Handle wrap-around distance
-                    distance = Math.min(distance, 1 - distance);
-                    
-                    // Fade distance (adjust this to control fade range)
-                    const fadeRange = 0.12; // Slightly wider fade for magenta color
-                    if (distance < fadeRange) {
-                        const fadeStrength = 1 - (distance / fadeRange);
-                        cruxInfluence = Math.max(cruxInfluence, fadeStrength);
-                    }
-                }
+            // Remove duplicate point if it exists
+            if (smoothPoints.length > 1) {
+                smoothPoints.pop();
             }
             
-            // Interpolate between normal and crux colors
-            const normalColor = new THREE.Color(this.colors.normalMove);
-            const cruxColor = new THREE.Color(this.colors.cruxMove);
-            const finalColor = normalColor.lerp(cruxColor, cruxInfluence);
+            // Validate smooth points
+            const validSmoothPoints = smoothPoints.filter(point => 
+                isFinite(point.x) && isFinite(point.y) && isFinite(point.z)
+            );
             
-            colors.push(finalColor.r, finalColor.g, finalColor.b);
+            if (validSmoothPoints.length === 0) {
+                console.warn('[BoulderVisualizer] No valid smooth points generated');
+                return null;
+            }
+            
+            // Create geometry with vertex colors
+            const geometry = new THREE.BufferGeometry().setFromPoints(validSmoothPoints);
+            const colors = [];
+            
+            for (let i = 0; i < validSmoothPoints.length; i++) {
+                const normalizedPosition = i / validSmoothPoints.length;
+                
+                // Find the closest moves for color interpolation
+                const movePosition = normalizedPosition * moveCount;
+                const moveIndex1 = Math.floor(movePosition) % moveCount;
+                const moveIndex2 = (moveIndex1 + 1) % moveCount;
+                
+                // Safety check for move existence
+                const move1 = this.boulder.moves[moveIndex1];
+                const move2 = this.boulder.moves[moveIndex2];
+                
+                // Calculate crux influence with smooth fade
+                let cruxInfluence = 0;
+                
+                // Check distance to nearest crux moves
+                for (let j = 0; j < moveCount; j++) {
+                    const move = this.boulder.moves[j];
+                    if (move && move.isCrux) {
+                        const cruxPosition = j / moveCount;
+                        let distance = Math.abs(normalizedPosition - cruxPosition);
+                        
+                        // Handle wrap-around distance
+                        distance = Math.min(distance, 1 - distance);
+                        
+                        // Fade distance (adjust this to control fade range)
+                        const fadeRange = 0.12; // Slightly wider fade for magenta color
+                        if (distance < fadeRange) {
+                            const fadeStrength = 1 - (distance / fadeRange);
+                            cruxInfluence = Math.max(cruxInfluence, fadeStrength);
+                        }
+                    }
+                }
+                
+                // Interpolate between normal and crux colors
+                const normalColor = new THREE.Color(this.colors.normalMove);
+                const cruxColor = new THREE.Color(this.colors.cruxMove);
+                const finalColor = normalColor.lerp(cruxColor, cruxInfluence);
+                
+                colors.push(finalColor.r, finalColor.g, finalColor.b);
+            }
+            
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            
+            // Create material with enhanced visual effects and center fade
+            let ringOpacity = this.settings.opacity * (1 - ringIndex / this.settings.ringCount * 0.3);
+            
+            // Apply center fade for slab effect (closer to center = more transparent)
+            const centerDistance = ringIndex / this.settings.ringCount;
+            const centerFadeEffect = 1 - (this.settings.centerFade * (1 - centerDistance));
+            ringOpacity *= centerFadeEffect;
+            
+            const material = new THREE.LineBasicMaterial({
+                vertexColors: true,
+                transparent: true,
+                opacity: Math.max(0.1, ringOpacity), // Minimum opacity
+                linewidth: 2, // Thicker lines for more impact
+                blending: THREE.AdditiveBlending // Additive blending for glow effect
+            });
+            
+            // Create line mesh
+            const mesh = new THREE.LineLoop(geometry, material);
+            
+            return mesh;
+            
+        } catch (error) {
+            console.error('[BoulderVisualizer] Error creating ring curve:', error);
+            return null;
         }
-        
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        
-        // Create material with enhanced visual effects and center fade
-        let ringOpacity = this.settings.opacity * (1 - ringIndex / this.settings.ringCount * 0.3);
-        
-        // Apply center fade for slab effect (closer to center = more transparent)
-        const centerDistance = ringIndex / this.settings.ringCount;
-        const centerFadeEffect = 1 - (this.settings.centerFade * (1 - centerDistance));
-        ringOpacity *= centerFadeEffect;
-        
-        const material = new THREE.LineBasicMaterial({
-            vertexColors: true,
-            transparent: true,
-            opacity: Math.max(0.1, ringOpacity), // Minimum opacity
-            linewidth: 2, // Thicker lines for more impact
-            blending: THREE.AdditiveBlending // Additive blending for glow effect
-        });
-        
-        // Create line mesh
-        const mesh = new THREE.LineLoop(geometry, material);
-        
-        return mesh;
     }
     
     updateSettings(newSettings) {
@@ -1071,11 +1185,28 @@ export class BoulderVisualizer {
         // Update move line materials
         this.moveLines.forEach(line => {
             if (line.material) {
-                if (line.material.type === 'LineBasicMaterial') {
+                // All move line elements now use MeshBasicMaterial (tubes, dots, arrows)
+                if (line.material.type === 'MeshBasicMaterial') {
+                    // For tube lines, use lineOpacity; for dots/arrows, use dotOpacity
+                    // We can distinguish by checking if it's a Mesh with TubeGeometry
+                    if (line.geometry && line.geometry.type === 'TubeGeometry') {
+                        line.material.opacity = this.settings.lineOpacity;
+                    } else {
+                        line.material.opacity = this.settings.dotOpacity;
+                    }
+                } else if (line.material.type === 'LineBasicMaterial') {
+                    // Legacy support for any remaining line materials
                     line.material.opacity = this.settings.lineOpacity;
-                } else if (line.material.type === 'MeshBasicMaterial') {
-                    line.material.opacity = this.settings.dotOpacity;
                 }
+            }
+            
+            // Handle arrow groups (which contain child meshes)
+            if (line.children && line.children.length > 0) {
+                line.children.forEach(child => {
+                    if (child.material && child.material.type === 'MeshBasicMaterial') {
+                        child.material.opacity = this.settings.dotOpacity;
+                    }
+                });
             }
         });
         
@@ -1115,99 +1246,238 @@ export class BoulderVisualizer {
     // Live data support for remote streaming
     updateWithLiveData(dataBuffer) {
         if (!dataBuffer || !dataBuffer.time || dataBuffer.time.length === 0) {
+            console.warn('[BoulderVisualizer] Invalid or empty data buffer received');
             return;
         }
 
         // Create a temporary boulder object from live data
         const liveBoulder = this.createLiveBoulder(dataBuffer);
         
-        // Update the visualization with live data
-        this.loadBoulder(liveBoulder);
+        // Only update visualization if we have valid data
+        if (liveBoulder) {
+            // Update the visualization with live data
+            this.loadBoulder(liveBoulder);
+        } else {
+            console.warn('[BoulderVisualizer] No valid boulder data created from live data');
+        }
     }
 
     createLiveBoulder(dataBuffer) {
-        // Convert live acceleration data to boulder format
+        if (!dataBuffer || !dataBuffer.time || dataBuffer.time.length === 0) {
+            console.warn('[BoulderVisualizer] No valid data buffer provided');
+            return null;
+        }
+
+        // Convert buffer data to raw data format
         const rawData = [];
         for (let i = 0; i < dataBuffer.time.length; i++) {
+            // Validate each data point
+            const time = dataBuffer.time[i];
+            const accX = dataBuffer.accX[i];
+            const accY = dataBuffer.accY[i];
+            const accZ = dataBuffer.accZ[i];
+            
+            if (isNaN(time) || isNaN(accX) || isNaN(accY) || isNaN(accZ) ||
+                !isFinite(time) || !isFinite(accX) || !isFinite(accY) || !isFinite(accZ)) {
+                continue; // Skip invalid data points
+            }
+            
             rawData.push({
-                time: dataBuffer.time[i],
-                accX: dataBuffer.accX[i],
-                accY: dataBuffer.accY[i],
-                accZ: dataBuffer.accZ[i]
+                time: time,
+                accX: accX,
+                accY: accY,
+                accZ: accZ
             });
         }
 
-        // Detect moves from live data using the same algorithm as CSV processing
-        const moves = this.detectMovesFromLiveData(rawData);
-
-        return {
-            id: 'live',
-            name: 'Live Data Stream',
-            type: 'live',
-            grade: 'V?',
-            moves: moves,
-            rawData: rawData,
-            isLive: true
-        };
-    }
-
-    detectMovesFromLiveData(rawData) {
-        if (!rawData || rawData.length < 10) {
-            return [];
+        if (rawData.length < 10) {
+            console.warn('[BoulderVisualizer] Insufficient valid data points for boulder creation:', rawData.length);
+            return null;
         }
 
-        // Use the same move detection algorithm as in boulderData.js
-        const threshold = this.settings.moveDetectionThreshold || 15.0;
-        const moves = [];
-        let moveIndex = 0;
+        // Calculate magnitudes
+        const magnitudes = rawData.map(point => {
+            const magnitude = Math.sqrt(point.accX * point.accX + point.accY * point.accY + point.accZ * point.accZ);
+            return isFinite(magnitude) ? magnitude : 0;
+        });
 
-        // Add starting position at time 0
+        // Detect moves using the improved algorithm
+        const detectedMoves = this.detectMovesFromLiveData(rawData, magnitudes);
+        
+        // Convert detected moves to boulder format
+        const moves = [];
+        
+        // Always add a starting position
         if (rawData.length > 0) {
             moves.push({
-                id: moveIndex++,
-                time: 0,
+                id: 0,
+                time: rawData[0].time,
                 type: 'start',
-                dynamics: 0.5,
+                dynamics: 0.3,
                 isCrux: false,
+                x: 0,
+                y: 0,
+                z: 0,
                 accX: rawData[0].accX,
                 accY: rawData[0].accY,
                 accZ: rawData[0].accZ
             });
         }
-
-        // Calculate acceleration magnitude for each point
-        const accelerationMagnitudes = rawData.map(point => {
-            return Math.sqrt(point.accX * point.accX + point.accY * point.accY + point.accZ * point.accZ);
+        
+        // Add detected moves
+        detectedMoves.forEach((move, index) => {
+            // Validate and sanitize move coordinates
+            const x = isFinite(move.x) ? move.x : Math.cos(index * 0.8) * (25 + index * 5);
+            const y = isFinite(move.y) ? move.y : Math.sin(index * 0.8) * (25 + index * 5);
+            const z = isFinite(move.z) ? move.z : Math.max(0, index * 2);
+            
+            moves.push({
+                id: index + 1,
+                time: move.time,
+                type: 'move',
+                dynamics: Math.max(0.1, Math.min(1.0, move.intensity || 0.5)),
+                isCrux: move.magnitude > (this.settings.magnitudeThreshold * 1.5),
+                x: x,
+                y: y,
+                z: z,
+                magnitude: move.magnitude,
+                duration: move.duration,
+                accX: rawData[move.index]?.accX || 0,
+                accY: rawData[move.index]?.accY || 0,
+                accZ: rawData[move.index]?.accZ || 0
+            });
         });
 
-        // Find peaks above threshold
-        for (let i = 1; i < accelerationMagnitudes.length - 1; i++) {
-            const current = accelerationMagnitudes[i];
-            const prev = accelerationMagnitudes[i - 1];
-            const next = accelerationMagnitudes[i + 1];
-
-            // Check if this is a peak above threshold
-            if (current > threshold && current > prev && current > next) {
-                // Avoid moves too close together (minimum 0.5 seconds apart)
-                const lastMoveTime = moves.length > 0 ? moves[moves.length - 1].time : -1;
-                if (rawData[i].time - lastMoveTime > 0.5) {
-                    const dynamics = Math.min((current - 10) / 20, 1.0); // Normalize to 0-1
-                    
-                    moves.push({
-                        id: moveIndex++,
-                        time: rawData[i].time,
-                        type: 'move',
-                        dynamics: Math.max(0.1, dynamics),
-                        isCrux: current > threshold * 1.5,
-                        accX: rawData[i].accX,
-                        accY: rawData[i].accY,
-                        accZ: rawData[i].accZ
-                    });
-                }
-            }
+        // Ensure we have at least 2 moves for visualization
+        if (moves.length < 2) {
+            // Add a default end move if we don't have enough
+            const lastDataPoint = rawData[rawData.length - 1];
+            moves.push({
+                id: moves.length,
+                time: lastDataPoint.time,
+                type: 'end',
+                dynamics: 0.3,
+                isCrux: false,
+                x: 20,
+                y: 20,
+                z: 5,
+                accX: lastDataPoint.accX,
+                accY: lastDataPoint.accY,
+                accZ: lastDataPoint.accZ
+            });
         }
 
-        console.log(`Detected ${moves.length} moves from live data (${rawData.length} data points)`);
+        // Calculate statistics
+        const totalTime = rawData[rawData.length - 1].time - rawData[0].time;
+        const avgMagnitude = magnitudes.reduce((sum, mag) => sum + mag, 0) / magnitudes.length;
+        const maxMagnitude = Math.max(...magnitudes);
+        
+        // Determine grade based on move count and intensity
+        let grade = 'V1';
+        if (moves.length >= 8 || maxMagnitude > 30) grade = 'V4';
+        else if (moves.length >= 6 || maxMagnitude > 25) grade = 'V3';
+        else if (moves.length >= 4 || maxMagnitude > 20) grade = 'V2';
+
+        const liveBoulder = {
+            id: 'live-data',
+            name: `Live Boulder (${moves.length} moves)`,
+            grade: grade,
+            moves: moves,
+            attempts: [], // No attempts for live data
+            stats: {
+                totalMoves: moves.length,
+                totalTime: totalTime,
+                avgMagnitude: avgMagnitude.toFixed(2),
+                maxMagnitude: maxMagnitude.toFixed(2),
+                dataPoints: rawData.length
+            },
+            isLiveData: true,
+            timestamp: new Date().toISOString()
+        };
+
+        console.log('[BoulderVisualizer] Created live boulder:', {
+            name: liveBoulder.name,
+            grade: liveBoulder.grade,
+            moves: liveBoulder.moves.length,
+            stats: liveBoulder.stats
+        });
+
+        return liveBoulder;
+    }
+
+    detectMovesFromLiveData(rawData, magnitudes) {
+        if (!rawData || !magnitudes || rawData.length < 10) {
+            console.log('[BoulderVisualizer] Insufficient data for move detection:', rawData?.length || 0);
+            return [];
+        }
+
+        const moves = [];
+        
+        // Get threshold from DataViz integration for consistency
+        let threshold = 12.0; // Default fallback
+        try {
+            const dataVizContainer = document.querySelector('.data-viz-container');
+            const thresholdInput = dataVizContainer?.querySelector('#threshold');
+            if (thresholdInput) {
+                threshold = parseFloat(thresholdInput.value);
+                console.log(`[BoulderVisualizer] Using threshold from DataViz: ${threshold}`);
+            } else {
+                console.log(`[BoulderVisualizer] Using default threshold: ${threshold}`);
+            }
+        } catch (error) {
+            console.warn('[BoulderVisualizer] Could not get threshold from DataViz, using default:', threshold);
+        }
+        
+        const minMoveDuration = 0.3; // Minimum duration for a valid move
+        const maxTimeBetweenMoves = 2.0; // Maximum time between moves
+        
+        let lastMoveTime = -maxTimeBetweenMoves;
+        
+        console.log(`[BoulderVisualizer] Live move detection with threshold: ${threshold}, data points: ${rawData.length}`);
+        console.log(`[BoulderVisualizer] Magnitude range: ${Math.min(...magnitudes).toFixed(2)} - ${Math.max(...magnitudes).toFixed(2)}`);
+        
+        // Look for peaks above threshold
+        for (let i = 1; i < magnitudes.length - 1; i++) {
+            const currentTime = rawData[i].time;
+            const currentMagnitude = magnitudes[i];
+            const prevMagnitude = magnitudes[i - 1];
+            const nextMagnitude = magnitudes[i + 1];
+            
+            // Validate data point
+            if (!isFinite(currentTime) || !isFinite(currentMagnitude)) {
+                continue;
+            }
+            
+            // Check if this is a peak above threshold
+            if (currentMagnitude > threshold && 
+                currentMagnitude > prevMagnitude && 
+                currentMagnitude > nextMagnitude &&
+                (currentTime - lastMoveTime) > minMoveDuration) {
+                
+                // Calculate move position based on time progression
+                const timeProgress = (currentTime - rawData[0].time) / (rawData[rawData.length - 1].time - rawData[0].time);
+                const angle = timeProgress * Math.PI * 2; // Full circle progression
+                const radius = 25 + (moves.length * 5); // Increasing radius for each move
+                
+                const move = {
+                    time: currentTime,
+                    index: i,
+                    magnitude: currentMagnitude,
+                    intensity: Math.min(1.0, currentMagnitude / 30), // Normalize intensity
+                    duration: minMoveDuration, // Simplified duration
+                    x: Math.cos(angle) * radius,
+                    y: Math.sin(angle) * radius,
+                    z: Math.max(0, moves.length * 2) // Increasing height
+                };
+                
+                moves.push(move);
+                lastMoveTime = currentTime;
+                
+                console.log(`[BoulderVisualizer] Detected move ${moves.length}: time=${currentTime.toFixed(2)}s, magnitude=${currentMagnitude.toFixed(2)}, position=(${move.x.toFixed(1)}, ${move.y.toFixed(1)}, ${move.z.toFixed(1)})`);
+            }
+        }
+        
+        console.log(`[BoulderVisualizer] Detected ${moves.length} moves from live data`);
         return moves;
     }
 
