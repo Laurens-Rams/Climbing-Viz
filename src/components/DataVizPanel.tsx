@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import * as Select from '@radix-ui/react-select'
-import * as Slider from '@radix-ui/react-slider'
 import { ChevronDownIcon, BarChart } from 'lucide-react'
 import { useCSVData } from '../hooks/useCSVData'
 import { useBoulderConfig } from '../context/BoulderConfigContext'
 import type { BoulderData } from '../utils/csvLoader'
+import ElasticSlider from './ui/ElasticSlider'
 
 interface DataVizPanelProps {
   isVisible: boolean
@@ -382,70 +382,70 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
   if (!isVisible) return null
 
   return (
-    <div className="fixed top-16 inset-x-0 bottom-0 bg-gradient-to-br from-gray-900 via-blue-900 to-gray-800 text-cyan-400 overflow-y-auto z-10">
+    <div className="fixed top-16 inset-x-0 bottom-0 bg-gradient-to-br from-black via-blue-900/20 to-black text-cyan-400 overflow-y-auto z-10">
       <div className="p-6 flex flex-col">
         
-        {/* Top Controls - 50/50 Split with Equal Height - ADDED mb-4 */}
+        {/* Top Controls - 50/50 Split with Equal Height */}
         <div className="grid grid-cols-2 gap-4 mb-4">
           
           {/* Left: Data Selection & Key Stats */}
-          <div className="bg-black/70 border border-cyan-400 rounded-lg p-4">
+          <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-4 backdrop-blur-sm">
             <h3 className="text-lg font-bold text-cyan-400 mb-3">📊 Data Controls</h3>
             
-            {/* Boulder Name Display (instead of dropdown) */}
-            <div className="mb-3">
-              <label className="block text-sm font-medium text-cyan-400 mb-1">Selected Boulder:</label>
-              <div className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-gray-200">
+            {/* Boulder Name Display */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-cyan-400 mb-2">Selected Boulder:</label>
+              <div className="w-full px-4 py-2.5 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 backdrop-blur-sm">
                 {isLoading ? "Loading..." : currentDisplayBoulder ? currentDisplayBoulder.name : "None selected"}
                 {currentDisplayBoulder && ` (${currentDisplayBoulder.stats.sampleCount} pts)`}
               </div>
             </div>
 
             {/* Key Stats Grid - 2x2 */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="text-center p-2 bg-gray-800/50 rounded border border-gray-700">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
                 <div className="text-lg font-bold text-blue-400">{stats.moveCount}</div>
-                <div className="text-xs text-gray-400">Moves</div>
+                <div className="text-sm text-gray-400">Moves</div>
               </div>
-              <div className="text-center p-2 bg-gray-800/50 rounded border border-gray-700">
+              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
                 <div className="text-lg font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
-                <div className="text-xs text-gray-400">Duration</div>
+                <div className="text-sm text-gray-400">Duration</div>
               </div>
-              <div className="text-center p-2 bg-gray-800/50 rounded border border-gray-700">
+              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
                 <div className="text-lg font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
-                <div className="text-xs text-gray-400">Max (m/s²)</div>
+                <div className="text-sm text-gray-400">Max (m/s²)</div>
               </div>
-              <div className="text-center p-2 bg-gray-800/50 rounded border border-gray-700">
+              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
                 <div className="text-lg font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
-                <div className="text-xs text-gray-400">Avg (m/s²)</div>
+                <div className="text-sm text-gray-400">Avg (m/s²)</div>
               </div>
             </div>
           </div>
 
           {/* Right: Analysis Controls */}
-          <div className="bg-black/70 border border-cyan-400 rounded-lg p-4">
+          <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-4 backdrop-blur-sm">
             <h3 className="text-lg font-bold text-cyan-400 mb-3">🎯 Analysis Settings</h3>
             
             {/* Visualization Mode */}
-            <div className="mb-3">
-              <label className="block text-sm font-medium text-cyan-400 mb-1">Visualization:</label>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-cyan-400 mb-2">Visualization:</label>
               <Select.Root value={visualizationMode} onValueChange={setVisualizationMode}>
-                <Select.Trigger className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none">
+                <Select.Trigger className="w-full px-4 py-2.5 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none backdrop-blur-sm">
                   <Select.Value />
                   <Select.Icon>
                     <ChevronDownIcon className="w-4 h-4" />
                   </Select.Icon>
                 </Select.Trigger>
                 <Select.Portal>
-                  <Select.Content className="bg-gray-800 border border-gray-600 rounded shadow-lg z-[99999]">
-                    <Select.Viewport className="p-1">
-                      <Select.Item value="standard" className="px-3 py-2 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer">
+                  <Select.Content className="bg-black/90 border border-cyan-400/40 rounded-xl shadow-lg z-[99999] backdrop-blur-sm">
+                    <Select.Viewport className="p-2">
+                      <Select.Item value="standard" className="px-4 py-2.5 text-gray-200 hover:bg-cyan-400/20 hover:text-cyan-400 rounded-lg cursor-pointer">
                         <Select.ItemText>Time Series</Select.ItemText>
                       </Select.Item>
-                      <Select.Item value="moves" className="px-3 py-2 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer">
+                      <Select.Item value="moves" className="px-4 py-2.5 text-gray-200 hover:bg-cyan-400/20 hover:text-cyan-400 rounded-lg cursor-pointer">
                         <Select.ItemText>Move Detection</Select.ItemText>
                       </Select.Item>
-                      <Select.Item value="histogram" className="px-3 py-2 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer">
+                      <Select.Item value="histogram" className="px-4 py-2.5 text-gray-200 hover:bg-cyan-400/20 hover:text-cyan-400 rounded-lg cursor-pointer">
                         <Select.ItemText>Distribution</Select.ItemText>
                       </Select.Item>
                     </Select.Viewport>
@@ -455,55 +455,43 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
             </div>
             
             {/* Threshold */}
-            <div className="mb-3">
-              <label className="block text-sm font-medium text-cyan-400 mb-1">
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-cyan-400 mb-2">
                 Move Threshold: {currentThreshold.toFixed(1)} m/s²
               </label>
-              <Slider.Root
-                value={[currentThreshold]}
-                onValueChange={([value]) => {
-                  if (currentDisplayBoulder) {
-                    setThreshold(currentDisplayBoulder.id, value);
-                  }
-                }}
-                min={8}
-                max={50}
-                step={0.5}
-                className="relative flex items-center select-none touch-none h-6"
-              >
-                <Slider.Track className="bg-gray-700 relative grow rounded-full h-3">
-                  <Slider.Range className="absolute bg-cyan-400 rounded-full h-full" />
-                </Slider.Track>
-                <Slider.Thumb className="block w-5 h-5 bg-cyan-400 shadow-lg rounded-full hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400" />
-              </Slider.Root>
+              <ElasticSlider
+                defaultValue={currentThreshold}
+                startingValue={8}
+                maxValue={50}
+                isStepped={true}
+                stepSize={0.5}
+                className="w-full"
+                onChange={(value) => setThreshold(currentDisplayBoulder?.id || 0, value)}
+              />
             </div>
 
             {/* Time Range */}
             <div>
-              <label className="block text-sm font-medium text-cyan-400 mb-1">
+              <label className="block text-sm font-medium text-cyan-400 mb-2">
                 Time Range: {timeRange === 100 ? 'All' : `${timeRange}%`}
               </label>
-              <Slider.Root
-                value={[timeRange]}
-                onValueChange={([value]) => setTimeRange(value)}
-                min={10}
-                max={100}
-                step={5}
-                className="relative flex items-center select-none touch-none h-6"
-              >
-                <Slider.Track className="bg-gray-700 relative grow rounded-full h-3">
-                  <Slider.Range className="absolute bg-cyan-400 rounded-full h-full" />
-                </Slider.Track>
-                <Slider.Thumb className="block w-5 h-5 bg-cyan-400 shadow-lg rounded-full hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400" />
-              </Slider.Root>
+              <ElasticSlider
+                defaultValue={timeRange}
+                startingValue={10}
+                maxValue={100}
+                isStepped={true}
+                stepSize={5}
+                className="w-full"
+                onChange={setTimeRange}
+              />
             </div>
           </div>
         </div>
 
-        {/* NEW: Statistics View Module (Plot + Full Stats Table) */}
+        {/* Statistics View Module */}
         <div className="flex flex-col space-y-4">
           {/* Main Plot Area */}
-          <div className="bg-black/70 border border-cyan-400 rounded-lg p-4">
+          <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-4 backdrop-blur-sm">
             <div className="flex items-center gap-2 mb-3">
               <BarChart className="w-5 h-5 text-cyan-400" />
               <h3 className="text-lg font-bold text-cyan-400">
@@ -514,11 +502,11 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
             </div>
             <div 
               ref={plotRef}
-              className="w-full h-[500px] bg-gray-900 border border-gray-700 rounded flex items-center justify-center"
+              className="w-full h-[500px] bg-black/50 border border-cyan-400/20 rounded-xl flex items-center justify-center backdrop-blur-sm"
             >
               {currentDisplayBoulder?.csvData ? (
                 <canvas
-                  className="w-full h-full bg-gray-900 rounded"
+                  className="w-full h-full bg-black/50 rounded-xl"
                   style={{ maxWidth: '100%', maxHeight: '100%' }}
                 />
               ) : (
@@ -530,34 +518,34 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
             </div>
           </div>
 
-          {/* Full Width Statistics at Bottom - Now correctly part of the Statistics View module */}
-          <div className="bg-black/70 border border-cyan-400 rounded-lg p-3 h-20">
-            <h3 className="text-sm font-bold text-cyan-400 mb-1">📈 Complete Data Overview</h3>
-            <div className="grid grid-cols-5 gap-3 h-full">
+          {/* Full Width Statistics at Bottom */}
+          <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-4 backdrop-blur-sm">
+            <h3 className="text-sm font-bold text-cyan-400 mb-3">📈 Complete Data Overview</h3>
+            <div className="grid grid-cols-5 gap-3">
               
-              <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
                 <div className="text-lg font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
-                <div className="text-xs text-gray-400">Max (m/s²)</div>
+                <div className="text-sm text-gray-400">Max (m/s²)</div>
               </div>
               
-              <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
                 <div className="text-lg font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
-                <div className="text-xs text-gray-400">Avg (m/s²)</div>
+                <div className="text-sm text-gray-400">Avg (m/s²)</div>
               </div>
               
-              <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
                 <div className="text-lg font-bold text-blue-400">{stats.moveCount}</div>
-                <div className="text-xs text-gray-400">Moves</div>
+                <div className="text-sm text-gray-400">Moves</div>
               </div>
               
-              <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
                 <div className="text-lg font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
-                <div className="text-xs text-gray-400">Duration</div>
+                <div className="text-sm text-gray-400">Duration</div>
               </div>
               
-              <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
                 <div className="text-lg font-bold text-purple-400">{stats.sampleCount.toLocaleString()}</div>
-                <div className="text-xs text-gray-400">Data Points</div>
+                <div className="text-sm text-gray-400">Data Points</div>
               </div>
               
             </div>

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import * as Slider from '@radix-ui/react-slider'
 import * as Select from '@radix-ui/react-select'
-import { ChevronDownIcon, PlayIcon, Square, RefreshCwIcon, SettingsIcon } from 'lucide-react'
+import { ChevronDownIcon, PlayIcon, Square, RefreshCwIcon, SettingsIcon, PlusIcon, SearchIcon } from 'lucide-react'
 import type { BoulderData } from '../utils/csvLoader'
+import ElasticSlider from './ui/ElasticSlider'
+import GlassIcons from './ui/GlassIcons'
 
 interface ControlPanelProps {
   onSettingsChange: (settings: any) => void
@@ -158,12 +159,9 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
       setLocalSliderValue(Number(settings[control.key as keyof typeof settings]));
     }, [settings[control.key as keyof typeof settings], control.key]);
 
-    const handleValueChange = (value: number[]) => {
-      setLocalSliderValue(value[0]);
-    };
-
-    const handleValueCommit = (value: number[]) => {
-      updateSetting(control.key, value[0]);
+    const handleValueChange = (value: number) => {
+      setLocalSliderValue(value);
+      updateSetting(control.key, value);
     };
 
     return (
@@ -174,23 +172,15 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
             {localSliderValue.toFixed(control.step < 0.01 ? 3 : control.step < 0.1 ? 2 : 1)}
         </span>
       </div>
-      <Slider.Root
-          value={[localSliderValue]}
-          onValueChange={handleValueChange} // Update local value during drag
-          onValueCommit={handleValueCommit} // Update global settings on drag end
-        min={control.min}
-        max={control.max}
-        step={control.step}
-        className="relative flex items-center select-none touch-none h-5"
-      >
-        <Slider.Track className="bg-gray-700 relative grow rounded-full h-2">
-          <Slider.Range className="absolute bg-cyan-400 rounded-full h-full" />
-        </Slider.Track>
-        <Slider.Thumb
-            className="block w-4 h-4 bg-cyan-400 shadow-lg rounded-full hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-opacity-50 cursor-pointer"
-          aria-label={control.name}
-        />
-      </Slider.Root>
+      <ElasticSlider
+        defaultValue={localSliderValue}
+        startingValue={control.min}
+        maxValue={control.max}
+        isStepped={control.step > 0}
+        stepSize={control.step}
+        className="w-full"
+        onChange={handleValueChange}
+      />
     </div>
     );
   };
@@ -206,34 +196,34 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
       </button>
 
       {/* Control panel */}
-      <div className="w-80 bg-gray-900 border border-cyan-400 rounded-lg shadow-xl overflow-hidden">
+      <div className="w-80 bg-black/70 border border-cyan-400/40 rounded-2xl shadow-xl overflow-hidden backdrop-blur-sm">
         {/* Header */}
-        <div className="bg-gray-800 border-b border-cyan-400 p-3">
+        <div className="bg-black/50 border-b border-cyan-400/40 p-4">
           <h2 className="text-cyan-400 font-bold text-lg">Boulder Controls</h2>
         </div>
 
         {/* Error Display */}
         {error && (
-          <div className="bg-red-900/20 border-b border-red-400 p-2">
-            <div className="text-red-400 text-xs">⚠️ {error}</div>
+          <div className="bg-red-900/20 border-b border-red-400/40 p-3">
+            <div className="text-red-400 text-sm">⚠️ {error}</div>
           </div>
         )}
 
         {/* Folder tabs */}
-        <div className="flex border-b border-gray-700 bg-gray-800">
+        <div className="flex border-b border-cyan-400/20 bg-black/50">
           {folders.map((folder) => (
             <button
               key={folder.id}
               onClick={() => setCurrentFolder(currentFolder === folder.id ? null : folder.id)}
-              className={`flex-1 px-2 py-2 text-xs font-medium transition-colors border-r border-gray-700 last:border-r-0 ${
+              className={`flex-1 px-3 py-3 text-sm font-medium transition-colors border-r border-cyan-400/20 last:border-r-0 ${
                 currentFolder === folder.id
-                  ? 'bg-cyan-400 text-black'
-                  : 'text-gray-300 hover:text-cyan-400 hover:bg-gray-700'
+                  ? 'bg-cyan-400/20 text-cyan-400'
+                  : 'text-gray-300 hover:text-cyan-400 hover:bg-cyan-400/10'
               }`}
             >
               <div className="text-center">
-                <div className="text-sm">{folder.icon}</div>
-                <div className="hidden sm:block">{folder.name.replace(/^.+ /, '')}</div>
+                <div className="text-base">{folder.icon}</div>
+                <div className="hidden sm:block mt-1">{folder.name.replace(/^.+ /, '')}</div>
               </div>
             </button>
           ))}
@@ -244,26 +234,26 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
           {currentFolder === 'selection' && (
             <div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-200 mb-2">Select CSV Data</label>
+                <label className="block text-sm font-medium text-cyan-400 mb-2">Select CSV Data</label>
                 <Select.Root 
                   value={selectedBoulder?.id.toString() || ''} 
                   onValueChange={handleBoulderSelect}
                   disabled={isLoading}
                 >
-                  <Select.Trigger className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none disabled:opacity-50">
+                  <Select.Trigger className="w-full px-4 py-2.5 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none disabled:opacity-50 backdrop-blur-sm">
                     <Select.Value placeholder={isLoading ? "Loading..." : "Select CSV..."} />
                     <Select.Icon>
                       <ChevronDownIcon className="w-4 h-4" />
                     </Select.Icon>
                   </Select.Trigger>
                   <Select.Portal>
-                    <Select.Content className="bg-gray-800 border border-gray-600 rounded shadow-lg z-[99999]">
-                      <Select.Viewport className="p-1">
+                    <Select.Content className="bg-black/90 border border-cyan-400/40 rounded-xl shadow-lg z-[99999] backdrop-blur-sm">
+                      <Select.Viewport className="p-2">
                         {boulders.map((boulder) => (
                           <Select.Item
                             key={boulder.id}
                             value={boulder.id.toString()}
-                            className="px-3 py-2 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer focus:outline-none"
+                            className="px-4 py-2.5 text-gray-200 hover:bg-cyan-400/20 hover:text-cyan-400 rounded-lg cursor-pointer focus:outline-none"
                           >
                             <Select.ItemText>
                               {boulder.name}
@@ -271,7 +261,7 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
                           </Select.Item>
                         ))}
                         {boulders.length === 0 && !isLoading && (
-                          <Select.Item value="" disabled className="px-3 py-2 text-gray-400 rounded">
+                          <Select.Item value="" disabled className="px-4 py-2.5 text-gray-400 rounded-lg">
                             <Select.ItemText>No CSV files found</Select.ItemText>
                           </Select.Item>
                         )}
@@ -282,31 +272,40 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
               </div>
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-200 mb-2">Upload CSV File</label>
+                <label className="block text-sm font-medium text-cyan-400 mb-2">Upload CSV File</label>
                 <input
                   type="file"
                   accept=".csv"
                   onChange={handleFileUpload}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-cyan-400 file:text-black file:cursor-pointer text-xs"
+                  className="w-full px-4 py-2.5 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none file:mr-3 file:py-1.5 file:px-4 file:rounded-lg file:border-0 file:bg-cyan-400/20 file:text-cyan-400 file:cursor-pointer text-sm backdrop-blur-sm"
                 />
               </div>
 
-              <div className="flex gap-2">
-                <button 
-                  onClick={refreshBoulders}
-                  disabled={isLoading}
-                  className="flex-1 px-3 py-2 bg-cyan-400 text-black rounded hover:bg-cyan-300 transition-colors text-sm disabled:opacity-50"
-                >
-                  {isLoading ? '🔄' : '🔄'} Reload
-                </button>
-                <button className="flex-1 px-3 py-2 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 transition-colors text-sm">
-                  🔍 Scan Files
-                </button>
+              <div className="flex gap-3">
+                <GlassIcons
+                  items={[
+                    {
+                      icon: <RefreshCwIcon className="w-4 h-4" />,
+                      color: "blue",
+                      label: "Reload",
+                      customClass: "!p-2",
+                      onClick: refreshBoulders
+                    },
+                    {
+                      icon: <SearchIcon className="w-4 h-4" />,
+                      color: "purple",
+                      label: "Scan Files",
+                      customClass: "!p-2",
+                      onClick: () => {}
+                    }
+                  ]}
+                  className="flex items-center gap-2"
+                />
               </div>
 
               {selectedBoulder && (
-                <div className="mt-4 p-3 bg-cyan-400/10 border border-cyan-400 rounded text-xs">
-                  <div className="font-bold text-cyan-400 mb-1">Current: {selectedBoulder.name}</div>
+                <div className="mt-4 p-4 bg-cyan-400/10 border border-cyan-400/40 rounded-xl text-sm backdrop-blur-sm">
+                  <div className="font-bold text-cyan-400 mb-2">Current: {selectedBoulder.name}</div>
                   <div className="text-gray-300">
                     • {selectedBoulder.stats.moveCount} moves detected<br/>
                     • {selectedBoulder.stats.duration}s duration<br/>
@@ -322,45 +321,46 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
           ))}
 
           {currentFolder && currentFolder !== 'selection' && (
-            <div className="mt-4 pt-4 border-t border-gray-700">
+            <div className="mt-4 pt-4 border-t border-cyan-400/20">
               {currentFolder === 'animation' && (
                 <>
-                  <button
-                    onClick={() => updateSetting('animationEnabled', !settings.animationEnabled)}
-                    className={`w-full px-3 py-2 rounded transition-colors text-sm mb-3 ${
-                      settings.animationEnabled
-                        ? 'bg-cyan-400 text-black'
-                        : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                    }`}
-                  >
-                    {settings.animationEnabled ? '🔄 Animation ON' : '⏸️ Animation OFF'}
-                  </button>
-              <button
-                onClick={() => updateSetting('liquidEffect', !settings.liquidEffect)}
-                className={`w-full px-3 py-2 rounded transition-colors text-sm ${
-                  settings.liquidEffect
-                    ? 'bg-cyan-400 text-black'
-                    : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                }`}
-              >
-                {settings.liquidEffect ? '🌊 Liquid Effect ON' : '⏸️ Liquid Effect OFF'}
-              </button>
+                  <GlassIcons
+                    items={[
+                      {
+                        icon: <PlayIcon className="w-4 h-4" />,
+                        color: settings.animationEnabled ? "green" : "gray",
+                        label: settings.animationEnabled ? "Animation ON" : "Animation OFF",
+                        customClass: "!p-2 mb-3",
+                        onClick: () => updateSetting('animationEnabled', !settings.animationEnabled)
+                      },
+                      {
+                        icon: <Square className="w-4 h-4" />,
+                        color: settings.liquidEffect ? "blue" : "gray",
+                        label: settings.liquidEffect ? "Liquid Effect ON" : "Liquid Effect OFF",
+                        customClass: "!p-2",
+                        onClick: () => updateSetting('liquidEffect', !settings.liquidEffect)
+                      }
+                    ]}
+                    className="flex items-center gap-2"
+                  />
                 </>
               )}
               
               {currentFolder === 'detection' && (
                 <>
-                  <button
-                    onClick={() => updateSetting('useThresholdBasedMoveCount', !settings.useThresholdBasedMoveCount)}
-                    className={`w-full px-3 py-2 rounded transition-colors text-sm mb-3 ${
-                      settings.useThresholdBasedMoveCount
-                        ? 'bg-cyan-400 text-black'
-                        : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                    }`}
-                  >
-                    {settings.useThresholdBasedMoveCount ? '🎯 Threshold Detection ON' : '📊 Static Move Count'}
-                  </button>
-                  <div className="text-xs text-gray-400 text-center">
+                  <GlassIcons
+                    items={[
+                      {
+                        icon: <SearchIcon className="w-4 h-4" />,
+                        color: settings.useThresholdBasedMoveCount ? "green" : "gray",
+                        label: settings.useThresholdBasedMoveCount ? "Threshold Detection ON" : "Static Move Count",
+                        customClass: "!p-2",
+                        onClick: () => updateSetting('useThresholdBasedMoveCount', !settings.useThresholdBasedMoveCount)
+                      }
+                    ]}
+                    className="flex items-center gap-2"
+                  />
+                  <div className="text-sm text-gray-400 text-center mt-3">
                     {settings.useThresholdBasedMoveCount 
                       ? 'Center shows detected moves based on threshold'
                       : 'Center shows boulder data move count'
