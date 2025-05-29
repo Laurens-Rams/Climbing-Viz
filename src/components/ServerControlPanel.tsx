@@ -191,29 +191,29 @@ export function ServerControlPanel({ onModeChange, onServerToggle, onServerComma
 
         {/* Playback Controls - only show when connected */}
         {isLiveModeActive && connectionStatus === 'connected' && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => handleServerCommand('start')}
-              className="p-2 bg-green-600/80 hover:bg-green-600 text-white rounded-lg transition-colors"
-              title="Start Recording"
-            >
-              <Play className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => handleServerCommand('stop')}
-              className="p-2 bg-red-600/80 hover:bg-red-600 text-white rounded-lg transition-colors"
-              title="Stop Recording"
-            >
-              <Square className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => handleServerCommand('clear')}
-              className="p-2 bg-yellow-600/80 hover:bg-yellow-600 text-white rounded-lg transition-colors"
-              title="Clear Data"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => handleServerCommand('start')}
+            className="p-2 bg-green-600/80 hover:bg-green-600 text-white rounded-lg transition-colors"
+            title="Start Recording"
+          >
+            <Play className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleServerCommand('stop')}
+            className="p-2 bg-red-600/80 hover:bg-red-600 text-white rounded-lg transition-colors"
+            title="Stop Recording"
+          >
+            <Square className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleServerCommand('clear')}
+            className="p-2 bg-yellow-600/80 hover:bg-yellow-600 text-white rounded-lg transition-colors"
+            title="Clear Data"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+        </div>
         )}
 
         {/* Connection Status Indicator */}

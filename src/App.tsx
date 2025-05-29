@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Header } from './components/Header'
 import { AddCustomBoulder } from './components/AddCustomBoulder'
 import { BoulderVisualizer } from './components/BoulderVisualizer'
@@ -6,8 +6,10 @@ import { ControlPanel } from './components/ControlPanel'
 import { ServerControlPanel } from './components/ServerControlPanel'
 import { DataVizPanel } from './components/DataVizPanel'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { BoulderConfigProvider } from './context/BoulderConfigContext'
 import { useCSVData } from './hooks/useCSVData'
 import type { BoulderData } from './utils/csvLoader'
+import './utils/corsHelper' // Initialize CORS helper
 import './App.css'
 
 type View = 'visualizer' | 'add-boulder' | 'dataviz';
@@ -17,6 +19,8 @@ function App() {
   const [currentView, setCurrentView] = useState<View>('visualizer')
   const [currentMode, setCurrentMode] = useState<Mode>('frontend')
   const [isServerConnected, setIsServerConnected] = useState(false)
+  const viewChangeTimeoutRef = useRef<NodeJS.Timeout>()
+  
   const [visualizerSettings, setVisualizerSettings] = useState({
     // Basics
     dynamicsMultiplier: 4.9,
@@ -43,14 +47,18 @@ function App() {
     // Advanced
     curveResolution: 240,
     baseRadius: 2.5,
-    liquidEffect: true
+    liquidEffect: true,
+    
+    // Text Display
+    centerTextSize: 1.0
   })
   
   // Centralized boulder data management
-  const { boulders, selectedBoulder, isLoading, error, selectBoulder, uploadFile, refreshBoulders } = useCSVData()
+  const { boulders, selectedBoulder, isLoading, error, selectBoulder, updateBoulderData, uploadFile, refreshBoulders } = useCSVData()
 
-  // Debug logging for boulder data changes
+  // Debug logging for boulder data changes - reduce frequency to prevent spam
   useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
     console.log('[App] Boulder selection state changed:', {
       selectedBoulder: selectedBoulder?.name,
       selectedBoulderId: selectedBoulder?.id,
@@ -58,7 +66,8 @@ function App() {
       currentMode,
       bouldersCount: boulders.length
     })
-  }, [selectedBoulder?.name, selectedBoulder?.id, currentView, currentMode, boulders.length])
+    }
+  }, [selectedBoulder?.id, currentView, currentMode, boulders.length]) // Only log when ID changes, not name
 
   const handleModeChange = useCallback((mode: Mode) => {
     console.log('[App] Mode changing to:', mode)
@@ -68,6 +77,36 @@ function App() {
       setCurrentView('dataviz')
     } else {
       setCurrentView('visualizer')
+    }
+  }, [])
+
+  const handleViewChange = useCallback((view: View) => {
+    console.log('[App] View changing to:', view)
+    
+    // Clear any pending view change
+    if (viewChangeTimeoutRef.current) {
+      clearTimeout(viewChangeTimeoutRef.current)
+    }
+    
+    // Debounce the view change
+    viewChangeTimeoutRef.current = setTimeout(() => {
+      setCurrentView(view)
+      
+      // Ensure boulder selection is maintained when switching views
+      if (selectedBoulder) {
+        document.dispatchEvent(new CustomEvent('boulderSelectionChanged', {
+          detail: { boulderId: selectedBoulder.id, source: 'app' }
+        }))
+      }
+    }, 100)
+  }, [selectedBoulder])
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (viewChangeTimeoutRef.current) {
+        clearTimeout(viewChangeTimeoutRef.current)
+      }
     }
   }, [])
 
@@ -83,23 +122,39 @@ function App() {
   }, [])
 
   const handleSettingsChange = useCallback((settings: any) => {
-    setVisualizerSettings(settings)
+    setVisualizerSettings(prevSettings => ({
+      ...prevSettings,
+      ...settings
+    }))
   }, [])
 
   const handleBoulderChange = useCallback((boulderId: number) => {
     console.log('[App] Boulder ID changing to:', boulderId)
+    // Update the boulder selection in the global state
     selectBoulder(boulderId)
+    
+    // Emit a custom event for cross-view synchronization
+    document.dispatchEvent(new CustomEvent('boulderSelectionChanged', {
+      detail: { boulderId, source: 'app' }
+    }))
   }, [selectBoulder])
 
   const handleBoulderDataUpdate = useCallback((boulder: BoulderData) => {
-    console.log('[App] Boulder data updated from component:', boulder.name, 'ID:', boulder.id)
-    selectBoulder(boulder.id)
-  }, [selectBoulder])
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[App] Boulder data updated from component:', boulder.name, 'ID:', boulder.id)
+    }
+    // Only update the boulder data in the global state. Do not attempt to re-select.
+    updateBoulderData(boulder)
+  }, [updateBoulderData])
 
   const handleSharedBoulderUpdate = useCallback((boulder: BoulderData) => {
+    if (process.env.NODE_ENV === 'development') {
     console.log('[App] Shared boulder data updated:', boulder.name, 'ID:', boulder.id)
-    selectBoulder(boulder.id)
-  }, [selectBoulder])
+    }
+    
+    // Update the boulder data in the global state
+    updateBoulderData(boulder)
+  }, [updateBoulderData])
 
   const renderView = () => {
     switch (currentView) {
@@ -119,7 +174,9 @@ function App() {
       default:
         // Use shared boulder data with fallback to current boulder data
         const boulderDataToUse = selectedBoulder || boulders[0]
+        if (process.env.NODE_ENV === 'development') {
         console.log('[App] Rendering visualizer with boulder data:', boulderDataToUse?.name || 'None')
+        }
         
         return (
           <ErrorBoundary>
@@ -139,14 +196,15 @@ function App() {
   }
 
   return (
+    <BoulderConfigProvider>
     <div className="min-h-screen bg-black relative">
-      <Header currentView={currentView} onViewChange={setCurrentView} />
+      <Header currentView={currentView} onViewChange={handleViewChange} />
       
       <main className="h-[calc(100vh-4rem)] relative">
         {renderView()}
         
-        {/* Control Panel - only show in visualizer mode and frontend mode */}
-        {currentView === 'visualizer' && currentMode === 'frontend' && (
+        {/* Control Panel - always show in frontend mode */}
+        {currentMode === 'frontend' && (
           <ControlPanel 
             onSettingsChange={handleSettingsChange}
             onBoulderChange={handleBoulderChange}
@@ -178,9 +236,11 @@ function App() {
           <div>Boulder ID: {selectedBoulder?.id || 'None'}</div>
           <div>Current Data: {selectedBoulder?.name || 'None'}</div>
           <div>Boulders Count: {boulders.length}</div>
+            <div>Config: Global boulder settings active</div>
         </div>
       )}
     </div>
+    </BoulderConfigProvider>
   )
 }
 

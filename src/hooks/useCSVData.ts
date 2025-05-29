@@ -7,6 +7,7 @@ interface UseCSVDataResult {
   isLoading: boolean
   error: string | null
   selectBoulder: (boulderId: number) => void
+  updateBoulderData: (updatedBoulder: BoulderData) => void
   uploadFile: (file: File) => Promise<void>
   refreshBoulders: () => Promise<void>
 }
@@ -59,6 +60,12 @@ export function useCSVData(): UseCSVDataResult {
   }, []) // Remove isLoadingRef from dependencies since it's now a ref
 
   const selectBoulder = useCallback((boulderId: number) => {
+    // Avoid unnecessary re-selections to prevent infinite loops
+    if (selectedBoulder?.id === boulderId) {
+      console.log('Boulder already selected:', selectedBoulder.name, 'ID:', boulderId)
+      return
+    }
+    
     const boulder = boulders.find(b => b.id === boulderId)
     if (boulder) {
       console.log('Selecting boulder:', boulder.name, 'ID:', boulderId)
@@ -66,7 +73,31 @@ export function useCSVData(): UseCSVDataResult {
     } else {
       console.warn('Boulder not found with ID:', boulderId)
     }
-  }, [boulders])
+  }, [boulders, selectedBoulder])
+
+  const updateBoulderData = useCallback((updatedBoulder: BoulderData) => {
+    // Prevent unnecessary updates by checking if the boulder actually changed
+    const existingBoulder = boulders.find(b => b.id === updatedBoulder.id);
+    
+    // Compare key properties to avoid unnecessary updates
+    if (existingBoulder && 
+        existingBoulder.appliedThreshold === updatedBoulder.appliedThreshold &&
+        existingBoulder.stats?.moveCount === updatedBoulder.stats?.moveCount) {
+      return; // No significant changes, skip update
+    }
+    
+    console.log('Updating boulder data:', updatedBoulder.name, 'ID:', updatedBoulder.id);
+    
+    // Update the boulder in the list
+    setBoulders(prev => prev.map(boulder => 
+      boulder.id === updatedBoulder.id ? updatedBoulder : boulder
+    ));
+    
+    // Update selected boulder if it's the same one
+    if (selectedBoulder?.id === updatedBoulder.id) {
+      setSelectedBoulder(updatedBoulder);
+    }
+  }, [boulders, selectedBoulder]);
 
   const uploadFile = useCallback(async (file: File) => {
     try {
@@ -104,6 +135,7 @@ export function useCSVData(): UseCSVDataResult {
     isLoading,
     error,
     selectBoulder,
+    updateBoulderData,
     uploadFile,
     refreshBoulders
   }

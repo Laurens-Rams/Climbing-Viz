@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import * as Select from '@radix-ui/react-select'
 import * as Slider from '@radix-ui/react-slider'
 import { ChevronDownIcon, BarChart } from 'lucide-react'
 import { useCSVData } from '../hooks/useCSVData'
+import { useBoulderConfig } from '../context/BoulderConfigContext'
 import type { BoulderData } from '../utils/csvLoader'
 
 interface DataVizPanelProps {
@@ -19,9 +20,49 @@ interface StatData {
   sampleCount: number
 }
 
-export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId }: DataVizPanelProps) {
-  const { boulders, selectedBoulder, isLoading, selectBoulder } = useCSVData()
-  const [threshold, setThreshold] = useState(12.0)
+// Move detection function to ensure consistent move counting
+const detectMoves = (time: number[], acceleration: number[], threshold: number) => {
+  const detectedMoves = [];
+  const minMoveDuration = 0.5; // minimum seconds between moves
+  
+  let lastMoveTime = -minMoveDuration;
+  
+  // Add starting position at time 0
+  detectedMoves.push({
+    time: 0,
+    acceleration: acceleration[0] || 9.8
+  });
+  
+  // Detect actual moves
+  for (let i = 1; i < acceleration.length - 1; i++) {
+    const currentAccel = acceleration[i];
+    const currentTime = time[i];
+    
+    // Look for peaks above threshold
+    if (currentAccel > threshold && 
+        currentAccel > acceleration[i-1] && 
+        currentAccel > acceleration[i+1] &&
+        (currentTime - lastMoveTime) > minMoveDuration) {
+      
+      detectedMoves.push({
+        time: currentTime,
+        acceleration: currentAccel
+      });
+      
+      lastMoveTime = currentTime;
+    }
+  }
+  
+  return detectedMoves;
+};
+
+export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId: currentBoulderIdFromProps }: DataVizPanelProps) {
+  const { boulders, isLoading, selectedBoulder: globalSelectedBoulder } = useCSVData()
+  const { getThreshold, setThreshold } = useBoulderConfig()
+
+  // Internal state for the boulder ID this panel is actively displaying/processing
+  const [activeBoulderId, setActiveBoulderId] = useState<number | undefined>(undefined)
+
   const [visualizationMode, setVisualizationMode] = useState('standard')
   const [timeRange, setTimeRange] = useState(100)
   const [stats, setStats] = useState<StatData>({
@@ -33,11 +74,47 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
   })
   
   const plotRef = useRef<HTMLDivElement>(null)
-  const isUserSelectingRef = useRef(false)
 
-  // Canvas plot rendering
+  // Effect 1: Synchronize activeBoulderId with currentBoulderIdFromProps when panel becomes visible or prop changes externally
+  useEffect(() => {
+    if (isVisible && currentBoulderIdFromProps && currentBoulderIdFromProps !== activeBoulderId) {
+      console.log(`[DataVizPanel] Syncing activeBoulderId from prop: ${currentBoulderIdFromProps}`);
+      setActiveBoulderId(currentBoulderIdFromProps);
+    }
+  }, [isVisible, currentBoulderIdFromProps, activeBoulderId]);
+
+  // Find the actual boulder data based on activeBoulderId
+  const currentDisplayBoulder = useMemo(() => {
+    if (!activeBoulderId) return null;
+    return boulders.find(b => b.id === activeBoulderId) || null;
+  }, [activeBoulderId, boulders]);
+
+  const currentThreshold = currentDisplayBoulder ? getThreshold(currentDisplayBoulder.id) : 12.0
+
+  // Calculate dynamic stats including threshold-based move count
+  const calculateStats = useCallback((csvData: any, threshold: number) => {
+    if (!csvData) return {
+      maxAccel: 0,
+      avgAccel: 0,
+      moveCount: 0,
+      duration: 0,
+      sampleCount: 0
+    };
+    
+    const moves = detectMoves(csvData.time, csvData.absoluteAcceleration, threshold);
+    
+    return {
+      maxAccel: csvData.maxAcceleration,
+      avgAccel: csvData.avgAcceleration,
+      moveCount: moves.length,
+      duration: csvData.duration,
+      sampleCount: csvData.sampleCount
+    };
+  }, []);
+
+  // Canvas plot rendering with improved resolution
   const updatePlot = useCallback(() => {
-    if (!selectedBoulder?.csvData || !plotRef.current) return
+    if (!currentDisplayBoulder?.csvData || !plotRef.current) return
 
     const canvas = plotRef.current.querySelector('canvas') as HTMLCanvasElement
     if (!canvas) return
@@ -46,7 +123,7 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
     if (!ctx) return
 
     try {
-      const { time, absoluteAcceleration } = selectedBoulder.csvData
+      const { time, absoluteAcceleration } = currentDisplayBoulder.csvData
       
       // Apply time range filter
       let filteredTime = time
@@ -62,16 +139,18 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
 
       if (filteredTime.length === 0) return
 
-      // High resolution canvas setup
+      // High DPI canvas setup
       const rect = canvas.getBoundingClientRect()
       const dpr = window.devicePixelRatio || 1
-      canvas.width = rect.width * dpr * 2  // 2x higher resolution
-      canvas.height = rect.height * dpr * 2
-      ctx.scale(dpr * 2, dpr * 2)
-      
-      // Canvas setup with high resolution
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      const padding = { top: 30, right: 30, bottom: 50, left: 60 }
+      canvas.width = rect.width * dpr
+      canvas.height = rect.height * dpr
+      ctx.scale(dpr, dpr)
+      canvas.style.width = rect.width + 'px'
+      canvas.style.height = rect.height + 'px'
+
+      // Canvas setup with proper dimensions
+      ctx.clearRect(0, 0, rect.width, rect.height)
+      const padding = { top: 50, right: 50, bottom: 80, left: 100 }
       const plotWidth = rect.width - padding.left - padding.right
       const plotHeight = rect.height - padding.top - padding.bottom
 
@@ -79,18 +158,18 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
       const minTime = Math.min(...filteredTime)
       const maxTime = Math.max(...filteredTime)
       const minAccel = 0
-      const maxAccel = Math.max(...filteredAccel, threshold + 5)
+      const maxAccel = Math.max(...filteredAccel, currentThreshold + 5)
 
       const xScale = (t: number) => padding.left + ((t - minTime) / (maxTime - minTime)) * plotWidth
       const yScale = (a: number) => padding.top + plotHeight - ((a - minAccel) / (maxAccel - minAccel)) * plotHeight
 
       // Grid
       ctx.strokeStyle = '#333'
-      ctx.lineWidth = 0.5
-      ctx.setLineDash([1, 2])
+      ctx.lineWidth = 1
+      ctx.setLineDash([2, 2])
       
-      for (let i = 0; i <= 5; i++) {
-        const t = minTime + i * (maxTime - minTime) / 5
+      for (let i = 0; i <= 8; i++) {
+        const t = minTime + i * (maxTime - minTime) / 8
         const x = xScale(t)
         ctx.beginPath()
         ctx.moveTo(x, padding.top)
@@ -98,8 +177,8 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
         ctx.stroke()
       }
       
-      for (let i = 0; i <= 5; i++) {
-        const a = minAccel + i * (maxAccel - minAccel) / 5
+      for (let i = 0; i <= 6; i++) {
+        const a = minAccel + i * (maxAccel - minAccel) / 6
         const y = yScale(a)
         ctx.beginPath()
         ctx.moveTo(padding.left, y)
@@ -112,23 +191,21 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
       // Threshold line
       if (visualizationMode === 'moves' || visualizationMode === 'standard') {
         ctx.strokeStyle = '#ff4444'
-        ctx.lineWidth = 1.5
-        const thresholdY = yScale(threshold)
+        ctx.lineWidth = 3
+        const thresholdY = yScale(currentThreshold)
         ctx.beginPath()
         ctx.moveTo(padding.left, thresholdY)
         ctx.lineTo(padding.left + plotWidth, thresholdY)
         ctx.stroke()
         
         ctx.fillStyle = '#ff4444'
-        ctx.font = '10px Arial'
-        ctx.fillText(`Threshold: ${threshold}m/s²`, padding.left + 5, thresholdY - 3)
+        ctx.font = 'bold 14px Arial'
+        ctx.fillText(`Threshold: ${currentThreshold}m/s²`, padding.left + 10, thresholdY - 8)
       }
 
-      // Data line with higher quality
+      // Data line
       ctx.strokeStyle = '#00ffcc'
-      ctx.lineWidth = 2
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
+      ctx.lineWidth = 4
       ctx.beginPath()
       
       for (let i = 0; i < filteredTime.length; i++) {
@@ -143,28 +220,30 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
       }
       ctx.stroke()
 
-      // Move markers
-      if ((visualizationMode === 'moves' || visualizationMode === 'standard') && selectedBoulder.moves) {
-        selectedBoulder.moves.forEach((move, index) => {
-          const moveTime = minTime + (index / (selectedBoulder.moves.length - 1)) * (maxTime - minTime)
-          const closestIndex = filteredTime.reduce((prev, curr, i) => 
-            Math.abs(curr - moveTime) < Math.abs(filteredTime[prev] - moveTime) ? i : prev, 0)
+      // Move markers using our move detection function
+      if ((visualizationMode === 'moves' || visualizationMode === 'standard')) {
+        const detectedMoves = detectMoves(filteredTime, filteredAccel, currentThreshold);
+        
+        detectedMoves.forEach((move, index) => {
+          const x = xScale(move.time)
+          const y = yScale(move.acceleration)
           
-          if (closestIndex < filteredAccel.length && filteredAccel[closestIndex] > threshold) {
-            const x = xScale(filteredTime[closestIndex])
-            const y = yScale(filteredAccel[closestIndex])
-            
-            ctx.fillStyle = move.isCrux ? '#DE501B' : '#00ffcc'
-            ctx.beginPath()
-            ctx.arc(x, y, move.isCrux ? 4 : 3, 0, 2 * Math.PI)
-            ctx.fill()
-          }
+          ctx.fillStyle = index === 0 ? '#00ffcc' : (move.acceleration > currentThreshold * 1.5 ? '#DE501B' : '#00ffcc')
+          ctx.beginPath()
+          ctx.arc(x, y, index === 0 ? 8 : 6, 0, 2 * Math.PI)
+          ctx.fill()
+          
+          // Move number
+          ctx.fillStyle = '#ffffff'
+          ctx.font = 'bold 12px Arial'
+          ctx.textAlign = 'center'
+          ctx.fillText((index + 1).toString(), x, y - 12)
         })
       }
 
       // Axes
       ctx.strokeStyle = '#666'
-      ctx.lineWidth = 1.5
+      ctx.lineWidth = 3
       ctx.beginPath()
       ctx.moveTo(padding.left, padding.top)
       ctx.lineTo(padding.left, padding.top + plotHeight)
@@ -174,11 +253,11 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
 
       // Labels
       ctx.fillStyle = '#00ffcc'
-      ctx.font = '11px Arial'
+      ctx.font = 'bold 16px Arial'
       
       // Y-axis label
       ctx.save()
-      ctx.translate(15, padding.top + plotHeight / 2)
+      ctx.translate(30, padding.top + plotHeight / 2)
       ctx.rotate(-Math.PI / 2)
       ctx.textAlign = 'center'
       ctx.fillText('Acceleration (m/s²)', 0, 0)
@@ -186,203 +265,187 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
       
       // X-axis label
       ctx.textAlign = 'center'
-      ctx.fillText('Time (seconds)', padding.left + plotWidth / 2, rect.height - 15)
+      ctx.fillText('Time (seconds)', padding.left + plotWidth / 2, rect.height - 20)
       
       // Title
-      ctx.font = 'bold 14px Arial'
+      ctx.font = 'bold 20px Arial'
       const title = visualizationMode === 'moves' ? 'Move Detection Analysis' : 
                     visualizationMode === 'histogram' ? 'Acceleration Distribution' :
                     'Time Series Plot'
-      ctx.fillText(title, rect.width / 2, 20)
+      ctx.fillText(title, rect.width / 2, 30)
+
+      // Axis labels
+      ctx.font = '12px Arial'
+      ctx.fillStyle = '#999'
+      
+      // X-axis ticks
+      for (let i = 0; i <= 8; i++) {
+        const t = minTime + i * (maxTime - minTime) / 8
+        const x = xScale(t)
+        ctx.textAlign = 'center'
+        ctx.fillText(t.toFixed(1), x, padding.top + plotHeight + 25)
+      }
+      
+      // Y-axis ticks
+      for (let i = 0; i <= 6; i++) {
+        const a = minAccel + i * (maxAccel - minAccel) / 6
+        const y = yScale(a)
+        ctx.textAlign = 'right'
+        ctx.fillText(a.toFixed(1), padding.left - 15, y + 4)
+      }
 
     } catch (error) {
       console.error('Error updating plot:', error)
     }
-  }, [selectedBoulder, threshold, timeRange, visualizationMode])
+  }, [currentDisplayBoulder, timeRange, visualizationMode, currentThreshold])
 
-  // Detect moves based on current threshold
-  const detectMoves = useCallback((time: number[], acceleration: number[], threshold: number) => {
-    const detectedMoves = []
-    const minMoveDuration = 0.5 // minimum seconds between moves
-    
-    let lastMoveTime = -minMoveDuration
-    
-    // Always add starting position
-    detectedMoves.push({
-      time: 0,
-      acceleration: acceleration[0] || 9.8
-    })
-    
-    // Detect moves above threshold
-    for (let i = 1; i < acceleration.length - 1; i++) {
-      const currentAccel = acceleration[i]
-      const currentTime = time[i]
-      
-      // Look for peaks above threshold
-      if (currentAccel > threshold && 
-          currentAccel > acceleration[i-1] && 
-          currentAccel > acceleration[i+1] &&
-          (currentTime - lastMoveTime) > minMoveDuration) {
-        
-        detectedMoves.push({
-          time: currentTime,
-          acceleration: currentAccel
-        })
-        
-        lastMoveTime = currentTime
-      }
-    }
-    
-    return detectedMoves
-  }, [])
-
-  // Update stats when boulder changes OR threshold changes
+  // Update stats when boulder or threshold changes
   useEffect(() => {
-    if (selectedBoulder?.csvData) {
-      // Recalculate moves based on current threshold
-      const detectedMoves = detectMoves(selectedBoulder.csvData.time, selectedBoulder.csvData.absoluteAcceleration, threshold)
+    if (currentDisplayBoulder?.csvData) {
+      const newStats = calculateStats(currentDisplayBoulder.csvData, currentThreshold);
+      setStats(newStats);
       
-      const newStats = {
-        maxAccel: selectedBoulder.csvData.maxAcceleration,
-        avgAccel: selectedBoulder.csvData.avgAcceleration,
-        moveCount: detectedMoves.length, // Use dynamically calculated move count
-        duration: selectedBoulder.csvData.duration,
-        sampleCount: selectedBoulder.csvData.sampleCount
+      const needsUpdate = !currentDisplayBoulder.appliedThreshold || currentDisplayBoulder.appliedThreshold !== currentThreshold;
+      
+      if (needsUpdate) {
+        console.log(`[DataVizPanel] Updating boulder data for ID ${currentDisplayBoulder.id} with threshold ${currentThreshold} (was ${currentDisplayBoulder.appliedThreshold})`);
+        
+        const newMoves = detectMoves(
+          currentDisplayBoulder.csvData.time,
+          currentDisplayBoulder.csvData.absoluteAcceleration,
+          currentThreshold
+        ).map((move, index) => ({
+          move_number: index + 1,
+          dynamics: Math.min(move.acceleration / 20, 1),
+          isCrux: move.acceleration > currentThreshold * 1.5,
+          thresholdDetected: true
+        }));
+
+        console.log(`[DataVizPanel] Move count for ID ${currentDisplayBoulder.id} changed from ${currentDisplayBoulder.moves?.length || 0} to ${newMoves.length}`);
+        
+        const updatedBoulder: BoulderData = {
+          ...currentDisplayBoulder,
+          moves: newMoves,
+          stats: {
+            ...currentDisplayBoulder.stats,
+            moveCount: newMoves.length,
+            threshold: currentThreshold
+          },
+          appliedThreshold: currentThreshold
+        };
+        
+        onBoulderDataUpdate(updatedBoulder);
       }
-      setStats(newStats)
-      updatePlot()
+      
+      updatePlot();
     }
-  }, [selectedBoulder?.id, threshold, detectMoves, updatePlot]) // Added threshold dependency
+  }, [currentDisplayBoulder, currentThreshold, calculateStats, updatePlot, onBoulderDataUpdate]);
 
   // Update plot when controls change
   useEffect(() => {
-    if (selectedBoulder?.csvData) {
-      updatePlot()
+    if (currentDisplayBoulder?.csvData) {
+      updatePlot();
     }
-  }, [threshold, timeRange, visualizationMode, updatePlot])
+  }, [timeRange, visualizationMode, updatePlot, currentDisplayBoulder]);
 
-  // File selection handler
-  const handleFileSelect = useCallback((boulderId: string) => {
-    if (boulderId) {
-      isUserSelectingRef.current = true
-      setTimeout(() => { isUserSelectingRef.current = false }, 100)
-      selectBoulder(parseInt(boulderId))
-    }
-  }, [selectBoulder])
-
-  // Sync notifications
+  // Effect 2: Listen for external boulder selection changes
   useEffect(() => {
-    if (selectedBoulder && selectedBoulder.id !== currentBoulderId) {
-      isUserSelectingRef.current = true
-      setTimeout(() => { isUserSelectingRef.current = false }, 100)
-      onBoulderDataUpdate(selectedBoulder)
-    }
-  }, [selectedBoulder, onBoulderDataUpdate, currentBoulderId])
-
-  // Sync FROM parent
-  useEffect(() => {
-    if (currentBoulderId && boulders.length > 0 && (!selectedBoulder || selectedBoulder.id !== currentBoulderId)) {
-      if (isUserSelectingRef.current) return
-      
-      const targetBoulder = boulders.find(b => b.id === currentBoulderId)
-      if (targetBoulder) {
-        selectBoulder(currentBoulderId)
+    const handleBoulderSelectionChanged = (event: CustomEvent) => {
+      const { boulderId: eventBoulderId } = event.detail;
+      if (eventBoulderId && eventBoulderId !== activeBoulderId) {
+        console.log(`[DataVizPanel] External selection change to Boulder ID: ${eventBoulderId}, current active: ${activeBoulderId}`);
+        setActiveBoulderId(eventBoulderId); 
       }
+    };
+    document.addEventListener('boulderSelectionChanged', handleBoulderSelectionChanged as EventListener);
+    return () => {
+      document.removeEventListener('boulderSelectionChanged', handleBoulderSelectionChanged as EventListener);
+    };
+  }, [activeBoulderId]);
+
+  // Effect 3: Initialize activeBoulderId on first load if not set, using global or prop
+  useEffect(() => {
+    if (isVisible && activeBoulderId === undefined) {
+        if (currentBoulderIdFromProps) {
+            console.log(`[DataVizPanel] Initializing activeBoulderId from prop: ${currentBoulderIdFromProps}`);
+            setActiveBoulderId(currentBoulderIdFromProps);
+        } else if (globalSelectedBoulder) {
+            console.log(`[DataVizPanel] Initializing activeBoulderId from global: ${globalSelectedBoulder.id}`);
+            setActiveBoulderId(globalSelectedBoulder.id);
+        } else if (boulders.length > 0) {
+            console.log(`[DataVizPanel] Initializing activeBoulderId to first boulder: ${boulders[0].id}`);
+            setActiveBoulderId(boulders[0].id);
+        }
     }
-  }, [currentBoulderId, boulders, selectedBoulder, selectBoulder])
+   }, [isVisible, currentBoulderIdFromProps, globalSelectedBoulder, boulders, activeBoulderId]);
 
   if (!isVisible) return null
 
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-gray-800 text-cyan-400 overflow-hidden z-10 pt-16">
-      <div className="h-full p-3 flex flex-col max-h-[calc(100vh-4rem)]">
+      <div className="h-full p-4 flex flex-col">
         
-        {/* Top Controls - Ultra Compact Fixed Height */}
-        <div className="grid grid-cols-2 gap-3 h-20 mb-2 flex-shrink-0">
+        {/* Top Controls - 50/50 Split with Equal Height */}
+        <div className="grid grid-cols-2 gap-4 h-44 mb-4">
           
-          {/* Left: Data Selection & Key Statistics */}
-          <div className="bg-black/70 border border-cyan-400 rounded-lg p-2">
-            <h3 className="text-xs font-bold text-cyan-400 mb-1">📊 Data Controls</h3>
+          {/* Left: Data Selection & Key Stats */}
+          <div className="bg-black/70 border border-cyan-400 rounded-lg p-4">
+            <h3 className="text-lg font-bold text-cyan-400 mb-3">📊 Data Controls</h3>
             
-            {/* Boulder Selection */}
-            <div className="mb-1">
-              <label className="block text-[9px] font-medium text-cyan-400 mb-0.5">Boulder Data:</label>
-              <Select.Root 
-                value={selectedBoulder?.id.toString() || ''} 
-                onValueChange={handleFileSelect}
-                disabled={isLoading}
-              >
-                <Select.Trigger className="w-full px-2 py-1 bg-gray-800 border border-gray-600 rounded text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none text-[10px]">
-                  <Select.Value placeholder={isLoading ? "Loading..." : "Select boulder..."} />
-                  <Select.Icon>
-                    <ChevronDownIcon className="w-3 h-3" />
-                  </Select.Icon>
-                </Select.Trigger>
-                <Select.Portal>
-                  <Select.Content className="bg-gray-800 border border-gray-600 rounded shadow-lg z-[99999]">
-                    <Select.Viewport className="p-1">
-                      {boulders.map((boulder) => (
-                        <Select.Item
-                          key={boulder.id}
-                          value={boulder.id.toString()}
-                          className="px-2 py-1 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer text-[10px]"
-                        >
-                          <Select.ItemText>
-                            {boulder.name} ({boulder.stats.sampleCount} pts)
-                          </Select.ItemText>
-                        </Select.Item>
-                      ))}
-                    </Select.Viewport>
-                  </Select.Content>
-                </Select.Portal>
-              </Select.Root>
+            {/* Boulder Name Display (instead of dropdown) */}
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-cyan-400 mb-1">Selected Boulder:</label>
+              <div className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-gray-200">
+                {isLoading ? "Loading..." : currentDisplayBoulder ? currentDisplayBoulder.name : "None selected"}
+                {currentDisplayBoulder && ` (${currentDisplayBoulder.stats.sampleCount} pts)`}
+              </div>
             </div>
 
-            {/* Key Statistics - 2x2 Grid */}
-            <div className="grid grid-cols-2 gap-1">
-              <div className="text-center p-1 bg-gray-800/50 rounded border border-gray-700">
-                <div className="text-xs font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
-                <div className="text-[8px] text-gray-400">Max Accel</div>
+            {/* Key Stats Grid - 2x2 */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="text-center p-2 bg-gray-800/50 rounded border border-gray-700">
+                <div className="text-lg font-bold text-blue-400">{stats.moveCount}</div>
+                <div className="text-xs text-gray-400">Moves</div>
               </div>
-              <div className="text-center p-1 bg-gray-800/50 rounded border border-gray-700">
-                <div className="text-xs font-bold text-blue-400">{stats.moveCount}</div>
-                <div className="text-[8px] text-gray-400">Moves</div>
+              <div className="text-center p-2 bg-gray-800/50 rounded border border-gray-700">
+                <div className="text-lg font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
+                <div className="text-xs text-gray-400">Duration</div>
               </div>
-              <div className="text-center p-1 bg-gray-800/50 rounded border border-gray-700">
-                <div className="text-xs font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
-                <div className="text-[8px] text-gray-400">Avg Accel</div>
+              <div className="text-center p-2 bg-gray-800/50 rounded border border-gray-700">
+                <div className="text-lg font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
+                <div className="text-xs text-gray-400">Max (m/s²)</div>
               </div>
-              <div className="text-center p-1 bg-gray-800/50 rounded border border-gray-700">
-                <div className="text-xs font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
-                <div className="text-[8px] text-gray-400">Duration</div>
+              <div className="text-center p-2 bg-gray-800/50 rounded border border-gray-700">
+                <div className="text-lg font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
+                <div className="text-xs text-gray-400">Avg (m/s²)</div>
               </div>
             </div>
           </div>
 
           {/* Right: Analysis Controls */}
-          <div className="bg-black/70 border border-cyan-400 rounded-lg p-2">
-            <h3 className="text-xs font-bold text-cyan-400 mb-2">🎯 Analysis Settings</h3>
+          <div className="bg-black/70 border border-cyan-400 rounded-lg p-4">
+            <h3 className="text-lg font-bold text-cyan-400 mb-3">🎯 Analysis Settings</h3>
             
             {/* Visualization Mode */}
-            <div className="mb-2">
-              <label className="block text-[10px] font-medium text-cyan-400 mb-1">Visualization:</label>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-cyan-400 mb-1">Visualization:</label>
               <Select.Root value={visualizationMode} onValueChange={setVisualizationMode}>
-                <Select.Trigger className="w-full px-2 py-1 bg-gray-800 border border-gray-600 rounded text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none text-[10px]">
+                <Select.Trigger className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none">
                   <Select.Value />
                   <Select.Icon>
-                    <ChevronDownIcon className="w-3 h-3" />
+                    <ChevronDownIcon className="w-4 h-4" />
                   </Select.Icon>
                 </Select.Trigger>
                 <Select.Portal>
                   <Select.Content className="bg-gray-800 border border-gray-600 rounded shadow-lg z-[99999]">
                     <Select.Viewport className="p-1">
-                      <Select.Item value="standard" className="px-2 py-1 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer text-[10px]">
+                      <Select.Item value="standard" className="px-3 py-2 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer">
                         <Select.ItemText>Time Series</Select.ItemText>
                       </Select.Item>
-                      <Select.Item value="moves" className="px-2 py-1 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer text-[10px]">
+                      <Select.Item value="moves" className="px-3 py-2 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer">
                         <Select.ItemText>Move Detection</Select.ItemText>
                       </Select.Item>
-                      <Select.Item value="histogram" className="px-2 py-1 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer text-[10px]">
+                      <Select.Item value="histogram" className="px-3 py-2 text-gray-200 hover:bg-cyan-400 hover:text-black rounded cursor-pointer">
                         <Select.ItemText>Distribution</Select.ItemText>
                       </Select.Item>
                     </Select.Viewport>
@@ -392,29 +455,33 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
             </div>
             
             {/* Threshold */}
-            <div className="mb-1">
-              <label className="block text-[10px] font-medium text-cyan-400 mb-1">
-                Threshold: {threshold.toFixed(1)} m/s²
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-cyan-400 mb-1">
+                Move Threshold: {currentThreshold.toFixed(1)} m/s²
               </label>
               <Slider.Root
-                value={[threshold]}
-                onValueChange={([value]) => setThreshold(value)}
+                value={[currentThreshold]}
+                onValueChange={([value]) => {
+                  if (currentDisplayBoulder) {
+                    setThreshold(currentDisplayBoulder.id, value);
+                  }
+                }}
                 min={8}
                 max={50}
                 step={0.5}
-                className="relative flex items-center select-none touch-none h-3"
+                className="relative flex items-center select-none touch-none h-6"
               >
-                <Slider.Track className="bg-gray-700 relative grow rounded-full h-1">
+                <Slider.Track className="bg-gray-700 relative grow rounded-full h-3">
                   <Slider.Range className="absolute bg-cyan-400 rounded-full h-full" />
                 </Slider.Track>
-                <Slider.Thumb className="block w-3 h-3 bg-cyan-400 shadow-lg rounded-full hover:bg-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-400" />
+                <Slider.Thumb className="block w-5 h-5 bg-cyan-400 shadow-lg rounded-full hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400" />
               </Slider.Root>
             </div>
 
             {/* Time Range */}
             <div>
-              <label className="block text-[10px] font-medium text-cyan-400 mb-1">
-                Range: {timeRange === 100 ? 'All' : `${timeRange}%`}
+              <label className="block text-sm font-medium text-cyan-400 mb-1">
+                Time Range: {timeRange === 100 ? 'All' : `${timeRange}%`}
               </label>
               <Slider.Root
                 value={[timeRange]}
@@ -422,22 +489,22 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
                 min={10}
                 max={100}
                 step={5}
-                className="relative flex items-center select-none touch-none h-3"
+                className="relative flex items-center select-none touch-none h-6"
               >
-                <Slider.Track className="bg-gray-700 relative grow rounded-full h-1">
+                <Slider.Track className="bg-gray-700 relative grow rounded-full h-3">
                   <Slider.Range className="absolute bg-cyan-400 rounded-full h-full" />
                 </Slider.Track>
-                <Slider.Thumb className="block w-3 h-3 bg-cyan-400 shadow-lg rounded-full hover:bg-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-400" />
+                <Slider.Thumb className="block w-5 h-5 bg-cyan-400 shadow-lg rounded-full hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400" />
               </Slider.Root>
             </div>
           </div>
         </div>
 
-        {/* Main Plot - Flexible Height */}
-        <div className="bg-black/70 border border-cyan-400 rounded-lg p-3 flex-1 mb-3 min-h-0">
-          <div className="flex items-center gap-2 mb-2">
-            <BarChart className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-sm font-bold text-cyan-400">
+        {/* Main Plot - Flex Grow */}
+        <div className="bg-black/70 border border-cyan-400 rounded-lg p-4 flex-1 mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart className="w-5 h-5 text-cyan-400" />
+            <h3 className="text-lg font-bold text-cyan-400">
               {visualizationMode === 'standard' && 'Acceleration Time Series'}
               {visualizationMode === 'moves' && 'Move Detection Analysis'}
               {visualizationMode === 'histogram' && 'Acceleration Distribution'}
@@ -445,14 +512,12 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
           </div>
           <div 
             ref={plotRef}
-            className="w-full h-full bg-gray-900 border border-gray-700 rounded flex items-center justify-center min-h-0"
+            className="w-full h-full bg-gray-900 border border-gray-700 rounded flex items-center justify-center"
           >
-            {selectedBoulder?.csvData ? (
+            {currentDisplayBoulder?.csvData ? (
               <canvas
-                width={1200}
-                height={600}
-                className="w-full h-full bg-gray-900"
-                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                className="w-full h-full bg-gray-900 rounded"
+                style={{ maxWidth: '100%', maxHeight: '100%' }}
               />
             ) : (
               <div className="text-gray-500 text-center">
@@ -463,28 +528,34 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId 
           </div>
         </div>
 
-        {/* Compact Extended Statistics at Bottom */}
-        <div className="bg-black/70 border border-cyan-400 rounded-lg p-2 h-12 flex-shrink-0">
-          <h3 className="text-xs font-bold text-cyan-400 mb-1">📈 Extended Analysis</h3>
-          <div className="grid grid-cols-3 gap-2">
+        {/* Full Width Statistics at Bottom */}
+        <div className="bg-black/70 border border-cyan-400 rounded-lg p-3 h-20">
+          <h3 className="text-sm font-bold text-cyan-400 mb-1">📈 Complete Data Overview</h3>
+          <div className="grid grid-cols-5 gap-3 h-full">
             
-            <div className="text-center p-1 bg-gray-800/50 rounded border border-gray-700">
-              <div className="text-xs font-bold text-purple-400">{stats.sampleCount.toLocaleString()}</div>
-              <div className="text-[8px] text-gray-400">Data Points</div>
+            <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+              <div className="text-lg font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
+              <div className="text-xs text-gray-400">Max (m/s²)</div>
             </div>
             
-            <div className="text-center p-1 bg-gray-800/50 rounded border border-gray-700">
-              <div className="text-sm font-bold text-orange-400">
-                {selectedBoulder?.csvData ? (stats.sampleCount / stats.duration).toFixed(1) : '0.0'}
-              </div>
-              <div className="text-[8px] text-gray-400">Sample Rate (Hz)</div>
+            <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+              <div className="text-lg font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
+              <div className="text-xs text-gray-400">Avg (m/s²)</div>
             </div>
             
-            <div className="text-center p-1 bg-gray-800/50 rounded border border-gray-700">
-              <div className="text-sm font-bold text-teal-400">
-                {selectedBoulder?.grade || 'N/A'}
-              </div>
-              <div className="text-[8px] text-gray-400">Boulder Grade</div>
+            <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+              <div className="text-lg font-bold text-blue-400">{stats.moveCount}</div>
+              <div className="text-xs text-gray-400">Moves</div>
+            </div>
+            
+            <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+              <div className="text-lg font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
+              <div className="text-xs text-gray-400">Duration</div>
+            </div>
+            
+            <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+              <div className="text-lg font-bold text-purple-400">{stats.sampleCount.toLocaleString()}</div>
+              <div className="text-xs text-gray-400">Data Points</div>
             </div>
             
           </div>

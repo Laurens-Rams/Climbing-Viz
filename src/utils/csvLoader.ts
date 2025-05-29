@@ -20,6 +20,7 @@ export interface BoulderData {
     move_number: number
     dynamics: number
     isCrux: boolean
+    thresholdDetected?: boolean
   }>
   csvData: CSVData
   stats: {
@@ -28,7 +29,9 @@ export interface BoulderData {
     avgAcceleration: string
     moveCount: number
     sampleCount: number
+    threshold?: number
   }
+  appliedThreshold?: number
 }
 
 // Parse Phyphox CSV format

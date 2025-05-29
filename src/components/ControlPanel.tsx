@@ -24,11 +24,6 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
   
   // Settings state
   const [settings, setSettings] = useState({
-    // Move Detection
-    moveDetectionThreshold: 15.0,
-    magnitudeThreshold: 1.5,
-    minMoveDuration: 0.2,
-    
     // Basics
     dynamicsMultiplier: 4.9,
     combinedSize: 1.0,
@@ -54,7 +49,12 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
     // Advanced
     curveResolution: 240,
     baseRadius: 2.5,
-    liquidEffect: true
+    liquidEffect: true,
+    
+    // Move Detection
+    moveThreshold: 12.0,
+    useThresholdBasedMoveCount: true,
+    centerTextSize: 1.0
   })
 
   const updateSetting = useCallback((key: string, value: number | boolean) => {
@@ -97,16 +97,6 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
       controls: []
     },
     {
-      id: 'detection',
-      name: '🎯 Move Detection',
-      icon: '🎯',
-      controls: [
-        { key: 'moveDetectionThreshold', name: 'Move Threshold', min: 8.0, max: 50.0, step: 0.5 },
-        { key: 'magnitudeThreshold', name: 'Magnitude Threshold', min: 0.5, max: 5.0, step: 0.1 },
-        { key: 'minMoveDuration', name: 'Min Move Duration', min: 0.1, max: 1.0, step: 0.05 }
-      ]
-    },
-    {
       id: 'basics',
       name: '⚙️ Basics',
       icon: '⚙️',
@@ -146,36 +136,64 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
         { key: 'rotationSpeed', name: 'Rotation Speed', min: 0.0, max: 2.0, step: 0.1 },
         { key: 'liquidSpeed', name: 'Liquid Speed', min: 0.0, max: 1.0, step: 0.05 }
       ]
+    },
+    {
+      id: 'detection',
+      name: '🎯 Move Detection', 
+      icon: '🎯',
+      controls: [
+        { key: 'moveThreshold', name: 'Move Threshold (m/s²)', min: 8.0, max: 50.0, step: 0.5 },
+        { key: 'centerTextSize', name: 'Center Text Size', min: 0.5, max: 3.0, step: 0.1 }
+      ]
     }
   ]
 
-  const folderNames = folders.map(f => ({ id: f.id, name: f.name, icon: f.icon }))
-
-  // ControlSlider component for individual controls
   const ControlSlider = ({ control }: { control: any }) => {
-    const currentValue = settings[control.key as keyof typeof settings] as number || 0
-    
+    // Use a local state for the slider value during drag operations
+    // to prevent issues with the main settings state updating too quickly.
+    const [localSliderValue, setLocalSliderValue] = useState<number>(Number(settings[control.key as keyof typeof settings]));
+
+    useEffect(() => {
+      // Sync local slider value when the global settings change from outside
+      setLocalSliderValue(Number(settings[control.key as keyof typeof settings]));
+    }, [settings[control.key as keyof typeof settings], control.key]);
+
+    const handleValueChange = (value: number[]) => {
+      setLocalSliderValue(value[0]);
+    };
+
+    const handleValueCommit = (value: number[]) => {
+      updateSetting(control.key, value[0]);
+    };
+
     return (
-      <div className="mb-3">
-        <label className="block text-xs font-medium text-cyan-400 mb-1">
-          {control.name}: {currentValue.toFixed(control.step < 1 ? 2 : 0)}
-        </label>
-        <Slider.Root
-          value={[currentValue]}
-          onValueChange={([value]) => updateSetting(control.key, value)}
-          min={control.min}
-          max={control.max}
-          step={control.step}
-          className="relative flex items-center select-none touch-none h-5"
-        >
-          <Slider.Track className="bg-gray-700 relative grow rounded-full h-3">
-            <Slider.Range className="absolute bg-cyan-400 rounded-full h-full" />
-          </Slider.Track>
-          <Slider.Thumb className="block w-5 h-5 bg-cyan-400 shadow-lg rounded-full hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400" />
-        </Slider.Root>
+    <div className="mb-4">
+      <div className="flex justify-between items-center mb-2">
+        <label className="text-sm font-medium text-gray-200">{control.name}</label>
+        <span className="text-xs text-cyan-400 bg-gray-800 px-2 py-1 rounded">
+            {localSliderValue.toFixed(control.step < 0.01 ? 3 : control.step < 0.1 ? 2 : 1)}
+        </span>
       </div>
-    )
-  }
+      <Slider.Root
+          value={[localSliderValue]}
+          onValueChange={handleValueChange} // Update local value during drag
+          onValueCommit={handleValueCommit} // Update global settings on drag end
+        min={control.min}
+        max={control.max}
+        step={control.step}
+        className="relative flex items-center select-none touch-none h-5"
+      >
+        <Slider.Track className="bg-gray-700 relative grow rounded-full h-2">
+          <Slider.Range className="absolute bg-cyan-400 rounded-full h-full" />
+        </Slider.Track>
+        <Slider.Thumb
+            className="block w-4 h-4 bg-cyan-400 shadow-lg rounded-full hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-opacity-50 cursor-pointer"
+          aria-label={control.name}
+        />
+      </Slider.Root>
+    </div>
+    );
+  };
 
   return (
     <div className={`fixed top-4 right-4 z-50 transition-all duration-300 ${!isVisible ? 'translate-x-full' : ''}`}>
@@ -317,16 +335,37 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
                   >
                     {settings.animationEnabled ? '🔄 Animation ON' : '⏸️ Animation OFF'}
                   </button>
+              <button
+                onClick={() => updateSetting('liquidEffect', !settings.liquidEffect)}
+                className={`w-full px-3 py-2 rounded transition-colors text-sm ${
+                  settings.liquidEffect
+                    ? 'bg-cyan-400 text-black'
+                    : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                }`}
+              >
+                {settings.liquidEffect ? '🌊 Liquid Effect ON' : '⏸️ Liquid Effect OFF'}
+              </button>
+                </>
+              )}
+              
+              {currentFolder === 'detection' && (
+                <>
                   <button
-                    onClick={() => updateSetting('liquidEffect', !settings.liquidEffect)}
-                    className={`w-full px-3 py-2 rounded transition-colors text-sm ${
-                      settings.liquidEffect
+                    onClick={() => updateSetting('useThresholdBasedMoveCount', !settings.useThresholdBasedMoveCount)}
+                    className={`w-full px-3 py-2 rounded transition-colors text-sm mb-3 ${
+                      settings.useThresholdBasedMoveCount
                         ? 'bg-cyan-400 text-black'
                         : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
                     }`}
                   >
-                    {settings.liquidEffect ? '🌊 Liquid Effect ON' : '⏸️ Liquid Effect OFF'}
+                    {settings.useThresholdBasedMoveCount ? '🎯 Threshold Detection ON' : '📊 Static Move Count'}
                   </button>
+                  <div className="text-xs text-gray-400 text-center">
+                    {settings.useThresholdBasedMoveCount 
+                      ? 'Center shows detected moves based on threshold'
+                      : 'Center shows boulder data move count'
+                    }
+                  </div>
                 </>
               )}
             </div>

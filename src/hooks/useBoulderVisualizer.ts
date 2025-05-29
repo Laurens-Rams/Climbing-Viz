@@ -22,9 +22,9 @@ interface BoulderData {
   }[];
   attempts?: AttemptData[];
   isLiveData?: boolean;
-  csvData?: any;
-  stats?: {
-    moveCount: number;
+  csvData?: {
+    time: number[];
+    absoluteAcceleration: number[];
   };
 }
 
@@ -180,17 +180,32 @@ const seededRandom = (seed: number) => {
 };
 
 let helvetikerFont: any = null;
+let fontLoadAttempted = false;
+
+const loadFont = () => {
+    if (fontLoadAttempted) return;
+    fontLoadAttempted = true;
+    
 const fontLoader = new FontLoader();
 fontLoader.load(
     'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
     (font) => {
         helvetikerFont = font;
+            console.log('Font loaded successfully');
     },
     undefined,
     (error) => {
-        console.error('FontLoader error loading helvetiker_regular.typeface.json:', error);
-    }
-);
+            console.warn('FontLoader error loading helvetiker_regular.typeface.json (CORS issue expected):', error instanceof Error ? error.message : String(error));
+            console.log('Using fallback sphere geometry for center display instead of text');
+            // Font will remain null, createCenterText will use fallback sphere
+        }
+    );
+};
+
+// Initialize font loading
+loadFont();
+        
+// The visualizer should only use move count from boulder data, not calculate thresholds
 
 export function useBoulderVisualizer(boulderData: BoulderData | null, userSettings?: any) {
     const { scene } = useThree();
@@ -212,6 +227,7 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
     
     const managedObjects = useRef<THREE.Object3D[]>([]).current;
     const prevBoulderDataRef = useRef<BoulderData | null>(null);
+    const prevMoveCountRef = useRef<number>(0);
     const prevBuiltSettingsRef = useRef<VisualizerSettings>({ ...initialSettings, ...(userSettings || {}) });
 
     const clearSceneObjects = useCallback(() => {
@@ -243,6 +259,7 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
 
     const createCenterText = useCallback((moveCount: number, gradeColor: number) => {
         if (!helvetikerFont || !boulderData) return;
+            
         const textMaterial = new THREE.MeshBasicMaterial({ color: gradeColor, transparent: true, opacity: 0.8 });
         const displayText = moveCount.toString();
         const textGeometry = new TextGeometry(displayText, { font: helvetikerFont, size: settings.centerTextSize, height: 0.1 });
@@ -250,7 +267,7 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
         centerTextRef.current = new THREE.Mesh(textGeometry, textMaterial);
         scene.add(centerTextRef.current);
         managedObjects.push(centerTextRef.current);
-    }, [boulderData, settings.centerTextSize, scene, managedObjects]);
+    }, [boulderData?.id, boulderData?.moves?.length, settings.centerTextSize, helvetikerFont, scene, managedObjects]);
 
     const createSingleRing = useCallback((ringIndex: number, moveCount: number) => {
         if (!boulderData || !boulderData.moves || boulderData.moves.length === 0) return null;
@@ -420,6 +437,14 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
             prevBoulderDataRef.current = boulderData;
         }
 
+        // Check if move count changed (important for live data)
+        const currentMoveCount = boulderData?.moves?.length || 0;
+        if (currentMoveCount !== prevMoveCountRef.current) {
+            console.log(`[useBoulderVisualizer] Move count changed from ${prevMoveCountRef.current} to ${currentMoveCount} - will rebuild circles`);
+            needsRecreation = true;
+            prevMoveCountRef.current = currentMoveCount;
+        }
+
         // Update internal settings state
         if (userSettings) {
             dispatch({ type: 'UPDATE_SETTINGS', payload: userSettings });
@@ -428,7 +453,8 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
         // Define which settings require full recreation vs just material updates
         const structuralChangeKeys: (keyof VisualizerSettings)[] = [
             'ringCount', 'baseRadius', 'ringSpacing', 'curveResolution', 'combinedSize',
-            'dynamicsMultiplier', 'organicNoise', 'depthEffect', 'cruxEmphasis', 'moveEmphasis'
+            'dynamicsMultiplier', 'organicNoise', 'depthEffect', 'cruxEmphasis', 'moveEmphasis',
+            'centerTextSize'
         ];
 
         const materialChangeKeys: (keyof VisualizerSettings)[] = [
@@ -454,7 +480,7 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
         }
         
         if (needsRecreation && boulderData) {
-            console.log('[useBoulderVisualizer] Recreating visualization due to structural changes');
+            console.log('[useBoulderVisualizer] Recreating visualization due to boulder/move count/settings change');
             createVisualization();
             prevBuiltSettingsRef.current = newEffectiveSettings;
         } else if (needsMaterialUpdate && boulderData) {
@@ -586,89 +612,6 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
             });
         }
     });
-
-    // Move detection function for frontend (similar to backend DataViz)
-    const detectMovesFromData = useCallback((csvData: any, threshold: number = 15.0) => {
-        if (!csvData || !csvData.time || !csvData.absoluteAcceleration) {
-            return []
-        }
-
-        const detectedMoves = []
-        const minMoveDuration = 0.5 // minimum seconds between moves
-        
-        let lastMoveTime = -minMoveDuration
-        
-        // Always add starting position
-        detectedMoves.push({
-            move_number: 1,
-            dynamics: 0.3,
-            crux: false,
-            isCrux: false,
-            angle: 0,
-            x: 0,
-            y: 0,
-            z: 0
-        })
-        
-        const { time, absoluteAcceleration } = csvData
-        
-        // Detect moves above threshold
-        for (let i = 1; i < absoluteAcceleration.length - 1; i++) {
-            const currentAccel = absoluteAcceleration[i]
-            const currentTime = time[i]
-            
-            // Look for peaks above threshold
-            if (currentAccel > threshold && 
-                currentAccel > absoluteAcceleration[i-1] && 
-                currentAccel > absoluteAcceleration[i+1] &&
-                (currentTime - lastMoveTime) > minMoveDuration) {
-                
-                // Calculate move properties
-                const dynamics = Math.min(currentAccel / 30, 1.0) // Normalize dynamics
-                const isCrux = currentAccel > threshold * 1.5
-                
-                detectedMoves.push({
-                    move_number: detectedMoves.length + 1,
-                    dynamics,
-                    crux: isCrux,
-                    isCrux,
-                    angle: 0,
-                    x: 0,
-                    y: 0,
-                    z: 0
-                })
-                
-                lastMoveTime = currentTime
-            }
-        }
-        
-        return detectedMoves
-    }, [])
-
-    // Get effective boulder data with dynamic move detection
-    const getEffectiveBoulderData = useCallback((originalData: BoulderData | null) => {
-        if (!originalData) return null
-
-        // If we have a move detection threshold setting, recalculate moves
-        if (settings.moveDetectionThreshold && originalData.csvData) {
-            const dynamicMoves = detectMovesFromData(originalData.csvData, settings.moveDetectionThreshold)
-            
-            return {
-                ...originalData,
-                moves: dynamicMoves,
-                stats: {
-                    ...originalData.stats,
-                    moveCount: dynamicMoves.length
-                }
-            }
-        }
-
-        // Otherwise use original moves
-        return originalData
-    }, [settings.moveDetectionThreshold, detectMovesFromData])
-
-    // Get effective data with potential move recalculation
-    const effectiveBoulderData = getEffectiveBoulderData(boulderData)
 
     return { 
         settings, 

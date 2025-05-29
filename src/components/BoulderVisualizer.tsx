@@ -74,20 +74,9 @@ function convertBoulderDataForHook(boulderData: BoulderData | null) {
 function BoulderScene({ boulderData, settings }: { boulderData?: BoulderData | null, settings?: any }) {
   // Memoize the conversion to prevent excessive re-computation
   const convertedData = useMemo(() => {
-    const converted = convertBoulderDataForHook(boulderData || null)
-    
-    // If we have threshold settings and CSV data, recalculate moves
-    if (converted && settings?.moveDetectionThreshold && converted.csvData) {
-      const dynamicMoves = detectMovesFromCSV(converted.csvData, settings.moveDetectionThreshold)
-      return {
-        ...converted,
-        moves: dynamicMoves
-      }
-    }
-    
-    return converted
-  }, [boulderData?.id, boulderData?.moves?.length, settings?.moveDetectionThreshold]) // Add threshold dependency
-
+    return convertBoulderDataForHook(boulderData || null)
+  }, [boulderData?.id, boulderData?.moves?.length]) // Only recalculate if ID or move count changes
+  
   // Use the hook within the Canvas context - let it manage its own refs
   const { ringsRef, centerTextRef, attemptLinesRef, moveLinesRef, moveSegmentsRef } = useBoulderVisualizer(convertedData, settings)
 
@@ -118,75 +107,37 @@ function BoulderScene({ boulderData, settings }: { boulderData?: BoulderData | n
   )
 }
 
-// Add move detection function for frontend
-function detectMovesFromCSV(csvData: any, threshold: number = 15.0) {
-  if (!csvData || !csvData.time || !csvData.absoluteAcceleration) {
-    return []
-  }
-
-  const detectedMoves = []
-  const minMoveDuration = 0.5 // minimum seconds between moves
-  
-  let lastMoveTime = -minMoveDuration
-  
-  // Always add starting position
-  detectedMoves.push({
-    move_number: 1,
-    dynamics: 0.3,
-    crux: false,
-    isCrux: false,
-    angle: 0,
-    x: 0,
-    y: 0,
-    z: 0
-  })
-  
-  const { time, absoluteAcceleration } = csvData
-  
-  // Detect moves above threshold
-  for (let i = 1; i < absoluteAcceleration.length - 1; i++) {
-    const currentAccel = absoluteAcceleration[i]
-    const currentTime = time[i]
-    
-    // Look for peaks above threshold
-    if (currentAccel > threshold && 
-        currentAccel > absoluteAcceleration[i-1] && 
-        currentAccel > absoluteAcceleration[i+1] &&
-        (currentTime - lastMoveTime) > minMoveDuration) {
-      
-      // Calculate move properties
-      const dynamics = Math.min(currentAccel / 30, 1.0) // Normalize dynamics
-      const isCrux = currentAccel > threshold * 1.5
-      
-      detectedMoves.push({
-        move_number: detectedMoves.length + 1,
-        dynamics,
-        crux: isCrux,
-        isCrux,
-        angle: 0,
-        x: 0,
-        y: 0,
-        z: 0
-      })
-      
-      lastMoveTime = currentTime
-    }
-  }
-  
-  return detectedMoves
-}
-
-export function BoulderVisualizer({ boulderData, settings, currentBoulderId, boulders, selectedBoulder, isLoading, error, selectBoulder }: BoulderVisualizerProps) {
-  // Use effect to sync boulder selection with currentBoulderId prop
+export function BoulderVisualizer({ boulderData, settings, currentBoulderId, boulders, selectedBoulder, isLoading, error, selectBoulder: selectBoulderFromAppProps }: BoulderVisualizerProps) {
+  // Use effect to react to boulderSelectionChanged events, primarily for logging or side-effects if needed in future.
+  // The component will primarily re-render based on prop changes (selectedBoulder, currentBoulderId).
   useEffect(() => {
-    if (!boulderData && currentBoulderId && boulders && boulders.length > 0 && (!selectedBoulder || selectedBoulder.id !== currentBoulderId)) {
-      // Find the boulder with the current ID and select it if it's not already selected
-      const targetBoulder = boulders.find(b => b.id === currentBoulderId)
-      if (targetBoulder && selectBoulder) {
-        selectBoulder(currentBoulderId)
+    const handleBoulderSelectionChanged = (event: CustomEvent) => {
+      const { boulderId: eventBoulderId, source } = event.detail;
+      if (source !== 'visualizer') {
+        // console.log(`[BoulderVisualizer] Heard boulderSelectionChanged from ${source} to ${eventBoulderId}. Current prop ID: ${currentBoulderId}`);
+        // The visualizer should automatically update when its props (like selectedBoulder or currentBoulderId) change.
+        // No need to call selectBoulderFromAppProps(eventBoulderId) here as it can cause loops
+        // and App.tsx is already the source of truth for selectedBoulder prop.
       }
-    }
-  }, [currentBoulderId, boulderData, boulders, selectedBoulder, selectBoulder])
+    };
+
+    document.addEventListener('boulderSelectionChanged', handleBoulderSelectionChanged as EventListener);
+
+    // Initial sync logic removed: The component should rely on initial props from App.tsx.
+    // If currentBoulderId is provided, App.tsx should ensure selectedBoulder matches it.
+    // if (!boulderData && currentBoulderId && boulders && boulders.length > 0 && (!selectedBoulder || selectedBoulder.id !== currentBoulderId)) {
+    //   const targetBoulder = boulders.find(b => b.id === currentBoulderId);
+    //   if (targetBoulder && selectBoulderFromAppProps) {
+    //      // selectBoulderFromAppProps(currentBoulderId); // This was problematic
+    //   }
+    // }
+
+    return () => {
+      document.removeEventListener('boulderSelectionChanged', handleBoulderSelectionChanged as EventListener);
+    };
+  // Ensure dependencies are correct for this simplified effect.
+  // selectBoulderFromAppProps is removed from deps as it's not directly used in the simplified handler.
+  }, [currentBoulderId, boulders, selectedBoulder]); 
   
   // Determine which data source to use - ensure type is BoulderData | null
   const effectiveBoulderData: BoulderData | null = boulderData || selectedBoulder || null

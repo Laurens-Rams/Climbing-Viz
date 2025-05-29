@@ -1,10 +1,53 @@
 # 🧗‍♂️ Climbing Data Visualizer
 
-A stunning 3D visualization tool for climbing data that displays your climbing progress as concentric rings in 3D space. Each ring represents a week of climbing activity, with the radius varying based on climbing volume and grades achieved.
+An advanced data visualization tool for analyzing climbing movement patterns and dynamics using 3D visualizations and statistical analysis.
 
-![Climbing Visualizer Preview](https://via.placeholder.com/800x400/0a0a0a/00ff88?text=3D+Climbing+Rings+Visualization)
+## ✅ Recent Fixes (December 2024)
 
-## ✨ Features
+### 🔧 Infinite Console Log Loop - RESOLVED
+**Problem**: Infinite loop of console logs causing performance issues:
+```
+useCSVData.ts:79 Updating boulder data: Raw Data ID: 1
+DataVizPanel.tsx:286 [DataVizPanel] Updating boulder data with threshold 12 (was undefined)
+App.tsx:114 [App] Boulder data updated from component: Raw Data ID: 1
+```
+
+**Root Cause**: React useEffect dependency cycle between DataVizPanel, App, and useCSVData
+
+**Solution**: 
+- Fixed useEffect dependencies in `DataVizPanel.tsx` to only trigger on meaningful changes
+- Added comparison logic in `useCSVData.ts` to prevent unnecessary updates
+- Made debug logging conditional on development environment
+- Changed dependencies from `selectedBoulder` to `selectedBoulder?.id` to prevent object reference loops
+
+### 🌐 CORS Font Issues - RESOLVED  
+**Problem**: Font loading blocked by CORS policy:
+```
+Access to font at 'https://fonts.gstatic.com/...' blocked by CORS policy: 
+The 'Access-Control-Allow-Origin' header has a value 'http://localhost:3002' 
+that is not equal to the supplied origin 'http://localhost:3006'
+```
+
+**Root Cause**: Browser cached fonts from previous development server port
+
+**Solution**:
+- Added graceful fallback handling for Google Fonts
+- Implemented proper error handling for Three.js font loading
+- Created CORS helper utility with user guidance
+- Added fallback system fonts when external fonts fail
+
+### 🛠️ How to Clear CORS Issues
+
+If you still see CORS errors:
+
+1. **Clear Browser Cache**: `Ctrl+Shift+Delete` (Chrome/Firefox) or `Cmd+Shift+Delete` (Mac)
+2. **Hard Refresh**: `Ctrl+F5` or open in Incognito mode  
+3. **Dev Tools**: Open Network tab, check "Disable cache", refresh
+4. **Alternative**: Use a different browser or private/incognito mode
+
+⚠️ **Note**: CORS font errors are cosmetic - the app works normally with fallback fonts.
+
+## 🚀 Features
 
 - **3D Ring Visualization**: Each week is represented as a ring with radius based on climbing data
 - **Interactive Controls**: Mouse controls for rotation, zoom, and exploration
