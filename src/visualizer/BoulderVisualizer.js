@@ -14,10 +14,27 @@ export class BoulderVisualizer {
         this.centerText = null;
         this.attemptLines = [];
         
+        // Performance monitoring
+        this.performanceStats = {
+            frameCount: 0,
+            lastFrameTime: performance.now(),
+            averageFPS: 60,
+            renderTime: 0
+        };
+        
+        // Animation control
+        this.isAnimating = false;
+        
+        // Update throttling and debouncing
+        this.updateTimeout = null;
+        this.liveDataUpdateTimeout = null;
+        this.lastLiveDataUpdate = 0;
+        this.lastAppliedSettings = null;
+        
         // Color variables that can be changed
         this.colors = {
-            cruxMove: 0xd624ab,      // Magenta/purple for crux moves
-            normalMove: 0x39accc,    // Purple for normal moves
+            cruxMove: 0xDE501B,      // Magenta/purple for crux moves
+            normalMove: 0x0CFFDB,    // Purple for normal moves
             gradeColors: {
                 'V1': 0x60e2e8,     // Light blue (3)
                 'V2': 0x60e2e8,     // Light blue (3)
@@ -35,46 +52,49 @@ export class BoulderVisualizer {
         this.settings = {
             baseRadius: 2.5,         // Inner radius where all rings start
             maxRadius: 12.0,         // Maximum radius for highest dynamics
-            ringCount: 45,           // Number of concentric circles (10-70)
-            ringSpacing: 0.005,      // Spacing between rings
-            opacity: 1.0,            // Line opacity
-            curveResolution: 480,    // Smoothness of curves (always maximum)
-            dynamicsMultiplier: 4.4, // How much dynamics affect radius
+            ringCount: 28,           // Number of concentric circles (was 45, now 28 as shown)
+            ringSpacing: 0.0,        // Spacing between rings (was 0.005, now 0 as shown)
+            opacity: 1.0,            // Line opacity (matches current)
+            curveResolution: 240,    // Reduced from 480 to 240 for better performance
+            dynamicsMultiplier: 4.9, // How much dynamics affect radius (was 4.4, now 4.9 as shown)
             centerTextSize: 1.0,     // Size of center grade text
             showMoveNumbers: true,   // Show move sequence numbers
             liquidEffect: true,      // Enable liquid wave effect
-            organicNoise: 0.05,      // Amount of organic noise (reduced for subtle filter effect)
-            cruxEmphasis: 3.0,       // How much to emphasize crux moves
-            moveEmphasis: 0.0,       // How much to emphasize all moves equally
+            organicNoise: 0.1,       // Amount of organic noise (was 0.05, now 0.1 as shown)
+            cruxEmphasis: 3.0,       // How much to emphasize crux moves (matches current)
+            moveEmphasis: 0.0,       // How much to emphasize all moves equally (matches current)
             waveComplexity: 1.0,     // Complexity of wave patterns
-            depthEffect: 0.6,        // 3D depth effect strength
-            centerFade: 0.95,        // How much lines fade near center (slab effect)
-            showMoveSegments: true,  // Show background move segments (changed from false)
+            depthEffect: 2.0,        // 3D depth effect strength (was 0.6, now 2.0 as shown)
+            centerFade: 1.0,         // How much lines fade near center (was 0.95, now 1.0 as shown)
+            showMoveSegments: false,  // Show background move segments (changed from true)
             segmentOpacity: 0.25,    // Opacity of move segments (increased from 0.15)
             segmentGap: 0.06,        // Gap between segments (0.0-0.2)
-            showMoveLines: true,     // Show radial lines at move peaks
+            showMoveLines: false,     // Show radial lines at move peaks (changed from true)
             lineLength: 4,           // Length of radial lines
-            lineOpacity: 1,          // Opacity of move lines
+            lineOpacity: 1,          // Opacity of move lines (matches current)
             dotSize: 0.07,           // Size of dots at line ends
             dotOpacity: 1,           // Opacity of dots
-            radiusMultiplier: 1.0,   // Overall radius multiplier for the entire visualization
+            radiusMultiplier: 1.2,   // Overall radius multiplier (was 1.0, now 1.2 as shown)
             showAttempts: true,      // Show attempt visualization layer
-            attemptOpacity: 1,       // Opacity of attempt lines
-            attemptWaviness: 0.058,  // How wavy the attempt lines are
-            attemptFadeStrength: 1.3, // How strong the fade effect is for multiple attempts
-            attemptThickness: 0.3,   // Base thickness of attempt lines
-            attemptIntensity: 2,     // Visual intensity multiplier
-            maxAttempts: 45,         // Maximum number of attempts to show
-            attemptRadius: 1.3,       // Multiplier for attempt end radius (relative to max radius)
+            attemptOpacity: 0.55,    // Opacity of attempt lines (updated to match screenshot)
+            attemptWaviness: 0.124,  // How wavy the attempt lines are (updated to match screenshot)
+            attemptFadeStrength: 1.8, // How strong the fade effect is (updated to match screenshot)
+            attemptThickness: 0.3,   // Base thickness of attempt lines (updated to match screenshot)
+            attemptIntensity: 0.6,   // Visual intensity multiplier (updated to match screenshot)
+            maxAttempts: 65,         // Maximum number of attempts to show (updated to match screenshot)
+            attemptRadius: 2.55,     // Multiplier for attempt end radius (updated to match screenshot)
             moveDetectionThreshold: 15.0, // Added for live data detection
             magnitudeThreshold: 1.5,   // Lowered for live accelerometer data (was 15)
             minMoveDuration: 0.2,    // Reduced minimum duration for more responsive detection (was 0.3)
             maxTimeBetweenMoves: 1.5,  // Reduced max time between moves for live data (was 2.0)
-            lineWidth: 0.02           // Added for line width setting
+            lineWidth: 0.02,           // Added for line width setting
+            attemptDotZOffsetMax: 0.85, // Max Z offset for dots (updated to match screenshot)
+            attemptDotZEffectStrength: 1.6 // Strength of Z offset effect (updated to match screenshot)
         };
         
         this.init();
         this.setupEventListeners();
+        this.lastAppliedSettings = { ...this.settings }; // Initialize lastAppliedSettings
     }
     
     init() {
@@ -106,9 +126,13 @@ export class BoulderVisualizer {
         this.setupControls();
         this.setupEventListeners();
         
+        // Start the animation loop
+        this.start();
+        
         console.log('BoulderVisualizer initialized - Canvas added to container');
         console.log('Canvas dimensions:', this.renderer.domElement.width, 'x', this.renderer.domElement.height);
         console.log('Container:', this.container);
+        console.log('Animation loop started');
     }
     
     // Simple seeded random number generator for consistent results
@@ -131,10 +155,10 @@ export class BoulderVisualizer {
         let isMouseDown = false;
         let mouseX = 0;
         let mouseY = 0;
-        let targetRotationX = 0;
-        let targetRotationY = 0;
-        let currentRotationX = 0;
-        let currentRotationY = 0;
+        this.targetRotationX = 0;
+        this.targetRotationY = 0;
+        this.currentRotationX = 0;
+        this.currentRotationY = 0;
         
         this.renderer.domElement.addEventListener('mousedown', (event) => {
             isMouseDown = true;
@@ -147,9 +171,9 @@ export class BoulderVisualizer {
                 const deltaX = event.clientX - mouseX;
                 const deltaY = event.clientY - mouseY;
                 
-                targetRotationY += deltaX * 0.01;
-                targetRotationX += deltaY * 0.01;
-                targetRotationX = Math.max(-Math.PI/2, Math.min(Math.PI/2, targetRotationX));
+                this.targetRotationY += deltaX * 0.01;
+                this.targetRotationX += deltaY * 0.01;
+                this.targetRotationX = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.targetRotationX));
                 
                 mouseX = event.clientX;
                 mouseY = event.clientY;
@@ -165,30 +189,29 @@ export class BoulderVisualizer {
             this.camera.position.multiplyScalar(1 + zoom);
             this.camera.position.clampLength(8, 50);
         });
+    }
+    
+    updateCamera() {
+        // Smooth camera rotation - called from main animation loop
+        this.currentRotationX += (this.targetRotationX - this.currentRotationX) * 0.1;
+        this.currentRotationY += (this.targetRotationY - this.currentRotationY) * 0.1;
         
-        // Smooth camera rotation
-        const updateCamera = () => {
-            currentRotationX += (targetRotationX - currentRotationX) * 0.1;
-            currentRotationY += (targetRotationY - currentRotationY) * 0.1;
-            
-            const radius = this.camera.position.length();
-            this.camera.position.x = radius * Math.sin(currentRotationY) * Math.cos(currentRotationX);
-            this.camera.position.y = radius * Math.sin(currentRotationX);
-            this.camera.position.z = radius * Math.cos(currentRotationY) * Math.cos(currentRotationX);
-            this.camera.lookAt(0, 0, 0);
-            
-            requestAnimationFrame(updateCamera);
-        };
-        updateCamera();
+        const radius = this.camera.position.length();
+        this.camera.position.x = radius * Math.sin(this.currentRotationY) * Math.cos(this.currentRotationX);
+        this.camera.position.y = radius * Math.sin(this.currentRotationX);
+        this.camera.position.z = radius * Math.cos(this.currentRotationY) * Math.cos(this.currentRotationX);
+        this.camera.lookAt(0, 0, 0);
     }
     
     setupEventListeners() {
-        window.addEventListener('resize', () => {
+        this.resizeHandler = () => {
             this.camera.aspect = window.innerWidth / window.innerHeight;
             this.camera.updateProjectionMatrix();
             this.renderer.setSize(window.innerWidth, window.innerHeight);
             this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Maintain high DPI on resize
-        });
+        };
+        
+        window.addEventListener('resize', this.resizeHandler);
     }
     
     loadBoulder(boulder) {
@@ -245,47 +268,53 @@ export class BoulderVisualizer {
     }
     
     clearScene() {
-        // Remove all rings
-        this.rings.forEach(ring => {
-            this.scene.remove(ring);
+        const disposeMesh = (mesh) => {
+            if (mesh.geometry) {
+                mesh.geometry.dispose();
+            }
+            if (mesh.material) {
+                if (Array.isArray(mesh.material)) {
+                    mesh.material.forEach(material => material.dispose());
+                } else {
+                    mesh.material.dispose();
+                }
+            }
+        };
+
+        // Clear all visualization elements with proper disposal
+        [...this.rings, ...this.moveSegments, ...this.moveLines, ...this.attemptLines].forEach(element => {
+            if (element) {
+                disposeMesh(element);
+                this.scene.remove(element);
+            }
         });
-        this.rings = [];
-        
-        // Remove move segments
-        if (this.moveSegments) {
-            this.moveSegments.forEach(segment => {
-                this.scene.remove(segment);
-            });
-            this.moveSegments = [];
+
+        // Clear center elements
+        if (this.startLabel) {
+            disposeMesh(this.startLabel);
+            this.scene.remove(this.startLabel);
+            this.startLabel = null;
         }
-        
-        // Remove move lines
-        if (this.moveLines) {
-            this.moveLines.forEach(line => {
-                this.scene.remove(line);
-            });
-            this.moveLines = [];
-        }
-        
-        // Remove center circle
-        if (this.centerCircle) {
-            this.scene.remove(this.centerCircle);
-            this.centerCircle = null;
-        }
-        
-        // Remove center text
+
         if (this.centerText) {
+            disposeMesh(this.centerText);
             this.scene.remove(this.centerText);
             this.centerText = null;
         }
-        
-        // Remove attempt lines
-        if (this.attemptLines) {
-            this.attemptLines.forEach(line => {
-                this.scene.remove(line);
-            });
-            this.attemptLines = [];
+
+        if (this.centerCircle) {
+            disposeMesh(this.centerCircle);
+            this.scene.remove(this.centerCircle);
+            this.centerCircle = null;
         }
+
+        // Clear arrays
+        this.rings.length = 0;
+        this.moveSegments.length = 0;
+        this.moveLines.length = 0;
+        this.attemptLines.length = 0;
+        
+        console.log(`[BoulderVisualizer] Scene cleared, remaining objects: ${this.scene.children.length}`);
     }
     
     createCenterGrade() {
@@ -510,8 +539,8 @@ export class BoulderVisualizer {
                 new THREE.Vector3(endX, endY, 0)
             ];
             
-            const curve = new THREE.CatmullRomCurve3(linePoints);
-            const tubeGeometry = new THREE.TubeGeometry(curve, 1, cruxThickness, 8, false);
+            const lineCurve = new THREE.CatmullRomCurve3(linePoints);
+            const tubeGeometry = new THREE.TubeGeometry(lineCurve, 1, cruxThickness, 8, false);
             
             // Get base move color (crux vs normal)
             const baseMoveColor = move.isCrux ? this.colors.cruxMove : this.colors.normalMove;
@@ -538,6 +567,13 @@ export class BoulderVisualizer {
     createAttemptVisualization() {
         if (!this.settings.showAttempts) return;
         
+        // Skip attempt visualization for live data boulders
+        if (this.boulder && this.boulder.isLiveData) {
+            console.log('[BoulderVisualizer] Skipping attempt visualization for live data boulder');
+            this.attemptLines = [];
+            return;
+        }
+        
         this.attemptLines = [];
         const attempts = this.generateAttemptData();
         
@@ -550,28 +586,42 @@ export class BoulderVisualizer {
     }
     
     createAttemptLine(attempt, maxRadius) {
-        const { angle, completionPercent, attemptIndex, totalAttempts, personId } = attempt;
+        const { angle, completionPercent, attemptIndex, totalAttempts } = attempt;
         
         // Create a single line for this specific attempt
         this.createSingleAttemptLine(attempt, maxRadius);
     }
     
     createSingleAttemptLine(attempt, maxRadius) {
-        const { angle, completionPercent, attemptIndex, totalAttempts, personId } = attempt;
+        const { angle, completionPercent, attemptIndex, totalAttempts } = attempt;
         
-        // Start from outside the inner circle, not from center
-        const startRadius = this.settings.baseRadius * this.settings.radiusMultiplier * 1.1; // Fixed start just outside inner circle
+        // Start exactly at the edge of the center circle (same radius and Z position)
+        const startRadius = this.settings.baseRadius * this.settings.radiusMultiplier; // Exact edge of center circle
+        
+        // Make completion percentage more dramatic - use exponential scaling
+        // This ensures short attempts stay much closer to center
+        const dramaticCompletion = Math.pow(completionPercent, 1.8); // Exponential curve makes low values much smaller
+        
         const adjustedMaxRadius = maxRadius * this.settings.attemptRadius; // Configurable max radius for attempts
-        const endRadius = startRadius + (adjustedMaxRadius - startRadius) * completionPercent;
+        const endRadius = startRadius + (adjustedMaxRadius - startRadius) * dramaticCompletion;
         
-        // Position attempts exactly on top of each other at the same degree
-        // No offset - all attempts from same person at exact same angle
-        const lineAngle = angle;
+        // Debug logging for first few attempts
+        if (attemptIndex < 3) {
+            console.log(`Attempt ${attemptIndex}: completion=${completionPercent.toFixed(3)}, dramatic=${dramaticCompletion.toFixed(3)}, startRadius=${startRadius.toFixed(1)}, endRadius=${endRadius.toFixed(1)}`);
+        }
         
+        const lineAngle = angle; // Use the direct random angle for this attempt
+        
+        // Introduce a unique random seed for this specific attempt's wave pattern
+        const attemptSpecificRandomPhase = this.seededRandom(this.boulder.id + attemptIndex * 12.345) * Math.PI * 2;
+
+        // Calculate lineOpacity first as it's needed by the fade overlay
+        let calculatedLineOpacity = this.settings.attemptOpacity; // Simplified: directly use attemptOpacity
+
         // Calculate the wave offset at the completion point for dot positioning
-        const completionWave1 = Math.sin(completionPercent * Math.PI * 2 + attemptIndex) * this.settings.attemptWaviness * completionPercent * 0.6;
-        const completionWave2 = Math.sin(completionPercent * Math.PI * 4 + attemptIndex * 2) * this.settings.attemptWaviness * completionPercent * 0.3;
-        const completionWave3 = Math.sin(completionPercent * Math.PI * 6 + attemptIndex * 3) * this.settings.attemptWaviness * completionPercent * 0.1;
+        const completionWave1 = Math.sin(completionPercent * Math.PI * 2 + attemptIndex + attemptSpecificRandomPhase) * this.settings.attemptWaviness * completionPercent * 0.6;
+        const completionWave2 = Math.sin(completionPercent * Math.PI * 4 + attemptIndex * 2 + attemptSpecificRandomPhase) * this.settings.attemptWaviness * completionPercent * 0.3;
+        const completionWave3 = Math.sin(completionPercent * Math.PI * 6 + attemptIndex * 3 + attemptSpecificRandomPhase) * this.settings.attemptWaviness * completionPercent * 0.1;
         const completionWaveOffset = completionWave1 + completionWave2 + completionWave3;
         const completionWaveAngle = lineAngle + completionWaveOffset;
         
@@ -587,76 +637,37 @@ export class BoulderVisualizer {
             const t = i / segments;
             const currentRadius = startRadius + (endRadius - startRadius) * t;
             
-            // Enhanced wavy effect with longer wavelengths and multiple frequencies
-            const wave1 = Math.sin(t * Math.PI * 2 + attemptIndex) * this.settings.attemptWaviness * t * 0.6;
-            const wave2 = Math.sin(t * Math.PI * 4 + attemptIndex * 2) * this.settings.attemptWaviness * t * 0.3;
-            const wave3 = Math.sin(t * Math.PI * 6 + attemptIndex * 3) * this.settings.attemptWaviness * t * 0.1;
+            // Enhanced wavy effect with longer wavelengths and multiple frequencies, plus attempt-specific phase
+            const wave1 = Math.sin(t * Math.PI * 2 + attemptIndex + attemptSpecificRandomPhase) * this.settings.attemptWaviness * t * 0.6;
+            const wave2 = Math.sin(t * Math.PI * 4 + attemptIndex * 2 + attemptSpecificRandomPhase) * this.settings.attemptWaviness * t * 0.3;
+            const wave3 = Math.sin(t * Math.PI * 6 + attemptIndex * 3 + attemptSpecificRandomPhase) * this.settings.attemptWaviness * t * 0.1;
             const waveOffset = wave1 + wave2 + wave3;
             const waveAngle = lineAngle + waveOffset;
             
             const x = Math.cos(waveAngle) * currentRadius;
             const y = Math.sin(waveAngle) * currentRadius;
-            const z = 0.15 + attemptIndex * 0.002; // Higher above other elements
+            
+            // Start at center circle Z position (0) and apply progressive Z-offset
+            // Shorter attempts (lower completion) get more Z-offset as they progress
+            const centerCircleZ = 0.0; // Same Z as center circle
+            const progressiveZOffset = this.settings.attemptDotZOffsetMax * (1 - completionPercent) * this.settings.attemptDotZEffectStrength * t;
+            const z = centerCircleZ + progressiveZOffset;
             
             points.push(new THREE.Vector3(x, y, z));
         }
         
-        // Create line geometry
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        
-        // Create gradient colors - bright at completion point, fade toward start
-        const colors = [];
-        const baseColor = new THREE.Color(0xffffff); // White base
-        const fadeColor = new THREE.Color(0x666666); // Darker for fade
-        
-        // Calculate intensity based on number of attempts and attempt index with more dramatic fade
-        const attemptIntensity = Math.min(totalAttempts / 4, 1.0) * this.settings.attemptIntensity;
-        const lineIntensity = 1.0 - (attemptIndex / totalAttempts) * 0.8 * this.settings.attemptFadeStrength; // Much more dramatic fade
-        
-        for (let i = 0; i <= segments; i++) {
-            const t = i / segments;
-            
-            // Fade from completion point back toward start
-            const fadeFromCompletion = t; // Brighter at completion (t=1), dimmer at start (t=0)
-            const finalIntensity = attemptIntensity * lineIntensity * (0.2 + 0.8 * fadeFromCompletion);
-            
-            const color = fadeColor.clone().lerp(baseColor, finalIntensity);
-            colors.push(color.r, color.g, color.b);
-        }
-        
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        
         // Calculate line thickness based on attempts and settings
         const thicknessMultiplier = this.settings.attemptThickness;
-        const lineOpacity = this.settings.attemptOpacity * (0.3 + 0.7 * completionPercent) * lineIntensity;
         
-        // Create thick line using TubeGeometry for proper thickness control
-        const curve = new THREE.CatmullRomCurve3(points);
-        const tubeGeometry = new THREE.TubeGeometry(curve, points.length - 1, 0.02 * thicknessMultiplier, 8, false);
+        // Create thick line using TubeGeometry for proper thickness control (like move lines)
+        const attemptCurve = new THREE.CatmullRomCurve3(points);
+        const tubeGeometry = new THREE.TubeGeometry(attemptCurve, points.length - 1, 0.03 * thicknessMultiplier, 8, false);
         
-        // Apply colors to tube geometry
-        const tubeColors = [];
-        const positionAttribute = tubeGeometry.attributes.position;
-        const vertexCount = positionAttribute.count;
-        
-        for (let i = 0; i < vertexCount; i++) {
-            const segmentIndex = Math.floor(i / 16); // 8 radial segments * 2 for tube
-            const t = Math.min(segmentIndex / (points.length - 1), 1);
-            
-            // Fade from completion point back toward start
-            const fadeFromCompletion = t;
-            const finalIntensity = attemptIntensity * lineIntensity * (0.2 + 0.8 * fadeFromCompletion);
-            
-            const color = fadeColor.clone().lerp(baseColor, finalIntensity);
-            tubeColors.push(color.r, color.g, color.b);
-        }
-        
-        tubeGeometry.setAttribute('color', new THREE.Float32BufferAttribute(tubeColors, 3));
-        
+        // Use simple white color like the working move lines
         const material = new THREE.MeshBasicMaterial({
-            vertexColors: true,
+            color: 0xffffff, // Solid white like other working lines
             transparent: true,
-            opacity: lineOpacity
+            opacity: calculatedLineOpacity
         });
         
         // Create tube mesh
@@ -667,27 +678,29 @@ export class BoulderVisualizer {
         // Add completion point dot for each line (showing where they fell)
         // Use the actual last point from the wavy line for perfect positioning
         const lastPoint = points[points.length - 1];
-        const dotSize = 0.03 + (totalAttempts / 15) * 0.04; // Bigger dots for more attempts
-        const dotGeometry = new THREE.SphereGeometry(dotSize, 12, 8);
+        // New dotSize calculation: smaller and more dependent on completionPercent
+        const dotSize = 0.015 + 0.03 * completionPercent; 
+        const dotGeometry = new THREE.SphereGeometry(dotSize, 10, 6); // Reduced segments for performance
         const dotMaterial = new THREE.MeshBasicMaterial({
             color: 0xffffff,
             transparent: true,
-            opacity: this.settings.attemptOpacity * lineIntensity * 0.9
+            opacity: calculatedLineOpacity * 0.9
         });
         
         const dot = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot.position.copy(lastPoint);
+        // Use the same Z calculation as the line end for perfect alignment
+        dot.position.set(lastPoint.x, lastPoint.y, lastPoint.z);
         
         this.attemptLines.push(dot);
         this.scene.add(dot);
         
         // Create fade effect from completion point back to center (overlay effect)
-        if (attemptIndex === 0) { // Only for first attempt to avoid too much overlap
-            this.createFadeOverlay(lastPoint.x, lastPoint.y, startRadius, lineAngle, totalAttempts);
+        if (attemptIndex < 5) { // Only for first few attempts to avoid too much visual noise with fully random attempts
+            this.createFadeOverlay(lastPoint.x, lastPoint.y, startRadius, lineAngle, calculatedLineOpacity); // Pass calculatedLineOpacity
         }
     }
     
-    createFadeOverlay(completionX, completionY, startRadius, angle, numAttempts) {
+    createFadeOverlay(completionX, completionY, startRadius, angle, baseLineOpacity) { // baseLineOpacity is now effectively settings.attemptOpacity
         // Create a fade effect from completion point back toward center
         const fadePoints = [];
         const fadeSegments = 15;
@@ -725,7 +738,7 @@ export class BoulderVisualizer {
         const fadeMaterial = new THREE.LineBasicMaterial({
             vertexColors: true,
             transparent: true,
-            opacity: this.settings.attemptOpacity * 0.3 * Math.min(numAttempts / 5, 1.0) * this.settings.attemptFadeStrength, // Controlled by attemptFadeStrength
+            opacity: baseLineOpacity * 0.15, // Make it even more subtle if lines are solid white
             linewidth: 3
         });
         
@@ -735,17 +748,38 @@ export class BoulderVisualizer {
     }
 
     createLiquidRings() {
-        const moveCount = this.boulder.moves.length;
+        if (!this.boulder || !this.boulder.moves || this.boulder.moves.length < 2) {
+            console.warn('[BoulderVisualizer] Cannot create rings: insufficient boulder data');
+            return;
+        }
         
-        // Create multiple concentric rings for liquid effect
+        console.log(`[BoulderVisualizer] Creating ${this.settings.ringCount} liquid rings for ${this.boulder.moves.length} moves`);
+        
+        const moveCount = this.boulder.moves.length;
+        let successfulRings = 0;
+        let failedRings = 0;
+        
         for (let ringIndex = 0; ringIndex < this.settings.ringCount; ringIndex++) {
-            const ring = this.createSingleRing(ringIndex, moveCount);
-            if (ring) {
-                this.rings.push(ring);
-                this.scene.add(ring);
-            } else {
-                console.warn(`[BoulderVisualizer] Failed to create ring ${ringIndex}`);
+            try {
+                const ring = this.createSingleRing(ringIndex, moveCount);
+                if (ring) {
+                    this.rings.push(ring);
+                    this.scene.add(ring);
+                    successfulRings++;
+                } else {
+                    failedRings++;
+                    console.warn(`[BoulderVisualizer] Failed to create ring ${ringIndex}`);
+                }
+            } catch (error) {
+                failedRings++;
+                console.error(`[BoulderVisualizer] Error creating ring ${ringIndex}:`, error);
             }
+        }
+        
+        console.log(`[BoulderVisualizer] Ring creation complete: ${successfulRings} successful, ${failedRings} failed`);
+        
+        if (successfulRings === 0) {
+            console.error('[BoulderVisualizer] No rings were created successfully!');
         }
     }
     
@@ -762,7 +796,13 @@ export class BoulderVisualizer {
             return null;
         }
 
-        const baseRadius = (this.settings.baseRadius + (ringIndex * this.settings.ringSpacing)) * this.settings.radiusMultiplier;
+        // Find min and max dynamics for normalization
+        const allDynamics = this.boulder.moves.map(move => isFinite(move.dynamics) ? move.dynamics : 0.5);
+        const minDynamics = Math.min(...allDynamics);
+        const maxDynamics = Math.max(...allDynamics);
+        const dynamicsRange = maxDynamics - minDynamics;
+
+        const baseRadius = (this.settings.baseRadius + (ringIndex * (this.settings.ringSpacing + 0.001))) * this.settings.radiusMultiplier;
         
         // Validate base radius
         if (!isFinite(baseRadius) || baseRadius <= 0) {
@@ -772,8 +812,9 @@ export class BoulderVisualizer {
         
         const points = [];
         
-        // Create much more detailed points for dramatic effect
-        const detailLevel = Math.max(moveCount * 8, 16); // Ensure minimum detail level
+        // Reduce detail level for performance - adaptive based on ring count
+        const detailLevel = Math.min(Math.max(moveCount * 6, 12), 48); // Reduced max from moveCount * 8 to 6, capped at 48
+        const ringProgress = ringIndex / this.settings.ringCount;
         
         for (let i = 0; i < detailLevel; i++) {
             const normalizedPosition = i / detailLevel;
@@ -798,7 +839,10 @@ export class BoulderVisualizer {
             // Interpolate dynamics between moves (with fallback values and validation)
             const dynamics1 = isFinite(move1.dynamics) ? move1.dynamics : 0.5;
             const dynamics2 = isFinite(move2.dynamics) ? move2.dynamics : 0.5;
-            const dynamics = dynamics1 * (1 - lerpFactor) + dynamics2 * lerpFactor;
+            const rawDynamics = dynamics1 * (1 - lerpFactor) + dynamics2 * lerpFactor;
+            
+            // Normalize dynamics: map lowest move to 0, highest to 1
+            const dynamics = dynamicsRange > 0 ? (rawDynamics - minDynamics) / dynamicsRange : 0;
             
             // Validate dynamics value
             if (!isFinite(dynamics)) {
@@ -810,13 +854,22 @@ export class BoulderVisualizer {
             let radius = baseRadius;
             
             // Add dramatic dynamics effect with exponential scaling
-            const ringProgress = ringIndex / this.settings.ringCount;
+            // Correct approach: scale based on move dynamics - low dynamics = all rings close, high dynamics = all rings spike
+            let enhancedDynamics;
+            if (dynamics < 0.3) {
+                // Low dynamics moves: ALL rings stay very close to base radius
+                enhancedDynamics = dynamics * 0.1; // Minimal expansion for low dynamics moves
+            } else if (dynamics < 0.6) {
+                // Medium dynamics moves: moderate expansion for all rings
+                enhancedDynamics = 0.03 + (dynamics - 0.3) * 1.5; // Gradual increase
+            } else {
+                // High dynamics moves: ALL rings create dramatic spikes
+                enhancedDynamics = 0.48 + Math.pow(dynamics - 0.6, 2.5) * 8.0; // Dramatic spikes for high dynamics
+            }
             
-            // Enhanced dynamics scaling: lower values stay lower, but outer values spike more dramatically
-            // Use a more aggressive power curve that preserves low values but amplifies high values
-            const enhancedDynamics = dynamics < 0.3 ? 
-                dynamics * 0.8 : // Keep low values even lower
-                Math.pow(dynamics, 1.2) * (1 + ringProgress * 2); // Amplify higher values more on outer rings
+            // Apply ring progression multiplier for visual depth (but not extreme)
+            const ringProgressMultiplier = 1 + ringProgress * 1.2; // Moderate progression for depth
+            enhancedDynamics *= ringProgressMultiplier;
             
             const dynamicsEffect = enhancedDynamics * this.settings.dynamicsMultiplier;
             
@@ -931,8 +984,8 @@ export class BoulderVisualizer {
         
         try {
             // Create smooth curve with higher tension for more dramatic curves
-            const curve = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.3);
-            const smoothPoints = curve.getPoints(this.settings.curveResolution);
+            const ringCurve = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.3);
+            const smoothPoints = ringCurve.getPoints(this.settings.curveResolution);
             
             // Remove duplicate point if it exists
             if (smoothPoints.length > 1) {
@@ -1002,7 +1055,8 @@ export class BoulderVisualizer {
             
             // Apply center fade for slab effect (closer to center = more transparent)
             const centerDistance = ringIndex / this.settings.ringCount;
-            const centerFadeEffect = 1 - (this.settings.centerFade * (1 - centerDistance));
+            // Make center fade much stronger and more aggressive towards center
+            const centerFadeEffect = 1 - (this.settings.centerFade * Math.pow(1 - centerDistance, 2.5));
             ringOpacity *= centerFadeEffect;
             
             const material = new THREE.LineBasicMaterial({
@@ -1025,15 +1079,89 @@ export class BoulderVisualizer {
     }
     
     updateSettings(newSettings) {
-        const oldSettings = { ...this.settings };
+        const updateStart = performance.now();
+        
+        // Debounce rapid updates
+        if (this.updateTimeout) {
+            clearTimeout(this.updateTimeout);
+        }
+        
+        this.updateTimeout = setTimeout(() => {
+            this._performSettingsUpdate(newSettings);
+        }, 16); // ~60fps debouncing
+    }
+    
+    _performSettingsUpdate(newSettings) {
+        const updateStart = performance.now();
+        
+        console.log('[BoulderVisualizer] Updating settings:', Object.keys(newSettings));
+        
+        if (!this.lastAppliedSettings) {
+            this.lastAppliedSettings = { ...this.settings };
+        }
+        
+        // Update internal settings
         Object.assign(this.settings, newSettings);
         
-        if (this.boulder) {
-            // Always do full recreation for immediate visual feedback
-            // This ensures all changes are immediately visible
-            console.log('Auto-reloading visualization due to settings change');
-            this.createVisualization();
+        // Detect changes more precisely
+        const changedSettings = {};
+        Object.keys(newSettings).forEach(key => {
+            if (this.lastAppliedSettings[key] !== this.settings[key]) {
+                changedSettings[key] = this.settings[key];
+            }
+        });
+        
+        if (Object.keys(changedSettings).length > 0) {
+            // Define settings categories
+            const structuralSettings = [
+                'baseRadius', 'maxRadius', 'ringCount', 'ringSpacing', 'curveResolution',
+                'dynamicsMultiplier', 'liquidEffect', 'organicNoise', 'waveComplexity',
+                'showMoveSegments', 'showMoveLines', 'showAttempts'
+            ];
+            
+            const materialSettings = [
+                'opacity', 'centerFade', 'depthEffect', 'segmentOpacity', 'lineOpacity',
+                'dotOpacity', 'attemptOpacity'
+            ];
+            
+            const immediateSettings = ['radiusMultiplier'];
+            
+            const hasStructuralChanges = structuralSettings.some(key => changedSettings.hasOwnProperty(key));
+            const hasMaterialChanges = materialSettings.some(key => changedSettings.hasOwnProperty(key));
+            const hasImmediateChanges = immediateSettings.some(key => changedSettings.hasOwnProperty(key));
+            
+            // Prevent unnecessary full recreations
+            if (hasStructuralChanges) {
+                console.log('Structural settings changed, recreating visualization:', Object.keys(changedSettings).filter(k => structuralSettings.includes(k)));
+                this.createVisualization();
+            } else if (hasMaterialChanges || hasImmediateChanges) {
+                console.log('Material/immediate settings changed, updating materials only:', Object.keys(changedSettings).filter(k => materialSettings.includes(k) || immediateSettings.includes(k)));
+                this.updateMaterialsOnly();
+            }
+
+            // Always render after changes
+            this.renderer.render(this.scene, this.camera);
+            this.lastAppliedSettings = { ...this.settings };
+            
+            const updateEnd = performance.now();
+            const updateTime = updateEnd - updateStart;
+            
+            if (updateTime > 100) {
+                console.warn(`[BoulderVisualizer] Slow settings update: ${updateTime.toFixed(2)}ms for ${Object.keys(changedSettings).join(', ')}`);
+            }
+        } else {
+            // No changes detected, just render
+            this.renderer.render(this.scene, this.camera);
         }
+    }
+    
+    getPerformanceStats() {
+        return {
+            fps: this.performanceStats.averageFPS,
+            renderTime: this.performanceStats.renderTime,
+            frameCount: this.performanceStats.frameCount,
+            sceneObjects: this.scene.children.length
+        };
     }
     
     updateColors(newColors) {
@@ -1045,14 +1173,19 @@ export class BoulderVisualizer {
     }
     
     updateMaterialsOnly() {
+        console.log('Updating materials only...');
+        let updatedCount = 0;
+        
         // Update ring materials without recreating geometry
         this.rings.forEach((ring, ringIndex) => {
             if (ring.material) {
                 let ringOpacity = this.settings.opacity * (1 - ringIndex / this.settings.ringCount * 0.3);
                 const centerDistance = ringIndex / this.settings.ringCount;
-                const centerFadeEffect = 1 - (this.settings.centerFade * (1 - centerDistance));
+                const centerFadeEffect = 1 - (this.settings.centerFade * Math.pow(1 - centerDistance, 2.5));
                 ringOpacity *= centerFadeEffect;
                 ring.material.opacity = Math.max(0.1, ringOpacity);
+                ring.material.needsUpdate = true;
+                updatedCount++;
             }
         });
         
@@ -1060,6 +1193,8 @@ export class BoulderVisualizer {
         this.moveLines.forEach(line => {
             if (line.material && line.material.type === 'MeshBasicMaterial') {
                 line.material.opacity = this.settings.lineOpacity;
+                line.material.needsUpdate = true;
+                updatedCount++;
             }
         });
         
@@ -1067,6 +1202,8 @@ export class BoulderVisualizer {
         this.moveSegments.forEach(segment => {
             if (segment.material) {
                 segment.material.opacity = this.settings.segmentOpacity;
+                segment.material.needsUpdate = true;
+                updatedCount++;
             }
         });
         
@@ -1075,9 +1212,13 @@ export class BoulderVisualizer {
             if (line.material && line.material.type === 'LineBasicMaterial') {
                 // For attempt lines, maintain the original opacity calculation
                 line.material.opacity = this.settings.attemptOpacity;
+                line.material.needsUpdate = true;
+                updatedCount++;
             } else if (line.material && line.material.type === 'MeshBasicMaterial') {
                 // For attempt dots
                 line.material.opacity = this.settings.attemptOpacity;
+                line.material.needsUpdate = true;
+                updatedCount++;
             }
         });
         
@@ -1085,15 +1226,81 @@ export class BoulderVisualizer {
         if (this.centerCircle && this.centerCircle.material) {
             // Center circle opacity doesn't change with settings, keep at 0.8
         }
+        
+        console.log(`Updated ${updatedCount} materials`);
     }
     
     animate() {
-        requestAnimationFrame(() => this.animate());
+        if (!this.isAnimating) return; // Add flag to control animation
+        
+        const frameStart = performance.now();
+        
+        this.updateCamera(); // Update camera in main loop instead of separate loop
+        
+        const renderStart = performance.now();
         this.renderer.render(this.scene, this.camera);
+        const renderEnd = performance.now();
+        
+        // Update performance stats
+        this.performanceStats.renderTime = renderEnd - renderStart;
+        this.performanceStats.frameCount++;
+        
+        const currentTime = performance.now();
+        const deltaTime = currentTime - this.performanceStats.lastFrameTime;
+        
+        // Calculate FPS every 60 frames
+        if (this.performanceStats.frameCount % 60 === 0) {
+            this.performanceStats.averageFPS = 1000 / (deltaTime / 60);
+            
+            // Log performance warning if FPS drops below 30
+            if (this.performanceStats.averageFPS < 30) {
+                console.warn(`[BoulderVisualizer] Low FPS detected: ${this.performanceStats.averageFPS.toFixed(1)} FPS, Render time: ${this.performanceStats.renderTime.toFixed(2)}ms`);
+            }
+        }
+        
+        this.performanceStats.lastFrameTime = currentTime;
+        
+        requestAnimationFrame(() => this.animate());
     }
     
     start() {
+        this.isAnimating = true;
         this.animate();
+    }
+    
+    stop() {
+        this.isAnimating = false;
+    }
+    
+    dispose() {
+        // Stop animation
+        this.stop();
+        
+        // Clear any pending timeouts
+        if (this.updateTimeout) {
+            clearTimeout(this.updateTimeout);
+            this.updateTimeout = null;
+        }
+        
+        if (this.liveDataUpdateTimeout) {
+            clearTimeout(this.liveDataUpdateTimeout);
+            this.liveDataUpdateTimeout = null;
+        }
+        
+        // Dispose of all geometries and materials to prevent memory leaks
+        this.clearScene();
+        
+        // Dispose renderer
+        if (this.renderer) {
+            this.renderer.dispose();
+        }
+        
+        // Remove event listeners
+        if (this.resizeHandler) {
+            window.removeEventListener('resize', this.resizeHandler);
+        }
+        
+        console.log('[BoulderVisualizer] Disposed successfully');
     }
 
     // Live data support for remote streaming
@@ -1103,15 +1310,48 @@ export class BoulderVisualizer {
             return;
         }
 
-        // Create a temporary boulder object from live data
-        const liveBoulder = this.createLiveBoulder(dataBuffer);
-        
-        // Only update visualization if we have valid data
-        if (liveBoulder) {
-            // Update the visualization with live data
-            this.loadBoulder(liveBoulder);
-        } else {
-            console.warn('[BoulderVisualizer] No valid boulder data created from live data');
+        // Throttle live data updates to prevent performance issues
+        const now = performance.now();
+        if (this.lastLiveDataUpdate && (now - this.lastLiveDataUpdate) < 200) { // 200ms throttle
+            return;
+        }
+        this.lastLiveDataUpdate = now;
+
+        console.log(`[BoulderVisualizer] Updating with live data: ${dataBuffer.time.length} points`);
+
+        try {
+            // Create a temporary boulder object from live data
+            const liveBoulder = this.createLiveBoulder(dataBuffer);
+            
+            // Only update visualization if we have valid data
+            if (liveBoulder) {
+                console.log(`[BoulderVisualizer] Created live boulder with ${liveBoulder.moves.length} moves`);
+                
+                // Store the current boulder as live data
+                this.boulder = liveBoulder;
+                
+                // Batch the visualization update to prevent conflicts
+                if (this.liveDataUpdateTimeout) {
+                    clearTimeout(this.liveDataUpdateTimeout);
+                }
+                
+                this.liveDataUpdateTimeout = setTimeout(() => {
+                    // Force a complete visualization update
+                    this.createVisualization();
+                    
+                    // Ensure immediate render
+                    if (this.renderer) {
+                        this.renderer.render(this.scene, this.camera);
+                    }
+                    
+                    console.log('[BoulderVisualizer] Live data visualization updated successfully');
+                }, 50); // Small delay to batch updates
+                
+            } else {
+                console.warn('[BoulderVisualizer] No valid boulder data created from live data');
+            }
+        } catch (error) {
+            console.error('[BoulderVisualizer] Error updating with live data:', error);
         }
     }
 
@@ -1271,7 +1511,7 @@ export class BoulderVisualizer {
         try {
             const dataVizContainer = document.querySelector('.data-viz-container');
             const thresholdInput = dataVizContainer?.querySelector('#threshold');
-            if (thresholdInput) {
+            if (thresholdInput && thresholdInput.value) {
                 threshold = parseFloat(thresholdInput.value);
                 console.log(`[BoulderVisualizer] Using threshold from DataViz: ${threshold}`);
             } else {
@@ -1289,28 +1529,37 @@ export class BoulderVisualizer {
         console.log(`[BoulderVisualizer] Live move detection with threshold: ${threshold}, data points: ${rawData.length}`);
         console.log(`[BoulderVisualizer] Magnitude range: ${Math.min(...magnitudes).toFixed(2)} - ${Math.max(...magnitudes).toFixed(2)}`);
         
-        // Look for peaks above threshold
-        for (let i = 1; i < magnitudes.length - 1; i++) {
+        // Look for peaks above threshold with improved detection
+        for (let i = 2; i < magnitudes.length - 2; i++) {
             const currentTime = rawData[i].time;
             const currentMagnitude = magnitudes[i];
-            const prevMagnitude = magnitudes[i - 1];
-            const nextMagnitude = magnitudes[i + 1];
             
             // Validate data point
             if (!isFinite(currentTime) || !isFinite(currentMagnitude)) {
                 continue;
             }
             
-            // Check if this is a peak above threshold
-            if (currentMagnitude > threshold && 
-                currentMagnitude > prevMagnitude && 
-                currentMagnitude > nextMagnitude &&
-                (currentTime - lastMoveTime) > minMoveDuration) {
-                
-                // Calculate move position based on time progression
+            // Check if this is a significant peak above threshold
+            // Use a wider window for peak detection to be more robust
+            const prevMag1 = magnitudes[i - 1];
+            const prevMag2 = magnitudes[i - 2];
+            const nextMag1 = magnitudes[i + 1];
+            const nextMag2 = magnitudes[i + 2];
+            
+            const isPeak = currentMagnitude > threshold && 
+                          currentMagnitude > prevMag1 && 
+                          currentMagnitude > prevMag2 &&
+                          currentMagnitude > nextMag1 && 
+                          currentMagnitude > nextMag2 &&
+                          (currentTime - lastMoveTime) > minMoveDuration;
+            
+            if (isPeak) {
+                // Calculate move position based on time progression and magnitude
                 const timeProgress = (currentTime - rawData[0].time) / (rawData[rawData.length - 1].time - rawData[0].time);
                 const angle = timeProgress * Math.PI * 2; // Full circle progression
-                const radius = 25 + (moves.length * 5); // Increasing radius for each move
+                const baseRadius = 25;
+                const radiusVariation = Math.min(15, currentMagnitude - threshold); // Vary radius based on intensity
+                const radius = baseRadius + radiusVariation + (moves.length * 3); // Increasing radius for each move
                 
                 const move = {
                     time: currentTime,
@@ -1320,7 +1569,7 @@ export class BoulderVisualizer {
                     duration: minMoveDuration, // Simplified duration
                     x: Math.cos(angle) * radius,
                     y: Math.sin(angle) * radius,
-                    z: Math.max(0, moves.length * 2) // Increasing height
+                    z: Math.max(0, moves.length * 2 + (currentMagnitude - threshold) * 0.5) // Height based on move count and intensity
                 };
                 
                 moves.push(move);
@@ -1353,77 +1602,66 @@ export class BoulderVisualizer {
         };
     }
 
+    // Clear live data and reset to neutral state
+    clearLiveData() {
+        if (this.isDisplayingLiveData()) {
+            console.log('[BoulderVisualizer] Clearing live data');
+            
+            // Clear the current boulder if it's live data
+            this.boulder = null;
+            this.currentBoulder = null;
+            
+            // Clear the scene
+            this.clearScene();
+            
+            console.log('[BoulderVisualizer] Live data cleared');
+        }
+    }
+
     generateAttemptData() {
         // Generate realistic attempt data for the boulder
         const attempts = [];
-        const moveCount = this.boulder.moves.length;
+        // const moveCount = this.boulder.moves.length; // Not directly used for attempt generation anymore
         
         // Use boulder ID as seed for consistent attempt positioning
-        const boulderSeed = this.boulder.id * 789.123;
+        const boulderSeed = (typeof this.boulder.id === 'string' ? this.boulder.id.length * 789.123 : this.boulder.id * 789.123) || 789.123;
         
-        // Generate random number of people based on maxAttempts setting
-        const basePeople = Math.floor(this.settings.maxAttempts / 3.0); // Base number of people
-        const randomVariation = this.seededRandom(boulderSeed + 999) * 0.6 - 0.3; // ±30% variation
-        const numPeople = Math.max(1, Math.floor(basePeople * (1 + randomVariation)));
-        
-        for (let i = 0; i < numPeople; i++) {
-            // Deterministic angle around the circle for this person
-            // Add PI/2 to align with 12 o'clock start like other elements
-            const baseAngle = this.seededRandom(boulderSeed + i * 100) * Math.PI * 2 + Math.PI / 2;
+        // Loop up to maxAttempts, creating fully independent attempts
+        for (let i = 0; i < this.settings.maxAttempts; i++) {
+            // Each attempt gets a completely random angle
+            const angle = this.seededRandom(boulderSeed + i * 100.123) * Math.PI * 2;
             
-            // Number of attempts for this person - random but scales with maxAttempts setting
-            const baseAttemptsPerPerson = Math.max(1, Math.floor(this.settings.maxAttempts / numPeople));
+            // Generate more shorter attempts - weighted towards early failure
+            // Use exponential distribution to favor shorter attempts
+            const randomValue = this.seededRandom(boulderSeed + i * 200.456);
             
-            // Create realistic distribution: some people try many times, others just a few
-            const personType = this.seededRandom(boulderSeed + i * 200);
-            let numAttempts;
-            
-            if (personType < 0.3) {
-                // 30% are casual climbers (1-2 attempts)
-                numAttempts = Math.floor(1 + this.seededRandom(boulderSeed + i * 201) * 1);
-            } else if (personType < 0.7) {
-                // 40% are regular climbers (2-4 attempts)
-                numAttempts = Math.floor(2 + this.seededRandom(boulderSeed + i * 202) * 2);
+            // Create exponential falloff for completion percentage
+            // Most attempts should fail in the first 30-50% of the route
+            let completionPercent;
+            if (randomValue < 0.4) {
+                // 40% of attempts fail very early (10-30%)
+                completionPercent = 0.1 + randomValue * 0.5; // 10-30%
+            } else if (randomValue < 0.7) {
+                // 30% of attempts fail in middle section (30-60%)
+                completionPercent = 0.3 + (randomValue - 0.4) * 1.0; // 30-60%
+            } else if (randomValue < 0.9) {
+                // 20% of attempts get further (60-85%)
+                completionPercent = 0.6 + (randomValue - 0.7) * 1.25; // 60-85%
             } else {
-                // 30% are persistent climbers (3-6 attempts)
-                numAttempts = Math.floor(3 + this.seededRandom(boulderSeed + i * 203) * 3);
+                // Only 10% of attempts complete or nearly complete (85-100%)
+                completionPercent = 0.85 + (randomValue - 0.9) * 1.5; // 85-100%
             }
             
-            // Scale with the controller setting
-            const scaleFactor = this.settings.maxAttempts / 45; // 45 is the default maxAttempts
-            numAttempts = Math.max(1, Math.floor(numAttempts * scaleFactor));
-            
-            // Generate multiple attempts for this person
-            const personAttempts = [];
-            let bestCompletion = 0;
-            
-            for (let attemptIndex = 0; attemptIndex < numAttempts; attemptIndex++) {
-                // Each attempt has different completion percentage
-                let completionPercent;
-                
-                if (attemptIndex === 0) {
-                    // First attempt - usually lower
-                    completionPercent = 0.1 + this.seededRandom(boulderSeed + i * 300 + attemptIndex) * 0.4;
-                } else {
-                    // Subsequent attempts - can improve or stay similar
-                    const improvement = this.seededRandom(boulderSeed + i * 400 + attemptIndex) * 0.3; // Possible improvement
-                    const consistency = this.seededRandom(boulderSeed + i * 500 + attemptIndex) * 0.2; // Some randomness
-                    completionPercent = Math.min(1.0, bestCompletion + improvement - consistency + this.seededRandom(boulderSeed + i * 600 + attemptIndex) * 0.2);
-                    completionPercent = Math.max(0.1, completionPercent); // Minimum 10%
-                }
-                
-                bestCompletion = Math.max(bestCompletion, completionPercent);
-                
-                personAttempts.push({
-                    angle: baseAngle, // Same angle for all attempts from this person
-                    completionPercent: completionPercent,
-                    attemptIndex: attemptIndex,
-                    totalAttempts: numAttempts,
-                    personId: i
-                });
-            }
-            
-            attempts.push(...personAttempts);
+            // Ensure completion percentage stays within bounds
+            completionPercent = Math.min(1.0, Math.max(0.1, completionPercent));
+
+            attempts.push({
+                angle: angle,
+                completionPercent: completionPercent,
+                attemptIndex: i, // Index within all attempts
+                totalAttempts: this.settings.maxAttempts, // Total attempts for context if needed by fade
+                // personId: i // Each attempt is its own "person" effectively
+            });
         }
         
         return attempts;

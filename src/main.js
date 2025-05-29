@@ -25,6 +25,10 @@ class BoulderVisualizerApp {
             this.currentBoulder = null;
             this.currentView = 'boulder'; // 'boulder' or 'dataviz'
             this.isRemoteMode = false;
+            this.liveDataInitialized = false; // Track if live data mode has been initialized
+            this.lastRemoteDataTime = 0; // Track when we last received data
+            this.connectionMonitorInterval = null; // For connection monitoring
+            this.syncTimeout = null; // For debouncing sync calls
             
             // Global state management
             this.globalState = {
@@ -52,6 +56,9 @@ class BoulderVisualizerApp {
             this.showLoading('Initializing climbing visualizer...');
             console.log('Loading message shown');
             
+            // Send clear command to all servers on page reload
+            await this.clearAllServersOnReload();
+            
             // Create tab system
             console.log('Creating tab system...');
             this.createTabSystem();
@@ -69,6 +76,11 @@ class BoulderVisualizerApp {
             
             // Initialize remote data handler
             this.remoteHandler = new RemoteDataHandler();
+            
+            // Set initial server URL (default to first server)
+            this.currentServerUrl = 'http://192.168.1.36';
+            this.remoteHandler.setRemoteUrl(this.currentServerUrl);
+            
             this.setupRemoteHandlers();
             
             // Load initial boulder
@@ -107,148 +119,334 @@ class BoulderVisualizerApp {
     }
     
     createTabSystem() {
-        // Create tab container
-        const tabContainer = document.createElement('div');
-        tabContainer.style.cssText = `
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 1000;
-            display: flex;
-            background: rgba(0, 0, 0, 0.8);
-            border-radius: 10px;
-            padding: 5px;
-            gap: 5px;
-            align-items: center;
-        `;
-        
-        // Create boulder tab
-        const boulderTab = document.createElement('button');
-        boulderTab.textContent = '🧗‍♂️ Boulder Visualizer';
-        boulderTab.className = 'tab-button';
-        boulderTab.style.cssText = `
-            padding: 12px 20px;
-            border: none;
-            border-radius: 8px;
-            background: #00ffcc;
-            color: #000;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        `;
-        
-        // Create DataViz tab
-        const dataVizTab = document.createElement('button');
-        dataVizTab.textContent = '📊 Acceleration Data';
-        dataVizTab.className = 'tab-button';
-        dataVizTab.style.cssText = `
-            padding: 12px 20px;
-            border: none;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.2);
-            color: #fff;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        `;
-
-        // Create remote toggle button
-        const remoteToggle = document.createElement('button');
-        remoteToggle.id = 'remote-toggle';
-        remoteToggle.textContent = '📱 Remote: OFF';
-        remoteToggle.className = 'tab-button remote-off';
-        remoteToggle.style.cssText = `
-            padding: 12px 20px;
-            border: none;
-            border-radius: 8px;
-            background: rgba(239, 68, 68, 0.8);
-            color: #fff;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            margin-left: 10px;
-        `;
-        remoteToggle.onclick = () => this.toggleRemoteMode();
-
-        // Create recording controls container (initially hidden)
-        const recordingControls = document.createElement('div');
-        recordingControls.id = 'recording-controls';
-        recordingControls.style.cssText = `
-            display: none;
-            gap: 5px;
-            align-items: center;
-            margin-left: 10px;
-        `;
-
-        // "Get All Remote Data" button (replaces Start/Stop)
-        const getAllRemoteDataBtn = document.createElement('button');
-        getAllRemoteDataBtn.id = 'get-all-remote-data';
-        getAllRemoteDataBtn.textContent = '📥 Get All Data';
-        getAllRemoteDataBtn.style.cssText = `
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            background: rgba(59, 130, 246, 0.8); // Blueish color
-            color: #fff;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        `;
-        getAllRemoteDataBtn.onclick = () => this.fetchAllRemoteData();
-
-        // Polling status (replaces recording status)
-        const pollingStatus = document.createElement('div');
-        pollingStatus.id = 'polling-status'; // Renamed from recording-status
-        pollingStatus.style.cssText = `
-            color: #fff;
-            font-size: 12px;
-            padding: 5px 10px;
-            background: rgba(0,0,0,0.7);
-            border-radius: 4px;
-            min-width: 150px; // Adjusted width
-            text-align: center;
-        `;
-
-        // Add elements to recording controls
-        recordingControls.appendChild(getAllRemoteDataBtn);
-        recordingControls.appendChild(pollingStatus);
-        
-        // Tab switching logic
-        boulderTab.addEventListener('click', () => {
-            this.switchToView('boulder');
-            boulderTab.style.background = '#00ffcc';
-            boulderTab.style.color = '#000';
-            dataVizTab.style.background = 'rgba(255, 255, 255, 0.2)';
-            dataVizTab.style.color = '#fff';
-        });
-        
-        dataVizTab.addEventListener('click', () => {
-            this.switchToView('dataviz');
-            dataVizTab.style.background = '#00ffcc';
-            dataVizTab.style.color = '#000';
-            boulderTab.style.background = 'rgba(255, 255, 255, 0.2)';
-            boulderTab.style.color = '#fff';
-        });
-        
-        // Add all elements to tab container
-        tabContainer.appendChild(boulderTab);
-        tabContainer.appendChild(dataVizTab);
-        tabContainer.appendChild(remoteToggle);
-        tabContainer.appendChild(recordingControls);
-        document.body.appendChild(tabContainer);
-        
-        this.tabContainer = tabContainer;
-        this.boulderTab = boulderTab;
-        this.dataVizTab = dataVizTab;
-        this.remoteToggle = remoteToggle;
-        this.recordingControls = recordingControls;
+        // Create new comprehensive server control module
+        this.createServerControlModule();
         
         // Add CSS for remote button states
         this.addRemoteStyles();
         
         // Add keyboard controls
         this.setupKeyboardControls();
+    }
+    
+    createServerControlModule() {
+        // Create main server control container
+        const serverControlModule = document.createElement('div');
+        serverControlModule.id = 'server-control-module';
+        serverControlModule.style.cssText = `
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px 20px;
+            background: rgba(0, 0, 0, 0.95);
+            border-radius: 15px;
+            border: 2px solid rgba(0, 255, 204, 0.4);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+            font-family: Arial, sans-serif;
+        `;
+
+        // Backend/Frontend Switch (Left side)
+        const modeSection = document.createElement('div');
+        modeSection.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-right: 15px;
+            border-right: 1px solid rgba(0, 255, 204, 0.3);
+        `;
+
+        const modeLabel = document.createElement('span');
+        modeLabel.textContent = 'Mode:';
+        modeLabel.style.cssText = `
+            color: #00ffcc;
+            font-size: 12px;
+            font-weight: bold;
+        `;
+
+        const modeSwitch = document.createElement('button');
+        modeSwitch.id = 'mode-switch';
+        modeSwitch.textContent = 'Frontend';
+        modeSwitch.style.cssText = `
+            padding: 6px 12px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(239, 68, 68, 0.8);
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 70px;
+        `;
+
+        // Initialize mode state
+        this.isBackendMode = false;
+
+        modeSwitch.onclick = () => {
+            this.isBackendMode = !this.isBackendMode;
+            if (this.isBackendMode) {
+                modeSwitch.textContent = 'Backend';
+                modeSwitch.style.background = 'rgba(34, 197, 94, 0.8)';
+                
+                // Switch to DataViz view when in backend mode
+                this.switchToView('dataviz');
+                
+            } else {
+                modeSwitch.textContent = 'Frontend';
+                modeSwitch.style.background = 'rgba(239, 68, 68, 0.8)';
+                
+                // Switch to boulder view when in frontend mode
+                this.switchToView('boulder');
+            }
+        };
+
+        modeSection.appendChild(modeLabel);
+        modeSection.appendChild(modeSwitch);
+
+        // Server Toggle Section
+        const serverSection = document.createElement('div');
+        serverSection.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-right: 15px;
+            border-right: 1px solid rgba(0, 255, 204, 0.3);
+        `;
+
+        const serverLabel = document.createElement('span');
+        serverLabel.textContent = 'Server:';
+        serverLabel.style.cssText = `
+            color: #00ffcc;
+            font-size: 12px;
+            font-weight: bold;
+        `;
+
+        const serverToggle = document.createElement('button');
+        serverToggle.id = 'server-toggle';
+        serverToggle.textContent = 'OFF';
+        serverToggle.style.cssText = `
+            padding: 6px 12px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(239, 68, 68, 0.8);
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 50px;
+        `;
+
+        // Initialize server state
+        this.isServerConnected = false;
+
+        serverToggle.onclick = () => this.toggleServerConnection();
+
+        serverSection.appendChild(serverLabel);
+        serverSection.appendChild(serverToggle);
+
+        // Server Dropdown Section
+        const dropdownSection = document.createElement('div');
+        dropdownSection.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-right: 15px;
+            border-right: 1px solid rgba(0, 255, 204, 0.3);
+        `;
+
+        const dropdownLabel = document.createElement('span');
+        dropdownLabel.textContent = 'Select:';
+        dropdownLabel.style.cssText = `
+            color: #00ffcc;
+            font-size: 12px;
+            font-weight: bold;
+        `;
+
+        const serverDropdown = document.createElement('select');
+        serverDropdown.id = 'server-dropdown';
+        serverDropdown.style.cssText = `
+            padding: 6px 10px;
+            border: 1px solid rgba(0, 255, 204, 0.5);
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ffcc;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+            min-width: 120px;
+        `;
+
+        // Server options
+        const servers = [
+            { name: 'Server 1 (192.168.1.36)', url: 'http://192.168.1.36' },
+            { name: 'Server 2 (10.237.1.101)', url: 'http://10.237.1.101' },
+            { name: 'Server 3 (192.168.1.100)', url: 'http://192.168.1.100' },
+            { name: 'Server 4 (172.20.10.1)', url: 'http://172.20.10.1' },
+            { name: 'Server 5 (10.224.1.221)', url: 'http://10.224.1.221' }
+        ];
+
+        servers.forEach((server, index) => {
+            const option = document.createElement('option');
+            option.value = server.url;
+            option.textContent = server.name;
+            if (index === 0) option.selected = true;
+            serverDropdown.appendChild(option);
+        });
+
+        // Store current server URL
+        this.currentServerUrl = servers[0].url;
+
+        serverDropdown.onchange = () => {
+            this.currentServerUrl = serverDropdown.value;
+            const selectedServer = servers.find(s => s.url === serverDropdown.value);
+            
+            // Show server selection in error display temporarily (as info, not error)
+            if (this.errorDisplay) {
+                this.errorDisplay.textContent = `Selected: ${selectedServer.name}`;
+                this.errorDisplay.style.background = 'rgba(23, 162, 184, 0.95)'; // Blue for info
+                this.errorDisplay.style.display = 'block';
+                
+                // Reset to error color and hide after 2 seconds
+                setTimeout(() => {
+                    if (this.errorDisplay) {
+                        this.errorDisplay.style.background = 'rgba(220, 53, 69, 0.95)'; // Back to red
+                        this.errorDisplay.style.display = 'none';
+                    }
+                }, 2000);
+            }
+            
+            // Update remote handler URL
+            if (this.remoteHandler) {
+                this.remoteHandler.setRemoteUrl(this.currentServerUrl);
+            }
+            
+            // If currently connected, automatically reconnect with new server
+            if (this.isServerConnected) {
+                console.log('[Main] Server changed while connected - auto-reconnecting to new server');
+                this.showServerError(`Switching to ${selectedServer.name}...`, 5000);
+                this.restartServerConnection();
+            }
+        };
+
+        dropdownSection.appendChild(dropdownLabel);
+        dropdownSection.appendChild(serverDropdown);
+
+        // Playback Controls Section (only visible when connected)
+        const playbackSection = document.createElement('div');
+        playbackSection.id = 'playback-section';
+        playbackSection.style.cssText = `
+            display: none;
+            align-items: center;
+            gap: 8px;
+        `;
+
+        const playbackLabel = document.createElement('span');
+        playbackLabel.textContent = 'Control:';
+        playbackLabel.style.cssText = `
+            color: #00ffcc;
+            font-size: 12px;
+            font-weight: bold;
+        `;
+
+        const playButton = document.createElement('button');
+        playButton.id = 'play-button';
+        playButton.textContent = '▶️';
+        playButton.style.cssText = `
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(34, 197, 94, 0.8);
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        `;
+
+        const stopButton = document.createElement('button');
+        stopButton.id = 'stop-button';
+        stopButton.textContent = '⏹️';
+        stopButton.style.cssText = `
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(239, 68, 68, 0.8);
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        `;
+
+        const clearButton = document.createElement('button');
+        clearButton.id = 'clear-button';
+        clearButton.textContent = '🗑️';
+        clearButton.style.cssText = `
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(108, 117, 125, 0.8);
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-left: 5px;
+        `;
+
+        // Playback button actions
+        playButton.onclick = () => this.sendServerCommand('start');
+        stopButton.onclick = () => this.sendServerCommand('stop');
+        clearButton.onclick = () => this.sendServerCommand('clear');
+
+        playbackSection.appendChild(playbackLabel);
+        playbackSection.appendChild(playButton);
+        playbackSection.appendChild(stopButton);
+        playbackSection.appendChild(clearButton);
+
+        // Assemble the module
+        serverControlModule.appendChild(modeSection);
+        serverControlModule.appendChild(serverSection);
+        serverControlModule.appendChild(dropdownSection);
+        serverControlModule.appendChild(playbackSection);
+
+        document.body.appendChild(serverControlModule);
+
+        // Create error display element at top left corner of screen
+        const errorDisplay = document.createElement('div');
+        errorDisplay.id = 'server-error-display';
+        errorDisplay.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            display: none;
+            padding: 12px 16px;
+            background: rgba(220, 53, 69, 0.95);
+            color: white;
+            border-radius: 8px;
+            font-family: Arial, sans-serif;
+            font-size: 13px;
+            font-weight: bold;
+            max-width: 400px;
+            word-wrap: break-word;
+            border: 1px solid rgba(220, 53, 69, 0.8);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(5px);
+        `;
+        document.body.appendChild(errorDisplay);
+
+        // Store references
+        this.serverControlModule = serverControlModule;
+        this.errorDisplay = errorDisplay;
+        this.modeSwitch = modeSwitch;
+        this.serverToggle = serverToggle;
+        this.serverDropdown = serverDropdown;
+        this.playbackSection = playbackSection;
     }
     
     addRemoteStyles() {
@@ -279,6 +477,20 @@ class BoulderVisualizerApp {
     switchToView(view) {
         this.currentView = view;
         
+        // Update mode switch to reflect current view
+        const modeSwitch = document.getElementById('mode-switch');
+        if (modeSwitch) {
+            if (view === 'dataviz') {
+                this.isBackendMode = true;
+                modeSwitch.textContent = 'Backend';
+                modeSwitch.style.background = 'rgba(34, 197, 94, 0.8)';
+            } else {
+                this.isBackendMode = false;
+                modeSwitch.textContent = 'Frontend';
+                modeSwitch.style.background = 'rgba(239, 68, 68, 0.8)';
+            }
+        }
+        
         if (view === 'boulder') {
             // Show boulder visualizer
             this.container.style.display = 'block';
@@ -287,16 +499,14 @@ class BoulderVisualizerApp {
                 this.controlPanel.show();
             }
             
-            // Auto-reload the boulder visualization when switching back
-            if (this.currentBoulder && this.visualizer) {
+            // Prioritize live data when remote mode is active
+            if (this.isRemoteMode && this.remoteHandler?.accumulatedData && this.remoteHandler.accumulatedData.time.length > 0) {
+                console.log('Switching to boulder view with live data');
+                this.visualizer.updateWithLiveData(this.remoteHandler.accumulatedData);
+            } else if (this.currentBoulder && this.visualizer) {
+                // Only load CSV boulder if not in remote mode
                 console.log('Auto-reloading boulder visualization on view switch');
                 this.visualizer.loadBoulder(this.currentBoulder);
-            }
-            
-            // For live data, ensure boulder visualizer gets current data
-            if (this.isRemoteMode && this.remoteHandler?.accumulatedData) {
-                console.log('Updating boulder visualizer with current live data');
-                this.visualizer.updateWithLiveData(this.remoteHandler.accumulatedData);
             }
             
             // Ensure Three.js renderer is properly resized after showing (immediate)
@@ -315,11 +525,12 @@ class BoulderVisualizerApp {
                 this.controlPanel.hide();
             }
             
-            // For live data, ensure DataViz gets current data
-            if (this.isRemoteMode && this.remoteHandler?.accumulatedData) {
-                console.log('Updating DataViz with current live data');
+            // Prioritize live data when remote mode is active
+            if (this.isRemoteMode && this.remoteHandler?.accumulatedData && this.remoteHandler.accumulatedData.time.length > 0) {
+                console.log('Switching to DataViz with live data');
                 this.dataVizIntegration.updateWithLiveData(this.remoteHandler.accumulatedData);
             }
+            // Note: DataViz will auto-refresh with current boulder data if not in live mode
         }
     }
     
@@ -480,48 +691,80 @@ class BoulderVisualizerApp {
     }
     
     async syncBoulderSelection(boulderId, source) {
+        // Prevent rapid synchronization calls
+        if (this.syncTimeout) {
+            clearTimeout(this.syncTimeout);
+        }
+        
+        // Debounce sync calls
+        this.syncTimeout = setTimeout(async () => {
+            await this._performBoulderSync(boulderId, source);
+        }, 100);
+    }
+    
+    async _performBoulderSync(boulderId, source) {
+        console.log(`[Main] Starting boulder sync - ID: ${boulderId}, Source: ${source}`);
+        
         if (this.globalState.selectedBoulderId === boulderId) {
+            console.log(`[Main] Already selected boulder ${boulderId}, skipping sync`);
             return; // Already selected
         }
         
         this.globalState.selectedBoulderId = boulderId;
         this.globalState.lastUpdateTime = Date.now();
         
-        // Show sync notification
-        this.showNotification(`Syncing boulder selection across views...`, 'sync');
-        
         try {
             // Load the boulder data
+            console.log(`[Main] Loading boulder data for ID: ${boulderId}`);
             const boulder = await getBoulderById(boulderId);
+            
             if (boulder) {
                 this.currentBoulder = boulder;
+                console.log(`[Main] Successfully loaded boulder: ${boulder.name} (ID: ${boulder.id})`);
                 
-                // Update both views (except the source)
-                if (source !== 'boulder' && this.visualizer) {
-                    console.log('Syncing boulder to visualizer');
-                    this.visualizer.loadBoulder(boulder);
+                // Sync to visualizer (unless source is visualizer)
+                if (source !== 'boulder' && source !== 'visualizer' && this.visualizer) {
+                    console.log('[Main] Syncing boulder to visualizer');
+                    try {
+                        this.visualizer.loadBoulder(boulder);
+                        console.log('[Main] Visualizer updated successfully');
+                    } catch (error) {
+                        console.error('[Main] Error syncing boulder to visualizer:', error);
+                    }
                 }
                 
+                // Sync to DataViz (unless source is DataViz)
                 if (source !== 'dataviz' && this.dataVizIntegration) {
-                    console.log('Syncing boulder to DataViz');
-                    this.dataVizIntegration.syncCSVSelection(boulderId);
-                    await this.dataVizIntegration.updateWithBoulderData(boulder);
+                    console.log('[Main] Syncing boulder to DataViz');
+                    try {
+                        this.dataVizIntegration.syncCSVSelection(boulderId);
+                        await this.dataVizIntegration.updateWithBoulderData(boulder);
+                        console.log('[Main] DataViz updated successfully');
+                    } catch (error) {
+                        console.error('[Main] Error syncing boulder to DataViz:', error);
+                    }
                 }
                 
-                // Update control panel if it wasn't the source
+                // Sync to control panel (unless source is control panel)
                 if (source !== 'controlPanel' && this.controlPanel) {
-                    console.log('Syncing boulder to control panel');
-                    this.controlPanel.syncBoulderSelection(boulderId);
+                    console.log('[Main] Syncing boulder to control panel');
+                    try {
+                        this.controlPanel.syncBoulderSelection(boulderId);
+                        console.log('[Main] Control panel updated successfully');
+                    } catch (error) {
+                        console.error('[Main] Error syncing boulder to control panel:', error);
+                    }
                 }
                 
-                // Show success notification
-                setTimeout(() => {
-                    this.showNotification(`✅ Synced to: ${boulder.name}`, 'success');
-                }, 500);
+                console.log(`[Main] Boulder sync completed successfully for ID: ${boulderId}`);
+                
+            } else {
+                console.error(`[Main] Failed to load boulder with ID: ${boulderId}`);
+                throw new Error(`Boulder with ID ${boulderId} not found`);
             }
         } catch (error) {
-            console.error('Error syncing boulder selection:', error);
-            this.showNotification('❌ Sync failed: ' + error.message, 'error');
+            console.error(`[Main] Error during boulder sync for ID ${boulderId}:`, error);
+            // Don't rethrow to prevent cascading errors
         }
     }
     
@@ -529,21 +772,25 @@ class BoulderVisualizerApp {
         console.log(`Handling control change: ${controlName} from ${source}`);
         
         // Show control change notification
-        this.showNotification(`🎛️ ${controlName} changed - auto-reloading...`, 'sync');
-        
-        // If change is from boulder controls, auto-reload the visualization
-        if (source === 'boulder' && this.visualizer) {
-            setTimeout(() => {
-                console.log('Auto-reloading boulder visualization due to control change');
-                this.visualizer.updateSettings(this.visualizer.settings);
-            }, 100); // Small delay to allow control to update
-        }
+        // this.showNotification(`🎛️ ${controlName} changed - ${source} processing...`, 'sync');
         
         // If change is from DataViz, update the boulder view
         if (source === 'dataviz' && this.visualizer && this.currentBoulder) {
             setTimeout(() => {
                 console.log('Auto-updating boulder view due to DataViz change');
                 this.visualizer.loadBoulder(this.currentBoulder);
+            }, 100);
+        }
+        
+        // If change is from frontend (boulder control panel), update the DataViz
+        if (source === 'boulder' && this.dataVizIntegration && this.currentBoulder && this.currentBoulder.type === 'csv') {
+            setTimeout(async () => {
+                console.log('Auto-updating DataViz due to frontend control change');
+                try {
+                    await this.dataVizIntegration.updateWithBoulderData(this.currentBoulder);
+                } catch (error) {
+                    console.error('Error updating DataViz from frontend change:', error);
+                }
             }, 100);
         }
     }
@@ -570,24 +817,25 @@ class BoulderVisualizerApp {
             const guiElement = this.controlPanel.gui.domElement;
             const isVisible = guiElement.style.display !== 'none';
             
+            console.log('[Main] Toggle UI called, current visibility:', isVisible);
+            
             if (isVisible) {
                 this.controlPanel.hide();
                 this.hideUIElements();
-                this.showNotification('UI Hidden - Press O to show', 'info');
+                this.showNotification('UI Hidden - Press O or H to show', 'info');
+                console.log('[Main] UI hidden');
             } else {
                 this.controlPanel.show();
                 this.showUIElements();
-                this.showNotification('UI Shown - Press O to hide', 'info');
+                this.showNotification('UI Shown - Press O or H to hide', 'info');
+                console.log('[Main] UI shown');
             }
+        } else {
+            console.warn('[Main] Control panel not available for toggle');
         }
     }
     
     hideUIElements() {
-        // Hide tab container
-        if (this.tabContainer) {
-            this.tabContainer.style.display = 'none';
-        }
-        
         // Hide info panel
         const infoElement = document.getElementById('info');
         if (infoElement) {
@@ -605,14 +853,12 @@ class BoulderVisualizerApp {
         if (boulderInfoElement) {
             boulderInfoElement.style.display = 'none';
         }
+        
+        // NOTE: Server control module is NOT hidden by UI toggle
+        // It remains visible for server management
     }
     
     showUIElements() {
-        // Show tab container
-        if (this.tabContainer) {
-            this.tabContainer.style.display = 'flex';
-        }
-        
         // Show info panel
         const infoElement = document.getElementById('info');
         if (infoElement) {
@@ -628,8 +874,10 @@ class BoulderVisualizerApp {
         // Show boulder info
         const boulderInfoElement = document.getElementById('boulder-info');
         if (boulderInfoElement) {
-            boulderInfoElement.style.display = 'block';
+            boulderInfoElement.style.display = 'none';
         }
+        
+        // NOTE: Server control module remains visible regardless of UI toggle
     }
     
     showNotification(message, type = 'info') {
@@ -641,17 +889,20 @@ class BoulderVisualizerApp {
         notification.className = 'global-notification';
         notification.style.cssText = `
             position: fixed;
-            top: 80px;
-            right: 20px;
-            padding: 12px 16px;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 20px;
             border-radius: 8px;
             color: white;
             font-family: Arial, sans-serif;
             font-size: 14px;
+            font-weight: bold;
             z-index: 1005;
-            max-width: 300px;
+            max-width: 400px;
+            text-align: center;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            animation: slideIn 0.3s ease-out;
+            animation: slideInBottom 0.3s ease-out;
         `;
 
         const colors = {
@@ -663,6 +914,25 @@ class BoulderVisualizerApp {
 
         notification.style.background = colors[type] || colors.info;
         notification.textContent = message;
+
+        // Add CSS animation for bottom slide-in if not already added
+        if (!document.querySelector('#notification-animations')) {
+            const style = document.createElement('style');
+            style.id = 'notification-animations';
+            style.textContent = `
+                @keyframes slideInBottom {
+                    from {
+                        opacity: 0;
+                        transform: translateX(-50%) translateY(20px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateX(-50%) translateY(0);
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
 
         document.body.appendChild(notification);
 
@@ -684,14 +954,43 @@ class BoulderVisualizerApp {
             }
             
             switch(event.key.toLowerCase()) {
-                case 'o':
+                case 'o':  // Changed from 'h' to 'o' for toggle UI
+                    console.log('[Main] Toggle UI key pressed (O)');
                     this.toggleUI();
+                    event.preventDefault();
+                    break;
+                case 'h':  // Keep 'h' as alternative
+                    console.log('[Main] Toggle UI key pressed (H)');
+                    this.toggleUI();
+                    event.preventDefault();
+                    break;
+                case 'escape':
+                    // Emergency stop for performance issues
+                    if (this.visualizer) {
+                        this.visualizer.stop();
+                        console.log('Animation stopped via ESC key');
+                    }
+                    event.preventDefault();
+                    break;
+                case 'space':
+                    // Toggle animation
+                    if (this.visualizer) {
+                        if (this.visualizer.isAnimating) {
+                            this.visualizer.stop();
+                            console.log('Animation paused');
+                        } else {
+                            this.visualizer.start();
+                            console.log('Animation resumed');
+                        }
+                    }
                     event.preventDefault();
                     break;
             }
         });
+        
+        console.log('[Main] Keyboard controls initialized - Press O or H to toggle UI');
     }
-
+    
     setupRemoteHandlers() {
         // Set up remote data callbacks
         this.remoteHandler.setDataCallback((data) => {
@@ -707,180 +1006,122 @@ class BoulderVisualizerApp {
     handleRemoteData(data) {
         if (!this.isRemoteMode || !data) return;
         
+        // Track when we last received data for connection monitoring
+        this.lastRemoteDataTime = Date.now();
+        
         // data.newPoints is an array of {time, accX, accY, accZ}
         // data.buffer is the complete accumulated data {time:[], accX:[], ...}
         // data.displayBuffer is the performance buffer for visualization
+        // data.isThrottledUpdate indicates if this is a throttled visual update
         
         if (data.newPoints && data.newPoints.length > 0) {
             console.log(`Received ${data.newPoints.length} new data points. Total accumulated: ${data.totalAccumulated}`);
         }
 
-        // Update boulder visualizer with live data (using the complete buffer for move detection)
-        if (this.currentView === 'boulder' && this.visualizer && data.buffer) {
-            this.visualizer.updateWithLiveData(data.buffer);
+        // Initialize live mode visualizations immediately when remote mode starts
+        // This ensures the UI switches to live mode even when no data is flowing yet
+        if (!this.liveDataInitialized) {
+            console.log('[Main] Initializing live data mode visualizations');
+            this.liveDataInitialized = true;
+            
+            // Initialize both visualizers for live mode
+            if (this.visualizer && this.visualizer.initializeLiveMode) {
+                this.visualizer.initializeLiveMode();
+            }
+            
+            if (this.dataVizIntegration && this.dataVizIntegration.initializeLiveMode) {
+                this.dataVizIntegration.initializeLiveMode();
+            }
         }
-        
-        // Update data viz with live data (using the complete buffer for complete timeline)
-        if (this.currentView === 'dataviz' && this.dataVizIntegration && data.buffer) {
-            this.dataVizIntegration.updateWithLiveData(data.buffer);
-        }
-        
-        // Update status display
-        const status = this.remoteHandler.getPollingStatus();
-        this.updatePollingStatus(status);
-    }
 
-    async toggleRemoteMode() {
-        this.isRemoteMode = !this.isRemoteMode;
-        const remoteToggle = document.getElementById('remote-toggle');
-        const recordingControls = document.getElementById('recording-controls');
-        
-        if (this.isRemoteMode) {
+        // Update visualizations with live data (only if we have actual data or this is a throttled update)
+        if ((data.newPoints && data.newPoints.length > 0) || data.isThrottledUpdate) {
             try {
-                // Start polling when remote mode is enabled
-                await this.remoteHandler.startPolling();
+                // Debug: Log the data structure we're working with
+                console.log('[Main] Updating visualizations with data:', {
+                    hasBuffer: !!data.buffer,
+                    bufferTimeLength: data.buffer?.time?.length || 0,
+                    newPointsLength: data.newPoints?.length || 0,
+                    isThrottledUpdate: data.isThrottledUpdate
+                });
                 
-                remoteToggle.textContent = '📱 Remote: POLLING';
-                remoteToggle.className = 'tab-button remote-on recording-active'; // Add recording-active for pulse
-                recordingControls.style.display = 'flex';
-                this.updatePollingStatus(this.remoteHandler.getPollingStatus());
+                // Update boulder visualizer with live data
+                if (this.visualizer && this.visualizer.updateWithLiveData && data.buffer) {
+                    // Pass the buffer data (which contains time, accX, accY, accZ arrays)
+                    this.visualizer.updateWithLiveData(data.buffer);
+                }
                 
-                this.showNotification('Remote polling started - Connected to ' + this.remoteHandler.getRemoteUrl(), 'success');
+                // Update DataViz integration with live data
+                if (this.dataVizIntegration && this.dataVizIntegration.updateWithLiveData && data.buffer) {
+                    // Pass the buffer data (which contains time, accX, accY, accZ arrays)
+                    this.dataVizIntegration.updateWithLiveData(data.buffer);
+                }
+                
+                // Show visual update indicator for throttled updates
+                if (data.isThrottledUpdate) {
+                    this.showVisualUpdateIndicator();
+                }
+                
             } catch (error) {
-                this.isRemoteMode = false; // Revert on error
-                remoteToggle.textContent = '📱 Remote: OFF';
-                remoteToggle.className = 'tab-button remote-off';
-                recordingControls.style.display = 'none';
-                
-                this.showNotification('Failed to start remote polling: ' + error.message, 'error');
-                console.error('Remote polling start error:', error);
+                console.error('[Main] Error updating visualizations with live data:', error);
             }
-        } else {
-            // Stop polling when remote mode is disabled
-            await this.remoteHandler.stopPolling();
-            
-            remoteToggle.textContent = '📱 Remote: OFF';
-            remoteToggle.className = 'tab-button remote-off';
-            remoteToggle.classList.remove('recording-active');
-            recordingControls.style.display = 'none';
-            this.updatePollingStatus(this.remoteHandler.getPollingStatus());
-            
-            this.showNotification('Remote polling stopped', 'info');
         }
     }
 
-    // Repurposed to fetch all data from Phyphox after user stops recording on phone
-    async fetchAllRemoteData() {
-        if (!this.isRemoteMode) {
-            this.showNotification('Enable remote mode first.', 'warn');
-            return;
-        }
-        // No longer checking this.remoteHandler.isPolling here, as getPhyphoxExperimentData should work independently.
-
-        this.showNotification('Fetching all data from Phyphox...', 'info');
-        try {
-            const result = await this.remoteHandler.getPhyphoxExperimentData(); // This returns { filename, data, blob, dataPoints }
-            
-            if (result && result.dataPoints > 0) {
-                this.showNotification(`Fetched ${result.dataPoints} points. Original filename: ${result.filename}`, 'success');
-                
-                // Use addBoulderFromRemoteData to process and add the boulder
-                // result.data is the CSV text, result.filename can be used as base
-                const addedBoulder = await addBoulderFromRemoteData(result.data, result.filename);
-
-                if (addedBoulder) {
-                    this.showNotification(`New boulder "${addedBoulder.name}" (ID: ${addedBoulder.id}) created.`, 'success');
-                    // Refresh the dropdown in the control panel to include the new boulder
-                    if (this.controlPanel) {
-                        await this.controlPanel.rebuildBoulderDropdown();
-                    }
-
-                    if (confirm('Load the newly recorded boulder?')) {
-                        // Ensure controlPanel is available and has loadBoulder method
-                        if (this.controlPanel && typeof this.controlPanel.loadBoulder === 'function') {
-                            await this.controlPanel.loadBoulder(addedBoulder.id, 'remote-fetch');
-                        } else {
-                            console.error('ControlPanel or loadBoulder method not available.');
-                            this.showNotification('Could not auto-load new boulder: Control panel issue.', 'error');
-                        }
-                    } else {
-                         // If not loading, ensure the dropdown is at least updated
-                         // (already called rebuildBoulderDropdown above, so this is slightly redundant but safe)
-                         if (this.controlPanel) await this.controlPanel.rebuildBoulderDropdown();
-                    }
-                } else {
-                     this.showNotification('Could not process new boulder data from remote source.', 'error');
-                }
-
-            } else {
-                this.showNotification('No new data fetched from Phyphox or recording was empty.', 'info');
-            }
-        } catch (error) {
-            console.error('Failed to fetch/process all remote data:', error);
-            this.showNotification('Failed to get or process remote data: ' + error.message, 'error');
-        }
-    }
-
-    async loadRecordedData(recordingResult) {
-        // This method is now less relevant as fetchAllRemoteData handles processing.
-        // Kept for now, can be removed or refactored if a separate "load this specific file" is needed.
-        console.log('loadRecordedData called with:', recordingResult.filename);
-        try {
-            const newBoulder = await parseCSVData(recordingResult.data, recordingResult.filename);
-            if (newBoulder) {
-                const addedBoulder = await addNewBoulder(newBoulder);
-                if (addedBoulder) {
-                    this.showNotification(`Loaded remotely recorded data as "${addedBoulder.name}".`, 'success');
-                    await this.controlPanel.loadBoulder(addedBoulder.id, 'remote-load');
-                }
-            }
-        } catch (error) {
-            this.showNotification(`Error loading recorded data: ${error.message}`, 'error');
-        }
-    }
-
-    // Update UI based on polling state
-    updateRemoteUI(isPolling, errorMessage) { // Added errorMessage
-        const remoteToggle = document.getElementById('remote-toggle');
-        const recordingControls = document.getElementById('recording-controls');
-        const getAllRemoteDataBtn = document.getElementById('get-all-remote-data');
-
+    updateRemoteUI(isPolling, errorMessage) {
+        // Update server toggle in the new server control module
+        const serverToggle = document.getElementById('server-toggle');
+        const playbackSection = document.getElementById('playback-section');
+        
         if (isPolling) {
-            remoteToggle.textContent = '📱 Remote: POLLING';
-            remoteToggle.className = 'tab-button remote-on recording-active';
-            recordingControls.style.display = 'flex';
-            if(getAllRemoteDataBtn) getAllRemoteDataBtn.disabled = false; // Enable when polling
-        } else {
-            remoteToggle.textContent = '📱 Remote: OFF';
-            remoteToggle.className = 'tab-button remote-off';
-            remoteToggle.classList.remove('recording-active');
-            // Keep controls visible if remote mode is technically on but polling failed/stopped
-            // recordingControls.style.display = this.isRemoteMode ? 'flex' : 'none';
-            if(getAllRemoteDataBtn) getAllRemoteDataBtn.disabled = !this.isRemoteMode; // Disable if not in remote mode
-
-            if (errorMessage) {
-                 this.showNotification(`Polling stopped: ${errorMessage}`, 'error');
+            if (serverToggle) {
+                serverToggle.textContent = 'ON';
+                serverToggle.style.background = 'rgba(34, 197, 94, 0.8)';
             }
+            if (playbackSection) {
+                playbackSection.style.display = 'flex';
+            }
+            this.isServerConnected = true;
+        } else {
+            if (serverToggle) {
+                if (errorMessage) {
+                    serverToggle.textContent = 'ERROR';
+                    serverToggle.style.background = 'rgba(239, 68, 68, 0.8)';
+                    
+                    // Reset to OFF after 3 seconds
+                    setTimeout(() => {
+                        if (!this.isServerConnected) {
+                            serverToggle.textContent = 'OFF';
+                        }
+                    }, 3000);
+                } else {
+                    serverToggle.textContent = 'OFF';
+                    serverToggle.style.background = 'rgba(239, 68, 68, 0.8)';
+                }
+            }
+            if (playbackSection) {
+                playbackSection.style.display = 'none';
+            }
+            this.isServerConnected = false;
         }
-        this.updatePollingStatus(this.remoteHandler.getPollingStatus());
     }
 
-    // Renamed from updateRecordingStatus
     updatePollingStatus(status) {
-        const statusElement = document.getElementById('polling-status'); // Renamed ID
-        if (statusElement) {
+        const pollingStatus = document.getElementById('polling-status');
+        if (pollingStatus) {
             if (status.isPolling) {
                 // Show both display buffer and total accumulated data
                 const totalAccumulated = this.remoteHandler.accumulatedData ? this.remoteHandler.accumulatedData.time.length : 0;
-                const timeRange = totalAccumulated > 0 && this.remoteHandler.accumulatedData ? 
+                const timeRange = this.remoteHandler.accumulatedData && this.remoteHandler.accumulatedData.time.length > 0 ? 
                     `${(this.remoteHandler.accumulatedData.time[this.remoteHandler.accumulatedData.time.length - 1] - this.remoteHandler.accumulatedData.time[0]).toFixed(1)}s` : '0s';
-                statusElement.textContent = `🔴 LIVE: ${totalAccumulated} points (${timeRange} accumulated)`;
+                const visualRate = this.remoteHandler.getVisualUpdateRate() / 1000;
+                pollingStatus.textContent = `🔴 LIVE: ${totalAccumulated} pts (${timeRange}) | Visual: ${visualRate}s`;
             } else {
                  if (this.isRemoteMode) { // If remote mode is on, but not polling (e.g. error or just stopped)
                     const totalAccumulated = this.remoteHandler.accumulatedData ? this.remoteHandler.accumulatedData.time.length : 0;
-                    statusElement.textContent = `Polling OFF. Total accumulated: ${totalAccumulated} points`;
+                    pollingStatus.textContent = `Polling OFF. Total accumulated: ${totalAccumulated} points`;
                  } else {
-                    statusElement.textContent = 'Polling OFF';
+                    pollingStatus.textContent = 'Polling OFF';
                  }
             }
         }
@@ -888,6 +1129,526 @@ class BoulderVisualizerApp {
 
     setupGlobalSync() {
         // Implement cross-view synchronization logic here
+    }
+
+    // Show a brief visual indicator when throttled updates occur
+    showVisualUpdateIndicator() {
+        // Create or get existing indicator
+        let indicator = document.getElementById('visual-update-indicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'visual-update-indicator';
+            indicator.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: rgba(0, 255, 204, 0.9);
+                color: #000;
+                padding: 8px 12px;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: bold;
+                z-index: 10000;
+                opacity: 0;
+                transition: opacity 0.2s ease;
+                pointer-events: none;
+            `;
+            indicator.textContent = '📊 Visual Update';
+            document.body.appendChild(indicator);
+        }
+
+        // Show the indicator briefly
+        indicator.style.opacity = '1';
+        setTimeout(() => {
+            indicator.style.opacity = '0';
+        }, 300);
+    }
+
+    clearVisualizationsForLiveMode() {
+        // Reset live data initialization flag
+        this.liveDataInitialized = false;
+        
+        // Clear boulder visualizer from CSV data
+        if (this.visualizer) {
+            console.log('[Main] Clearing boulder visualizer for live mode');
+            // Clear any existing boulder data to prepare for live data
+            this.visualizer.clearLiveData && this.visualizer.clearLiveData();
+        }
+        
+        // Clear DataViz from CSV data
+        if (this.dataVizIntegration) {
+            console.log('[Main] Clearing DataViz for live mode');
+            // Clear any existing CSV data to prepare for live data
+            this.dataVizIntegration.clearLiveData && this.dataVizIntegration.clearLiveData();
+        }
+        
+        // Show notification that we're switching to live mode
+        // this.showNotification('🔴 Switched to LIVE data mode', 'info');
+    }
+
+    restoreCSVVisualizationsAfterLiveMode() {
+        // Reset live data initialization flag
+        this.liveDataInitialized = false;
+        
+        // Restore boulder visualizer with current CSV boulder
+        if (this.visualizer && this.currentBoulder) {
+            console.log('[Main] Restoring boulder visualizer with CSV data');
+            this.visualizer.loadBoulder(this.currentBoulder);
+        }
+        
+        // Restore DataViz with current CSV boulder
+        if (this.dataVizIntegration && this.currentBoulder && this.currentBoulder.type === 'csv') {
+            console.log('[Main] Restoring DataViz with CSV data');
+            this.dataVizIntegration.updateWithBoulderData(this.currentBoulder);
+        }
+        
+        // Show notification that we're switching back to CSV mode
+        // this.showNotification('📊 Switched back to CSV data mode', 'info');
+    }
+
+    setupConnectionMonitoring() {
+        // Clear any existing monitoring
+        this.clearConnectionMonitoring();
+        
+        // Monitor for connection issues every 10 seconds
+        this.connectionMonitorInterval = setInterval(async () => {
+            if (!this.isRemoteMode) {
+                this.clearConnectionMonitoring();
+                return;
+            }
+            
+            try {
+                // Check if we're still receiving data
+                const status = this.remoteHandler.getPollingStatus();
+                const lastDataTime = this.lastRemoteDataTime || 0;
+                const now = Date.now();
+                
+                // If no data received for 30 seconds and we're supposed to be polling
+                if (status.isPolling && (now - lastDataTime) > 30000) {
+                    console.warn('[Main] No data received for 30 seconds, checking connection...');
+                    
+                    // Try to ping the server
+                    const isConnected = await this.remoteHandler.checkRemoteConnection();
+                    if (!isConnected) {
+                        console.error('[Main] Connection lost, attempting recovery...');
+                        this.showNotification('⚠️ Connection lost - Attempting recovery...', 'warning');
+                        await this.attemptConnectionRecovery();
+                    }
+                }
+            } catch (error) {
+                console.warn('[Main] Connection monitoring error:', error);
+            }
+        }, 10000); // Check every 10 seconds
+        
+        console.log('[Main] Connection monitoring started');
+    }
+
+    clearConnectionMonitoring() {
+        if (this.connectionMonitorInterval) {
+            clearInterval(this.connectionMonitorInterval);
+            this.connectionMonitorInterval = null;
+            console.log('[Main] Connection monitoring stopped');
+        }
+    }
+
+    async attemptConnectionRecovery() {
+        const remoteToggle = document.getElementById('remote-toggle');
+        
+        try {
+            console.log('[Main] Attempting connection recovery...');
+            remoteToggle.textContent = '📱 Remote: RECOVERING...';
+            
+            // Stop current polling
+            await this.remoteHandler.stopPolling();
+            
+            // Wait a moment
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Try to start with new server
+            try {
+                await this.remoteHandler.startPhyphoxExperiment();
+                console.log('[Main] Restarted Phyphox measurement during recovery');
+            } catch (restartError) {
+                console.warn('[Main] Could not restart Phyphox during recovery:', restartError.message);
+            }
+            
+            // Restart polling
+            await this.remoteHandler.startPolling();
+            
+            remoteToggle.textContent = '📱 Remote: POLLING';
+            remoteToggle.className = 'tab-button remote-on recording-active';
+            
+            this.showNotification('✅ Connection recovered successfully', 'success');
+            console.log('[Main] Connection recovery successful');
+            
+        } catch (recoveryError) {
+            console.error('[Main] Connection recovery failed:', recoveryError);
+            
+            // If recovery fails, disable remote mode
+            this.isRemoteMode = false;
+            remoteToggle.textContent = '📱 Remote: FAILED';
+            remoteToggle.className = 'tab-button remote-off';
+            
+            this.showNotification('❌ Connection recovery failed - Remote mode disabled', 'error');
+            
+            // Auto-save any data we have
+            await this.autoSaveData();
+            
+            // Restore CSV visualizations
+            this.restoreCSVVisualizationsAfterLiveMode();
+            
+            // Reset button text after 5 seconds
+            setTimeout(() => {
+                if (!this.isRemoteMode) {
+                    remoteToggle.textContent = '📱 Remote: OFF';
+                }
+            }, 5000);
+        }
+    }
+
+    toggleServerConnection() {
+        if (!this.isServerConnected) {
+            // Connect to server
+            this.connectToServer();
+        } else {
+            // Disconnect from server
+            this.disconnectFromServer();
+        }
+    }
+
+    async connectToServer() {
+        const serverToggle = document.getElementById('server-toggle');
+        
+        try {
+            console.log('[Main] Starting server connection to:', this.currentServerUrl);
+            
+            // Hide any previous errors
+            this.hideServerError();
+            
+            serverToggle.textContent = 'CONNECTING...';
+            serverToggle.style.background = 'rgba(255, 193, 7, 0.8)';
+            
+            // Start remote mode
+            this.isRemoteMode = true;
+            console.log('[Main] Set remote mode to true');
+            
+            // Clear existing visualizations to prepare for live data
+            console.log('[Main] Switching to live data mode - clearing existing visualizations');
+            this.clearVisualizationsForLiveMode();
+            
+            // Show connecting status
+            this.showServerError(`Connecting to ${this.currentServerUrl}...`, 10000);
+            
+            // Try to automatically start Phyphox measurement
+            console.log('[Main] Attempting to auto-start Phyphox measurement...');
+            try {
+                await this.remoteHandler.startPhyphoxExperiment();
+                console.log('[Main] Successfully auto-started Phyphox measurement');
+            } catch (autoStartError) {
+                console.warn('[Main] Could not auto-start Phyphox (may already be running):', autoStartError.message);
+                this.showServerError(`Auto-start warning: ${autoStartError.message}`, 3000);
+            }
+            
+            // Start polling
+            console.log('[Main] Starting polling...');
+            await this.remoteHandler.startPolling();
+            console.log('[Main] Polling started successfully');
+            
+            // Update UI
+            this.isServerConnected = true;
+            serverToggle.textContent = 'ON';
+            serverToggle.style.background = 'rgba(34, 197, 94, 0.8)';
+            
+            // Show playback controls
+            this.playbackSection.style.display = 'flex';
+            
+            // Set up connection monitoring
+            this.setupConnectionMonitoring();
+            
+            // Hide error display and show success
+            this.hideServerError();
+            console.log('[Main] Server connection completed successfully');
+            
+        } catch (error) {
+            console.error('[Main] Server connection failed:', error);
+            this.isRemoteMode = false;
+            this.isServerConnected = false;
+            serverToggle.textContent = 'ERROR';
+            serverToggle.style.background = 'rgba(239, 68, 68, 0.8)';
+            
+            let errorMessage = '';
+            if (error.message.includes('Network Error') || error.message.includes('Failed to fetch')) {
+                errorMessage = `❌ Cannot reach ${this.currentServerUrl}. Check WiFi and IP address.`;
+            } else if (error.message.includes('CORS')) {
+                errorMessage = `❌ CORS error. Enable "Allow remote access" in Phyphox app.`;
+            } else if (error.message.includes('timeout')) {
+                errorMessage = `❌ Connection timeout. Server may be busy or unreachable.`;
+            } else {
+                errorMessage = `❌ Connection failed: ${error.message}`;
+            }
+            
+            // Show detailed error in error display
+            this.showServerError(errorMessage, 10000);
+            
+            console.error('Server connection error:', error);
+            
+            // Reset to OFF state after 3 seconds
+            setTimeout(() => {
+                if (!this.isServerConnected) {
+                    serverToggle.textContent = 'OFF';
+                    serverToggle.style.background = 'rgba(239, 68, 68, 0.8)';
+                }
+            }, 3000);
+        }
+    }
+
+    async disconnectFromServer() {
+        const serverToggle = document.getElementById('server-toggle');
+        
+        try {
+            // Hide any error messages
+            this.hideServerError();
+            
+            serverToggle.textContent = 'DISCONNECTING...';
+            serverToggle.style.background = 'rgba(255, 193, 7, 0.8)';
+            
+            // Stop polling
+            await this.remoteHandler.stopPolling();
+            
+            // Clear connection monitoring
+            this.clearConnectionMonitoring();
+            
+            // Auto-save the accumulated data
+            await this.autoSaveData();
+            
+            // Restore CSV data visualizations
+            console.log('[Main] Exiting live data mode - restoring CSV visualizations');
+            this.restoreCSVVisualizationsAfterLiveMode();
+            
+            // Update UI
+            this.isRemoteMode = false;
+            this.isServerConnected = false;
+            serverToggle.textContent = 'OFF';
+            serverToggle.style.background = 'rgba(239, 68, 68, 0.8)';
+            
+            // Hide playback controls
+            this.playbackSection.style.display = 'none';
+            
+        } catch (error) {
+            console.error('Error disconnecting from server:', error);
+            this.showServerError(`Disconnect error: ${error.message}`, 5000);
+        }
+    }
+
+    async restartServerConnection() {
+        if (this.isServerConnected) {
+            console.log('[Main] Restarting server connection with new URL');
+            await this.disconnectFromServer();
+            
+            // Wait a moment before reconnecting
+            setTimeout(async () => {
+                await this.connectToServer();
+            }, 1000);
+        }
+    }
+
+    async sendServerCommand(command) {
+        if (!this.isServerConnected) {
+            this.showServerError('❌ Not connected to server', 3000);
+            return;
+        }
+
+        try {
+            // Show command being sent
+            this.showServerError(`Sending ${command.toUpperCase()} command...`, 5000);
+            
+            const response = await fetch(`${this.currentServerUrl}/control?cmd=${command}`, {
+                method: 'GET',
+                mode: 'cors',
+                headers: {
+                    'Accept': 'application/json'
+                },
+                signal: AbortSignal.timeout(5000)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            console.log(`[Main] Server command '${command}' result:`, result);
+            
+            if (result.result === true) {
+                this.showServerError(`✅ ${command.toUpperCase()} successful`, 2000);
+            } else {
+                this.showServerError(`⚠️ ${command.toUpperCase()} failed: ${result.message || 'Unknown error'}`, 5000);
+            }
+            
+            return result;
+            
+        } catch (error) {
+            console.error(`[Main] Server command '${command}' failed:`, error);
+            this.showServerError(`❌ ${command.toUpperCase()} failed: ${error.message}`, 5000);
+            throw error;
+        }
+    }
+
+    // Auto-save data when polling stops
+    async autoSaveData() {
+        if (!this.isRemoteMode || !this.remoteHandler.accumulatedData || this.remoteHandler.accumulatedData.time.length === 0) {
+            return;
+        }
+
+        const autoSaveStatus = document.getElementById('auto-save-status');
+        if (autoSaveStatus) {
+            autoSaveStatus.textContent = '💾 Auto-Save: Saving...';
+            autoSaveStatus.style.background = 'rgba(59, 130, 246, 0.8)';
+        }
+
+        try {
+            // Convert accumulated data to CSV format and save directly to data folder
+            const csvData = this.convertToCSV(this.remoteHandler.accumulatedData);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const filename = `Live_Data_${timestamp}.csv`;
+            
+            // Save to data folder (this will be handled by the server in a real implementation)
+            await this.saveToDataFolder(csvData, filename);
+            
+            // Create boulder from the data
+            const newBoulder = await this.createBoulderFromLiveData(csvData, filename);
+            
+            if (newBoulder) {
+                // this.showNotification(`Auto-saved live data as "${newBoulder.name}"`, 'success');
+                
+                // Update control panel dropdown
+                if (this.controlPanel) {
+                    await this.controlPanel.rebuildBoulderDropdown();
+                }
+                
+                if (autoSaveStatus) {
+                    autoSaveStatus.textContent = '💾 Auto-Save: Saved';
+                    autoSaveStatus.style.background = 'rgba(34, 197, 94, 0.8)';
+                }
+            }
+        } catch (error) {
+            console.error('Auto-save failed:', error);
+            // this.showNotification('Auto-save failed: ' + error.message, 'error');
+            
+            if (autoSaveStatus) {
+                autoSaveStatus.textContent = '💾 Auto-Save: Failed';
+                autoSaveStatus.style.background = 'rgba(239, 68, 68, 0.8)';
+            }
+        }
+    }
+
+    convertToCSV(dataBuffer) {
+        let csvContent = 'Time (s),Acceleration x (m/s^2),Acceleration y (m/s^2),Acceleration z (m/s^2)\n';
+        
+        for (let i = 0; i < dataBuffer.time.length; i++) {
+            csvContent += `${dataBuffer.time[i]},${dataBuffer.accX[i]},${dataBuffer.accY[i]},${dataBuffer.accZ[i]}\n`;
+        }
+        
+        return csvContent;
+    }
+
+    async saveToDataFolder(csvData, filename) {
+        // In a real implementation, this would send the data to a server endpoint
+        // For now, we'll trigger a download and show instructions
+        const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        console.log(`Auto-saved CSV file: ${filename}`);
+        // this.showNotification(`Downloaded ${filename} - Move to src/data/ folder to use in app`, 'info');
+    }
+
+    async createBoulderFromLiveData(csvData, filename) {
+        try {
+            // Import the necessary functions
+            const { parseCSVData, addNewBoulder } = await import('./data/boulderData.js');
+            
+            // Parse the CSV data
+            const boulderData = await parseCSVData(csvData, filename);
+            
+            if (boulderData) {
+                // Add to boulder list
+                const addedBoulder = await addNewBoulder(boulderData);
+                return addedBoulder;
+            }
+        } catch (error) {
+            console.error('Error creating boulder from live data:', error);
+            throw error;
+        }
+        
+        return null;
+    }
+
+    showServerError(message, duration = 5000) {
+        if (!this.errorDisplay) return;
+        
+        this.errorDisplay.textContent = message;
+        this.errorDisplay.style.display = 'block';
+        
+        // Auto-hide after duration
+        setTimeout(() => {
+            if (this.errorDisplay) {
+                this.errorDisplay.style.display = 'none';
+            }
+        }, duration);
+    }
+    
+    hideServerError() {
+        if (this.errorDisplay) {
+            this.errorDisplay.style.display = 'none';
+        }
+    }
+
+    async clearAllServersOnReload() {
+        console.log('[Main] Clearing all servers on page reload');
+        
+        // List of all servers to clear
+        const servers = [
+            'http://192.168.1.36',
+            'http://10.237.1.101',
+            'http://192.168.1.100',
+            'http://172.20.10.1',
+            'http://10.224.1.221'
+        ];
+        
+        // Send clear command to each server (don't wait for responses to avoid blocking startup)
+        servers.forEach(async (serverUrl) => {
+            try {
+                console.log(`[Main] Sending clear command to ${serverUrl}`);
+                const response = await fetch(`${serverUrl}/control?cmd=clear`, {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    signal: AbortSignal.timeout(2000) // Short timeout to not block startup
+                });
+                
+                if (response.ok) {
+                    console.log(`[Main] Successfully cleared ${serverUrl}`);
+                } else {
+                    console.warn(`[Main] Failed to clear ${serverUrl}: ${response.status}`);
+                }
+            } catch (error) {
+                // Silently ignore errors to not block app startup
+                console.warn(`[Main] Could not clear ${serverUrl}:`, error.message);
+            }
+        });
+        
+        // Don't wait for all requests to complete - let them run in background
+        console.log('[Main] Clear commands sent to all servers (running in background)');
     }
 }
 

@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boulder Problem Visualizer</title>
+    <title>🧗‍♂️ Climbing Data Visualizer</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="" />
+    <link
+      rel="stylesheet"
+      as="style"
+      onload="this.rel='stylesheet'"
+      href="https://fonts.googleapis.com/css2?display=swap&amp;family=Noto+Sans%3Awght%40400%3B500%3B700%3B900&amp;family=Space+Grotesk%3Awght%40400%3B500%3B700"
+    />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <style>
         * {
             margin: 0;
@@ -153,40 +162,7 @@
     </style>
 </head>
 <body>
-    <div id="container">
-        <div id="loading">Loading boulder visualizer...</div>
-        
-        <div id="info">
-            <h1>Boulder Visualizer</h1>
-            <p>Visualize boulder problems with liquid-like concentric rings</p>
-            <p>Each ring shows the move sequence clockwise around the circle</p>
-            <p>Spikes = Dynamic/powerful moves | Flat = Static/controlled moves</p>
-            <p><strong>Colors:</strong></p>
-            <p>• <span style="color: #00ffcc;">Turquoise</span> = Crux moves</p>
-            <p>• <span style="color: #ffffff;">White</span> = Normal moves</p>
-            <p>• Center = Grade with color coding</p>
-            <p><strong>Controls:</strong></p>
-            <p>• Mouse: Rotate view | Scroll: Zoom</p>
-            <p>• R: Random CSV | O: Toggle UI</p>
-            <p>• ↑↓ Arrow Keys: Navigate CSV files</p>
-            <p>• Use control panel to select boulders & adjust settings</p>
-        </div>
-        
-        <div id="stats">
-            <div id="boulder-name">Boulder: --</div>
-            <div id="boulder-grade">Grade: --</div>
-            <div id="move-count">Moves: --</div>
-        </div>
-    </div>
-    
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
-                "dat.gui": "https://unpkg.com/dat.gui@0.7.9/build/dat.gui.module.js"
-            }
-        }
-    </script>
-    <script type="module" src="/src/main.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
 </body>
 </html> 

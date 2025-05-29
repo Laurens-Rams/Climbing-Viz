@@ -249,7 +249,15 @@ export class ControlPanel {
     }
     
     updateVisualization() {
-        this.visualizer.updateSettings(this.visualizer.settings);
+        // Immediate visual feedback
+        if (this.visualizer && this.visualizer.renderer) {
+            this.visualizer.renderer.render(this.visualizer.scene, this.visualizer.camera);
+        }
+        
+        // Update settings with minimal delay for responsiveness
+        if (this.visualizer && this.visualizer.updateSettings) {
+            this.visualizer.updateSettings(this.visualizer.settings);
+        }
     }
     
     refreshControllers() {

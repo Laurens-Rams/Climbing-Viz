@@ -33,21 +33,28 @@ export class BoulderControlPanel {
         this.currentBoulderIndex = this.boulderList.findIndex(b => b.id === this.currentBoulderId);
         if (this.currentBoulderIndex === -1) this.currentBoulderIndex = 0;
         
+        // Create boulder names mapping - ensure consistent ID handling
         const boulderNames = {};
         boulderList.forEach(boulder => {
             console.log(`Processing boulder for dropdown: id=${boulder.id}, name="${boulder.name}", csvFile="${boulder.csvFile}"`);
             // Use CSV filename as the display name
             const displayName = `${boulder.name} - ${boulder.csvFile || 'Unknown File'}`;
-            boulderNames[displayName] = boulder.id;
+            // Ensure ID is treated as string for dropdown consistency
+            boulderNames[displayName] = String(boulder.id);
         });
         console.log('Boulder names for dropdown:', boulderNames);
         
-        // Create a persistent object for the dropdown
-        this.boulderSelection = { boulder: this.currentBoulderId };
+        // Create a persistent object for the dropdown - ensure ID is string
+        this.boulderSelection = { boulder: String(this.currentBoulderId) };
         
-        boulderFolder.add(this.boulderSelection, 'boulder', boulderNames)
+        // Store the mapping for reverse lookup during sync
+        this.boulderNamesMapping = boulderNames;
+        
+        const dropdownController = boulderFolder.add(this.boulderSelection, 'boulder', boulderNames)
             .name('Select CSV Data')
-            .onChange(async (boulderId) => {
+            .onChange(async (boulderIdString) => {
+                // Convert back to number for consistency with the rest of the system
+                const boulderId = parseInt(boulderIdString);
                 console.log('Boulder selection changed to:', boulderId);
                 
                 // Emit global event for cross-view sync
@@ -66,6 +73,9 @@ export class BoulderControlPanel {
                 this.currentBoulderId = boulderId;
                 this.loadBoulder(boulderId);
             });
+            
+        // Store reference to the dropdown controller for easier sync
+        this.boulderDropdownController = dropdownController;
             
         const boulderControls = {
             randomBoulder: () => this.generateRandomBoulder(),
@@ -90,16 +100,21 @@ export class BoulderControlPanel {
         const basicsFolder = this.gui.addFolder('⚙️ Basics');
         
         // Dynamics effect - main control with enhanced scaling for outer values
-        basicsFolder.add(this.visualizer.settings, 'dynamicsMultiplier', 0.5, 8.0, 0.1)
+        basicsFolder.add(this.visualizer.settings, 'dynamicsMultiplier', 0.5, 15.0, 0.1)
             .name('Dynamics Effect')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate(); // Immediate update during drag
                 this.emitControlChange('dynamicsMultiplier', this.visualizer.settings.dynamicsMultiplier);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization(); // Full update on release
+                // No need to emit here again if already emitted in onChange,
+                // but if emitControlChange has side effects beyond logging, consider if it's needed.
             });
         
         // Combined size control that intelligently affects both base radius and overall size
         this.combinedSize = { value: 1.0 };
-        basicsFolder.add(this.combinedSize, 'value', 0.5, 3.0, 0.1)
+        basicsFolder.add(this.combinedSize, 'value', 0.5, 5.0, 0.1)
             .name('Overall Size')
             .onChange((value) => {
                 // Intelligently scale both base radius and radius multiplier
@@ -107,22 +122,31 @@ export class BoulderControlPanel {
                 // Radius multiplier affects the overall scale
                 this.visualizer.settings.baseRadius = 2.5 * value;
                 this.visualizer.settings.radiusMultiplier = value;
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('combinedSize', value);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
-        basicsFolder.add(this.visualizer.settings, 'ringCount', 10, 70, 1)
+        basicsFolder.add(this.visualizer.settings, 'ringCount', 10, 150, 1)
             .name('Ring Count')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('ringCount', this.visualizer.settings.ringCount);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
-        basicsFolder.add(this.visualizer.settings, 'ringSpacing', 0.00, 0.15, 0.005)
+        basicsFolder.add(this.visualizer.settings, 'ringSpacing', 0.00, 0.05, 0.001)
             .name('Ring Spacing')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('ringSpacing', this.visualizer.settings.ringSpacing);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         basicsFolder.open();
@@ -133,30 +157,42 @@ export class BoulderControlPanel {
         visualsFolder.add(this.visualizer.settings, 'opacity', 0.1, 1.0, 0.05)
             .name('Line Opacity')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('opacity', this.visualizer.settings.opacity);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         visualsFolder.add(this.visualizer.settings, 'centerFade', 0.0, 1.0, 0.05)
             .name('Center Fade')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('centerFade', this.visualizer.settings.centerFade);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         visualsFolder.add(this.visualizer.settings, 'depthEffect', 0.0, 2.0, 0.1)
             .name('3D Depth Effect')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('depthEffect', this.visualizer.settings.depthEffect);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         // Organic noise - much smaller range for subtle noise filter effect
         visualsFolder.add(this.visualizer.settings, 'organicNoise', 0.0, 0.1, 0.005)
             .name('Organic Noise')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('organicNoise', this.visualizer.settings.organicNoise);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         visualsFolder.open();
@@ -167,15 +203,21 @@ export class BoulderControlPanel {
         effectsFolder.add(this.visualizer.settings, 'cruxEmphasis', 0.5, 3.0, 0.1)
             .name('Crux Emphasis')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('cruxEmphasis', this.visualizer.settings.cruxEmphasis);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         effectsFolder.add(this.visualizer.settings, 'moveEmphasis', 0.0, 10.0, 0.1)
             .name('Move Emphasis (All)')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('moveEmphasis', this.visualizer.settings.moveEmphasis);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         effectsFolder.open();
@@ -193,15 +235,21 @@ export class BoulderControlPanel {
         segmentsFolder.add(this.visualizer.settings, 'segmentOpacity', 0.0, 0.5, 0.01)
             .name('Segment Opacity')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('segmentOpacity', this.visualizer.settings.segmentOpacity);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         segmentsFolder.add(this.visualizer.settings, 'segmentGap', 0.0, 0.2, 0.01)
             .name('Gap Between Segments')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('segmentGap', this.visualizer.settings.segmentGap);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         segmentsFolder.close();
@@ -219,22 +267,31 @@ export class BoulderControlPanel {
         linesFolder.add(this.visualizer.settings, 'lineLength', 1.0, 6.0, 0.1)
             .name('Line Length')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('lineLength', this.visualizer.settings.lineLength);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         linesFolder.add(this.visualizer.settings, 'lineWidth', 0.005, 0.1, 0.005)
             .name('Line Width')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('lineWidth', this.visualizer.settings.lineWidth);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         linesFolder.add(this.visualizer.settings, 'lineOpacity', 0.0, 1.0, 0.05)
             .name('Line Opacity')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('lineOpacity', this.visualizer.settings.lineOpacity);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         linesFolder.close();
@@ -249,53 +306,94 @@ export class BoulderControlPanel {
                 this.emitControlChange('showAttempts', this.visualizer.settings.showAttempts);
             });
             
-        attemptsFolder.add(this.visualizer.settings, 'maxAttempts', 10, 200, 5)
+        attemptsFolder.add(this.visualizer.settings, 'maxAttempts', 10, 500, 5)
             .name('Number of Attempts')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('maxAttempts', this.visualizer.settings.maxAttempts);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         attemptsFolder.add(this.visualizer.settings, 'attemptOpacity', 0.0, 1.0, 0.05)
             .name('Attempt Opacity')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('attemptOpacity', this.visualizer.settings.attemptOpacity);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
-        attemptsFolder.add(this.visualizer.settings, 'attemptWaviness', 0.001, 0.2, 0.001)
+        attemptsFolder.add(this.visualizer.settings, 'attemptWaviness', 0.001, 0.5, 0.001)
             .name('Line Waviness')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('attemptWaviness', this.visualizer.settings.attemptWaviness);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
-        attemptsFolder.add(this.visualizer.settings, 'attemptFadeStrength', 0.0, 2.0, 0.1)
+        attemptsFolder.add(this.visualizer.settings, 'attemptFadeStrength', 0.0, 5.0, 0.1)
             .name('Multiple Try Effect')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('attemptFadeStrength', this.visualizer.settings.attemptFadeStrength);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
-        attemptsFolder.add(this.visualizer.settings, 'attemptThickness', 0.1, 5.0, 0.1)
+        attemptsFolder.add(this.visualizer.settings, 'attemptThickness', 0.1, 10.0, 0.1)
             .name('Line Thickness')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('attemptThickness', this.visualizer.settings.attemptThickness);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
-        attemptsFolder.add(this.visualizer.settings, 'attemptIntensity', 0.5, 3.0, 0.1)
+        attemptsFolder.add(this.visualizer.settings, 'attemptIntensity', 0.5, 5.0, 0.1)
             .name('Visual Intensity')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('attemptIntensity', this.visualizer.settings.attemptIntensity);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
-        attemptsFolder.add(this.visualizer.settings, 'attemptRadius', 0.5, 2.0, 0.1)
+        attemptsFolder.add(this.visualizer.settings, 'attemptRadius', 0.5, 6.0, 0.05)
             .name('Max Radius')
             .onChange(() => {
-                this.updateVisualization();
+                this.updateVisualizationImmediate();
                 this.emitControlChange('attemptRadius', this.visualizer.settings.attemptRadius);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
+            });
+            
+        attemptsFolder.add(this.visualizer.settings, 'attemptDotZOffsetMax', 0.0, 5.0, 0.05)
+            .name('Dot Z Offset Max')
+            .onChange(() => {
+                this.updateVisualizationImmediate();
+                this.emitControlChange('attemptDotZOffsetMax', this.visualizer.settings.attemptDotZOffsetMax);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
+            });
+
+        attemptsFolder.add(this.visualizer.settings, 'attemptDotZEffectStrength', 0.0, 5.0, 0.05)
+            .name('Dot Z Strength')
+            .onChange(() => {
+                this.updateVisualizationImmediate();
+                this.emitControlChange('attemptDotZEffectStrength', this.visualizer.settings.attemptDotZEffectStrength);
+            })
+            .onFinishChange(() => {
+                this.updateVisualization();
             });
             
         attemptsFolder.close();
@@ -389,7 +487,7 @@ export class BoulderControlPanel {
                 
                 // Update the dropdown selection
                 this.currentBoulderId = randomBoulder.id;
-                this.boulderSelection.boulder = randomBoulder.id;
+                this.boulderSelection.boulder = String(randomBoulder.id);
                 
                 // Update current index for arrow navigation
                 this.currentBoulderIndex = this.boulderList.findIndex(b => b.id === randomBoulder.id);
@@ -431,7 +529,7 @@ export class BoulderControlPanel {
         
         // Update selection and load boulder
         this.currentBoulderId = nextBoulder.id;
-        this.boulderSelection.boulder = nextBoulder.id;
+        this.boulderSelection.boulder = String(nextBoulder.id);
         this.gui.updateDisplay();
         
         // Emit global event for cross-view sync
@@ -452,7 +550,7 @@ export class BoulderControlPanel {
         
         // Update selection and load boulder
         this.currentBoulderId = prevBoulder.id;
-        this.boulderSelection.boulder = prevBoulder.id;
+        this.boulderSelection.boulder = String(prevBoulder.id);
         this.gui.updateDisplay();
         
         // Emit global event for cross-view sync
@@ -508,13 +606,15 @@ export class BoulderControlPanel {
                 const boulderNames = {};
                 boulderList.forEach(boulder => {
                     const displayName = `${boulder.name} - ${boulder.csvFile || 'Unknown File'}`;
-                    boulderNames[displayName] = boulder.id;
+                    boulderNames[displayName] = String(boulder.id);
                 });
                 
                 // Add new controller
-                boulderFolder.add(this.boulderSelection, 'boulder', boulderNames)
+                const dropdownController = boulderFolder.add(this.boulderSelection, 'boulder', boulderNames)
                     .name('Select CSV Data')
-                    .onChange(async (boulderId) => {
+                    .onChange(async (boulderIdString) => {
+                        // Convert back to number for consistency with the rest of the system
+                        const boulderId = parseInt(boulderIdString);
                         console.log('Boulder selection changed to:', boulderId);
                         
                         // Emit global event for cross-view sync
@@ -533,6 +633,12 @@ export class BoulderControlPanel {
                         this.currentBoulderId = boulderId;
                         this.loadBoulder(boulderId);
                     });
+                    
+                // Update stored reference to the new controller
+                this.boulderDropdownController = dropdownController;
+                
+                // Update boulder names mapping for reverse lookup
+                this.boulderNamesMapping = boulderNames;
             }
             
         } catch (error) {
@@ -651,6 +757,7 @@ export class BoulderControlPanel {
                 font-size: 14px;
                 z-index: 999;
                 max-width: 300px;
+                display: none;
             `;
             document.body.appendChild(infoElement);
         }
@@ -778,14 +885,42 @@ export class BoulderControlPanel {
     }
     
     updateVisualization() {
-        // Reduced debounce for more immediate feedback
+        // Immediate update for better responsiveness
+        // Clear any existing timeout
         if (this.updateTimeout) {
             clearTimeout(this.updateTimeout);
         }
         
+        // For immediate visual feedback, trigger a quick render (this can be before the timeout)
+        if (this.visualizer && this.visualizer.renderer) {
+            this.visualizer.renderer.render(this.visualizer.scene, this.visualizer.camera);
+        }
+        
+        // Debounced update for full recalculation - reduced from 100ms to 50ms for better responsiveness
         this.updateTimeout = setTimeout(() => {
-            this.visualizer.updateSettings(this.visualizer.settings);
-        }, 50); // Reduced from 100ms to 50ms for more immediate response
+            if (this.visualizer) {
+                if (this.visualizer.updateSettings) {
+                    this.visualizer.updateSettings(this.visualizer.settings);
+                }
+                // Ensure render happens *after* settings are potentially updated, inside the timeout
+                if (this.visualizer.renderer) {
+                    this.visualizer.renderer.render(this.visualizer.scene, this.visualizer.camera);
+                }
+            }
+        }, 50); // Reduced debounce time for more responsive controls
+    }
+    
+    // Immediate update for real-time dragging feedback
+    updateVisualizationImmediate() {
+        if (this.visualizer) {
+            if (this.visualizer.updateSettings) {
+                this.visualizer.updateSettings(this.visualizer.settings);
+            }
+            // Ensure render happens *after* settings are potentially updated
+            if (this.visualizer.renderer) {
+                this.visualizer.renderer.render(this.visualizer.scene, this.visualizer.camera);
+            }
+        }
     }
     
     styleGUI() {
@@ -839,6 +974,11 @@ export class BoulderControlPanel {
         // Clean up auto-refresh
         this.stopAutoRefresh();
         
+        // Clean up server status indicator
+        if (this.serverStatusInterval) {
+            clearInterval(this.serverStatusInterval);
+        }
+        
         // Clean up update timeout
         if (this.updateTimeout) {
             clearTimeout(this.updateTimeout);
@@ -872,6 +1012,30 @@ export class BoulderControlPanel {
         if (successElement) {
             successElement.remove();
         }
+        
+        // Remove server status indicator
+        const serverIndicator = document.getElementById('server-status-indicator');
+        if (serverIndicator) {
+            serverIndicator.remove();
+        }
+        
+        // Remove server status notifications
+        const serverStatus = document.getElementById('server-status');
+        if (serverStatus) {
+            serverStatus.remove();
+        }
+        
+        // Remove floating controls
+        const floatingControls = document.getElementById('floating-server-controls');
+        if (floatingControls) {
+            floatingControls.remove();
+        }
+        
+        // Remove old animation controls if they exist
+        const animationControls = document.getElementById('animation-controls');
+        if (animationControls) {
+            animationControls.remove();
+        }
     }
     
     show() {
@@ -881,7 +1045,7 @@ export class BoulderControlPanel {
         
         const infoElement = document.getElementById('boulder-info');
         if (infoElement) {
-            infoElement.style.display = 'block';
+            infoElement.style.display = 'none';
         }
     }
     
@@ -909,20 +1073,510 @@ export class BoulderControlPanel {
     
     syncBoulderSelection(boulderId) {
         // Update the dropdown selection without triggering onChange
-        if (this.boulderSelection && this.boulderSelection.boulder !== boulderId) {
-            this.boulderSelection.boulder = boulderId;
-            this.currentBoulderId = boulderId;
+        const boulderIdString = String(boulderId);
+        
+        if (this.boulderSelection && this.boulderSelection.boulder !== boulderIdString) {
+            console.log(`[BoulderControlPanel] Syncing to boulder ID: ${boulderId}`);
+            console.log(`[BoulderControlPanel] Current selection: ${this.boulderSelection.boulder}`);
             
-            // Update current index for arrow navigation
-            this.currentBoulderIndex = this.boulderList.findIndex(b => b.id === boulderId);
-            if (this.currentBoulderIndex === -1) this.currentBoulderIndex = 0;
-            
-            // Update the GUI display
-            if (this.gui) {
-                this.gui.updateDisplay();
+            // Find the boulder in our list to make sure it exists
+            const targetBoulder = this.boulderList.find(b => parseInt(b.id) === parseInt(boulderId));
+            if (!targetBoulder) {
+                console.warn(`[BoulderControlPanel] Boulder ID ${boulderId} not found in boulder list`);
+                return;
             }
             
-            console.log(`Control panel synced to boulder ID: ${boulderId}`);
+            console.log(`[BoulderControlPanel] Found target boulder: ${targetBoulder.name}`);
+            
+            // Update internal state
+            this.boulderSelection.boulder = boulderIdString;
+            this.currentBoulderId = parseInt(boulderId);
+            
+            // Update current index for arrow navigation
+            this.currentBoulderIndex = this.boulderList.findIndex(b => parseInt(b.id) === parseInt(boulderId));
+            if (this.currentBoulderIndex === -1) this.currentBoulderIndex = 0;
+            
+            // Use stored dropdown controller reference for more reliable sync
+            if (this.boulderDropdownController) {
+                try {
+                    // Temporarily disable onChange to prevent recursion
+                    const originalOnChange = this.boulderDropdownController.__onChange;
+                    this.boulderDropdownController.__onChange = [];
+                    
+                    // Set the value directly
+                    this.boulderDropdownController.setValue(boulderIdString);
+                    
+                    // Re-enable onChange
+                    this.boulderDropdownController.__onChange = originalOnChange;
+                    
+                    console.log(`[BoulderControlPanel] Direct controller sync completed for boulder ID: ${boulderId}`);
+                } catch (error) {
+                    console.error('[BoulderControlPanel] Error with direct controller sync:', error);
+                    
+                    // Fallback to GUI updateDisplay
+                    if (this.gui) {
+                        this.gui.updateDisplay();
+                        console.log(`[BoulderControlPanel] Fallback GUI display update for boulder ID: ${boulderId}`);
+                    }
+                }
+            } else {
+                console.warn('[BoulderControlPanel] No stored dropdown controller reference, using GUI updateDisplay');
+                // Fallback to GUI updateDisplay
+                if (this.gui) {
+                    this.gui.updateDisplay();
+                    console.log(`[BoulderControlPanel] GUI display update for boulder ID: ${boulderId}`);
+                }
+            }
+            
+            console.log(`[BoulderControlPanel] Sync completed for boulder ID: ${boulderId}`);
+        } else {
+            console.log(`[BoulderControlPanel] No sync needed - already on boulder ID: ${boulderId}`);
+        }
+    }
+    
+    // Server control methods
+    async sendServerCommand(command) {
+        try {
+            const response = await fetch(`http://${this.serverConfig.ip}:${this.serverConfig.port}/control?cmd=${command}`, {
+                method: 'GET',
+                mode: 'cors',
+                headers: {
+                    'Accept': 'application/json'
+                },
+                signal: AbortSignal.timeout(5000) // 5 second timeout
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            console.log(`[BoulderControlPanel] Server command '${command}' result:`, result);
+            
+            if (result.result === true) {
+                this.showServerStatus(`✅ ${command.toUpperCase()} command successful`, 'success');
+                
+                // Update server status indicator after successful command
+                setTimeout(() => {
+                    this.updateServerStatusIndicator();
+                }, 500);
+                
+            } else {
+                this.showServerStatus(`⚠️ ${command.toUpperCase()} command failed: ${result.message || 'Unknown error'}`, 'warning');
+            }
+            
+            return result;
+            
+        } catch (error) {
+            console.error(`[BoulderControlPanel] Server command '${command}' failed:`, error);
+            this.showServerStatus(`❌ ${command.toUpperCase()} failed: ${error.message}`, 'error');
+            throw error;
+        }
+    }
+    
+    async sendCustomCommand() {
+        const command = prompt('Enter custom server command:\n\nExamples:\n• start\n• stop\n• clear\n• status', 'status');
+        
+        if (command && command.trim()) {
+            try {
+                await this.sendServerCommand(command.trim());
+            } catch (error) {
+                console.error('[BoulderControlPanel] Custom command failed:', error);
+            }
+        }
+    }
+    
+    showServerStatus(message, type = 'info') {
+        // Remove existing server status
+        const existing = document.querySelector('.server-status-notification');
+        if (existing) existing.remove();
+
+        const notification = document.createElement('div');
+        notification.className = 'server-status-notification';
+        notification.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 13px;
+            font-weight: bold;
+            z-index: 1010;
+            max-width: 300px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            animation: slideInRight 0.3s ease-out;
+            border-left: 4px solid;
+        `;
+
+        const colors = {
+            success: { bg: 'rgba(40, 167, 69, 0.95)', border: '#28a745' },
+            error: { bg: 'rgba(220, 53, 69, 0.95)', border: '#dc3545' },
+            info: { bg: 'rgba(23, 162, 184, 0.95)', border: '#17a2b8' },
+            warning: { bg: 'rgba(255, 193, 7, 0.95)', border: '#ffc107' }
+        };
+
+        const colorScheme = colors[type] || colors.info;
+        notification.style.background = colorScheme.bg;
+        notification.style.borderLeftColor = colorScheme.border;
+        notification.textContent = message;
+
+        // Add CSS animation if not already added
+        if (!document.querySelector('#server-status-animations')) {
+            const style = document.createElement('style');
+            style.id = 'server-status-animations';
+            style.textContent = `
+                @keyframes slideInRight {
+                    from {
+                        opacity: 0;
+                        transform: translateX(100%);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateX(0);
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        document.body.appendChild(notification);
+
+        // Auto-remove after delay (longer for errors)
+        const duration = type === 'error' ? 8000 : 4000;
+        setTimeout(() => {
+            if (notification.parentElement) {
+                notification.style.animation = 'slideInRight 0.3s ease-out reverse';
+                setTimeout(() => notification.remove(), 300);
+            }
+        }, duration);
+    }
+    
+    async autoResetOnLoad() {
+        try {
+            console.log('[BoulderControlPanel] Auto-reset on load triggered');
+            this.showServerStatus('🔄 Auto-resetting server on page load...', 'info');
+            
+            // Send reset command
+            await this.sendServerCommand('clear');
+            
+            // Wait a moment then check status
+            setTimeout(async () => {
+                try {
+                    await this.sendServerCommand('status');
+                } catch (error) {
+                    console.warn('[BoulderControlPanel] Status check after auto-reset failed:', error);
+                }
+            }, 1000);
+            
+        } catch (error) {
+            console.error('[BoulderControlPanel] Auto-reset on load failed:', error);
+            this.showServerStatus('❌ Auto-reset failed: ' + error.message, 'error');
+        }
+    }
+    
+    async resetAndClear() {
+        try {
+            console.log('[BoulderControlPanel] Reset and clear triggered');
+            this.showServerStatus('🔄 Resetting and clearing server data...', 'info');
+            
+            // Send stop command first
+            try {
+                await this.sendServerCommand('stop');
+                await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
+            } catch (stopError) {
+                console.warn('[BoulderControlPanel] Stop command failed during reset:', stopError);
+            }
+            
+            // Send clear command
+            await this.sendServerCommand('clear');
+            
+            this.showServerStatus('✅ Server reset and cleared successfully', 'success');
+            
+        } catch (error) {
+            console.error('[BoulderControlPanel] Reset and clear failed:', error);
+            this.showServerStatus('❌ Reset failed: ' + error.message, 'error');
+        }
+    }
+    
+    async quickReset() {
+        try {
+            console.log('[BoulderControlPanel] Quick reset triggered');
+            this.showServerStatus('⚡ Quick reset in progress...', 'info');
+            
+            // Just send clear command for quick reset
+            await this.sendServerCommand('clear');
+            
+            this.showServerStatus('✅ Quick reset completed', 'success');
+            
+        } catch (error) {
+            console.error('[BoulderControlPanel] Quick reset failed:', error);
+            this.showServerStatus('❌ Quick reset failed: ' + error.message, 'error');
+        }
+    }
+    
+    createServerStatusIndicator() {
+        // Remove existing indicator
+        const existing = document.getElementById('server-status-indicator');
+        if (existing) {
+            existing.remove();
+        }
+        
+        // Create status indicator
+        const indicator = document.createElement('div');
+        indicator.id = 'server-status-indicator';
+        indicator.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            z-index: 1005;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+        `;
+        
+        // Status dot
+        const statusDot = document.createElement('div');
+        statusDot.id = 'server-status-dot';
+        statusDot.style.cssText = `
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #6c757d;
+            transition: background 0.3s ease;
+        `;
+        
+        // Status text
+        const statusText = document.createElement('span');
+        statusText.id = 'server-status-text';
+        statusText.textContent = 'Server: Checking...';
+        
+        indicator.appendChild(statusDot);
+        indicator.appendChild(statusText);
+        document.body.appendChild(indicator);
+        
+        // Initial status check
+        this.updateServerStatusIndicator();
+    }
+    
+    async updateServerStatusIndicator() {
+        const statusDot = document.getElementById('server-status-dot');
+        const statusText = document.getElementById('server-status-text');
+        
+        if (!statusDot || !statusText) return;
+        
+        try {
+            // Test connection
+            const response = await fetch(`http://${this.serverConfig.ip}:${this.serverConfig.port}/control?cmd=status`, {
+                method: 'GET',
+                mode: 'cors',
+                headers: { 'Accept': 'application/json' },
+                signal: AbortSignal.timeout(3000)
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                statusDot.style.background = '#28a745'; // Green
+                statusText.textContent = `Server: Online (${this.serverConfig.ip})`;
+                
+                // Update floating controls visibility
+                this.updateFloatingControls();
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            statusDot.style.background = '#dc3545'; // Red
+            statusText.textContent = `Server: Offline (${this.serverConfig.ip})`;
+            
+            // Hide floating controls
+            this.updateFloatingControls();
+        }
+    }
+    
+    parseAndUpdateUrl(url) {
+        try {
+            // Clean the URL
+            let cleanUrl = url.trim();
+            
+            // Add http:// if not present
+            if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+                cleanUrl = 'http://' + cleanUrl;
+            }
+            
+            // Parse URL
+            const urlObj = new URL(cleanUrl);
+            
+            // Update server config
+            this.serverConfig.ip = urlObj.hostname;
+            this.serverConfig.port = urlObj.port || '80';
+            
+            console.log('[BoulderControlPanel] Parsed URL:', {
+                original: url,
+                clean: cleanUrl,
+                ip: this.serverConfig.ip,
+                port: this.serverConfig.port
+            });
+            
+        } catch (error) {
+            console.error('[BoulderControlPanel] Failed to parse URL:', error);
+            // Try simple IP:port parsing as fallback
+            const parts = url.split(':');
+            if (parts.length >= 1) {
+                this.serverConfig.ip = parts[0].replace(/^https?:\/\//, '');
+                this.serverConfig.port = parts[1] || '80';
+            }
+        }
+    }
+    
+    async applyQuickUrl() {
+        try {
+            const newUrl = this.getQuickUrlValue();
+            console.log('[BoulderControlPanel] Applying quick URL globally:', newUrl);
+            
+            // Parse and update local config
+            this.parseAndUpdateUrl(newUrl);
+            
+            // Apply to main app RemoteDataHandler if it exists
+            if (window.app && window.app.remoteHandler) {
+                const cleanUrl = newUrl.startsWith('http') ? newUrl : `http://${newUrl}`;
+                window.app.remoteHandler.setRemoteUrl(cleanUrl);
+                console.log('[BoulderControlPanel] Updated main app RemoteDataHandler URL to:', cleanUrl);
+            }
+            
+            // Apply to global RemoteDataHandler if it exists
+            if (window.remoteDataHandler) {
+                const cleanUrl = newUrl.startsWith('http') ? newUrl : `http://${newUrl}`;
+                window.remoteDataHandler.remoteUrl = cleanUrl;
+                console.log('[BoulderControlPanel] Updated global RemoteDataHandler URL to:', cleanUrl);
+            }
+            
+            // Apply to BoulderVisualizer RemoteDataHandler if it exists
+            if (window.boulderVisualizer && window.boulderVisualizer.remoteDataHandler) {
+                const cleanUrl = newUrl.startsWith('http') ? newUrl : `http://${newUrl}`;
+                window.boulderVisualizer.remoteDataHandler.remoteUrl = cleanUrl;
+                console.log('[BoulderControlPanel] Updated BoulderVisualizer URL to:', cleanUrl);
+            }
+            
+            // Apply to DataVizIntegration if it exists
+            if (window.dataVizIntegration && window.dataVizIntegration.remoteDataHandler) {
+                const cleanUrl = newUrl.startsWith('http') ? newUrl : `http://${newUrl}`;
+                window.dataVizIntegration.remoteDataHandler.remoteUrl = cleanUrl;
+                console.log('[BoulderControlPanel] Updated DataVizIntegration URL to:', cleanUrl);
+            }
+            
+            // Update server status indicator
+            this.updateServerStatusIndicator();
+            
+            // Test connection
+            await this.testConnection();
+            
+            this.showServerStatus('✅ URL applied globally and connection tested', 'success');
+            
+        } catch (error) {
+            console.error('[BoulderControlPanel] Failed to apply URL globally:', error);
+            this.showServerStatus('❌ Failed to apply URL: ' + error.message, 'error');
+        }
+    }
+    
+    getQuickUrlValue() {
+        // Try to get the current value from the GUI input
+        const controllers = this.gui.__controllers;
+        for (let controller of controllers) {
+            if (controller.property === 'quickUrl') {
+                return controller.getValue();
+            }
+        }
+        return `http://${this.serverConfig.ip}:${this.serverConfig.port}`;
+    }
+    
+    async testConnection() {
+        try {
+            const response = await fetch(`http://${this.serverConfig.ip}:${this.serverConfig.port}/control?cmd=status`, {
+                method: 'GET',
+                mode: 'cors',
+                headers: { 'Accept': 'application/json' },
+                signal: AbortSignal.timeout(3000)
+            });
+            
+            if (response.ok) {
+                console.log('[BoulderControlPanel] Connection test successful');
+                return true;
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            console.warn('[BoulderControlPanel] Connection test failed:', error);
+            throw new Error(`Connection test failed: ${error.message}`);
+        }
+    }
+    
+    // WiFi preset methods
+    async setQuickUrl(url) {
+        try {
+            console.log(`[BoulderControlPanel] Setting quick URL to: ${url}`);
+            
+            // Update the GUI input field
+            const controllers = this.gui.__controllers;
+            for (let controller of controllers) {
+                if (controller.property === 'quickUrl') {
+                    controller.setValue(url);
+                    break;
+                }
+            }
+            
+            // Parse and apply immediately
+            this.parseAndUpdateUrl(url);
+            await this.applyQuickUrl();
+            
+        } catch (error) {
+            console.error('[BoulderControlPanel] Failed to set quick URL:', error);
+            this.showServerStatus('❌ Failed to set URL: ' + error.message, 'error');
+        }
+    }
+    
+    async promptCustomUrl() {
+        const customUrl = prompt('Enter custom server URL:\n\nExamples:\n• http://192.168.1.100\n• 10.0.0.50:8080\n• 172.16.1.35', 'http://192.168.1.36');
+        
+        if (customUrl && customUrl.trim()) {
+            await this.setQuickUrl(customUrl.trim());
+        }
+    }
+    
+    updateServerConfigDisplay() {
+        // Force update all GUI controllers to show new values
+        this.gui.updateDisplay();
+        
+        // Update server status indicator if it exists
+        if (document.getElementById('server-status-indicator')) {
+            this.updateServerStatusIndicator();
+        }
+        
+        // Update floating controls visibility
+        this.updateFloatingControls();
+    }
+    
+    updateFloatingControls() {
+        const floatingControls = document.getElementById('floating-server-controls');
+        if (!floatingControls) return;
+        
+        const statusDot = document.getElementById('server-status-dot');
+        const isServerOnline = statusDot && statusDot.style.background === 'rgb(40, 167, 69)'; // Green
+        
+        if (isServerOnline) {
+            floatingControls.style.opacity = '1';
+            floatingControls.style.pointerEvents = 'auto';
+        } else {
+            floatingControls.style.opacity = '0';
+            floatingControls.style.pointerEvents = 'none';
         }
     }
 } 

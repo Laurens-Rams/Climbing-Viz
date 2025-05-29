@@ -236,6 +236,31 @@ If you encounter any issues or have questions:
 2. Search existing GitHub issues
 3. Create a new issue with detailed description
 
+## Live Data Recording
+
+The application supports real-time data streaming from Phyphox mobile app:
+
+1. **Setup**: Ensure your phone and computer are on the same WiFi network
+2. **Connect**: Open Phyphox → Acceleration (without g) → Allow remote access
+3. **Configure**: Update the IP address in the remote handler if needed
+4. **Record**: Click "Remote: OFF" to start live data collection
+
+### Performance Optimization
+
+The live data system uses intelligent throttling to maintain smooth performance:
+
+- **Data Collection**: Polls sensor data every 200ms for responsiveness
+- **Visual Updates**: Updates visualizations every 1-3 seconds (configurable)
+- **Status Updates**: Updates counters and status displays in real-time
+
+You can adjust the visual update rate using the dropdown in the recording controls:
+- **0.5s**: Very responsive, higher CPU usage
+- **1s**: Balanced (default)
+- **2s**: Conservative, lower CPU usage  
+- **3s**: Minimal updates, lowest CPU usage
+
+This separation ensures all data is captured while keeping the interface responsive during long recording sessions.
+
 ---
 
 Happy climbing and visualizing! 🧗‍♂️📊 
