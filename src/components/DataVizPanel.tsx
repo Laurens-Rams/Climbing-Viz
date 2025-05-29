@@ -382,11 +382,11 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
   if (!isVisible) return null
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-gray-800 text-cyan-400 overflow-hidden z-10 pt-16">
-      <div className="h-full p-4 flex flex-col">
+    <div className="fixed top-16 inset-x-0 bottom-0 bg-gradient-to-br from-gray-900 via-blue-900 to-gray-800 text-cyan-400 overflow-y-auto z-10">
+      <div className="p-6 flex flex-col">
         
-        {/* Top Controls - 50/50 Split with Equal Height */}
-        <div className="grid grid-cols-2 gap-4 h-44 mb-4">
+        {/* Top Controls - 50/50 Split with Equal Height - ADDED mb-4 */}
+        <div className="grid grid-cols-2 gap-4 mb-4">
           
           {/* Left: Data Selection & Key Stats */}
           <div className="bg-black/70 border border-cyan-400 rounded-lg p-4">
@@ -500,64 +500,67 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
           </div>
         </div>
 
-        {/* Main Plot - Flex Grow */}
-        <div className="bg-black/70 border border-cyan-400 rounded-lg p-4 flex-1 mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <BarChart className="w-5 h-5 text-cyan-400" />
-            <h3 className="text-lg font-bold text-cyan-400">
-              {visualizationMode === 'standard' && 'Acceleration Time Series'}
-              {visualizationMode === 'moves' && 'Move Detection Analysis'}
-              {visualizationMode === 'histogram' && 'Acceleration Distribution'}
-            </h3>
+        {/* NEW: Statistics View Module (Plot + Full Stats Table) */}
+        <div className="flex flex-col space-y-4">
+          {/* Main Plot Area */}
+          <div className="bg-black/70 border border-cyan-400 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <BarChart className="w-5 h-5 text-cyan-400" />
+              <h3 className="text-lg font-bold text-cyan-400">
+                {visualizationMode === 'standard' && 'Acceleration Time Series'}
+                {visualizationMode === 'moves' && 'Move Detection Analysis'}
+                {visualizationMode === 'histogram' && 'Acceleration Distribution'}
+              </h3>
+            </div>
+            <div 
+              ref={plotRef}
+              className="w-full h-[500px] bg-gray-900 border border-gray-700 rounded flex items-center justify-center"
+            >
+              {currentDisplayBoulder?.csvData ? (
+                <canvas
+                  className="w-full h-full bg-gray-900 rounded"
+                  style={{ maxWidth: '100%', maxHeight: '100%' }}
+                />
+              ) : (
+                <div className="text-gray-500 text-center">
+                  <BarChart className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                  <p className="text-lg">Select a boulder to begin analysis</p>
+                </div>
+              )}
+            </div>
           </div>
-          <div 
-            ref={plotRef}
-            className="w-full h-full bg-gray-900 border border-gray-700 rounded flex items-center justify-center"
-          >
-            {currentDisplayBoulder?.csvData ? (
-              <canvas
-                className="w-full h-full bg-gray-900 rounded"
-                style={{ maxWidth: '100%', maxHeight: '100%' }}
-              />
-            ) : (
-              <div className="text-gray-500 text-center">
-                <BarChart className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <p className="text-lg">Select a boulder to begin analysis</p>
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* Full Width Statistics at Bottom */}
-        <div className="bg-black/70 border border-cyan-400 rounded-lg p-3 h-20">
-          <h3 className="text-sm font-bold text-cyan-400 mb-1">📈 Complete Data Overview</h3>
-          <div className="grid grid-cols-5 gap-3 h-full">
-            
-            <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
-              <div className="text-lg font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
-              <div className="text-xs text-gray-400">Max (m/s²)</div>
+          {/* Full Width Statistics at Bottom - Now correctly part of the Statistics View module */}
+          <div className="bg-black/70 border border-cyan-400 rounded-lg p-3 h-20">
+            <h3 className="text-sm font-bold text-cyan-400 mb-1">📈 Complete Data Overview</h3>
+            <div className="grid grid-cols-5 gap-3 h-full">
+              
+              <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+                <div className="text-lg font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
+                <div className="text-xs text-gray-400">Max (m/s²)</div>
+              </div>
+              
+              <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+                <div className="text-lg font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
+                <div className="text-xs text-gray-400">Avg (m/s²)</div>
+              </div>
+              
+              <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+                <div className="text-lg font-bold text-blue-400">{stats.moveCount}</div>
+                <div className="text-xs text-gray-400">Moves</div>
+              </div>
+              
+              <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+                <div className="text-lg font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
+                <div className="text-xs text-gray-400">Duration</div>
+              </div>
+              
+              <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
+                <div className="text-lg font-bold text-purple-400">{stats.sampleCount.toLocaleString()}</div>
+                <div className="text-xs text-gray-400">Data Points</div>
+              </div>
+              
             </div>
-            
-            <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
-              <div className="text-lg font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
-              <div className="text-xs text-gray-400">Avg (m/s²)</div>
-            </div>
-            
-            <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
-              <div className="text-lg font-bold text-blue-400">{stats.moveCount}</div>
-              <div className="text-xs text-gray-400">Moves</div>
-            </div>
-            
-            <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
-              <div className="text-lg font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
-              <div className="text-xs text-gray-400">Duration</div>
-            </div>
-            
-            <div className="text-center p-2 bg-gray-800/50 rounded-lg border border-gray-700 flex flex-col justify-center">
-              <div className="text-lg font-bold text-purple-400">{stats.sampleCount.toLocaleString()}</div>
-              <div className="text-xs text-gray-400">Data Points</div>
-            </div>
-            
           </div>
         </div>
       </div>
