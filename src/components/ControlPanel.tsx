@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react'
 import * as Select from '@radix-ui/react-select'
 import { ChevronDownIcon, PlayIcon, Square, RefreshCwIcon, SettingsIcon, PlusIcon, SearchIcon } from 'lucide-react'
 import type { BoulderData } from '../utils/csvLoader'
-import ElasticSlider from './ui/ElasticSlider'
-import GlassIcons from './ui/GlassIcons'
+import ElasticSlider from "'./ElasticSlider'"
+import GlassIcons from './GlassIcons'
 
 interface ControlPanelProps {
   onSettingsChange: (settings: any) => void
