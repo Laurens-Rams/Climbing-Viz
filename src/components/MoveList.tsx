@@ -35,11 +35,11 @@ function MoveItem({ move, index, onUpdate, onDelete }: MoveItemProps) {
   }
 
   return (
-    <div className="group bg-[#141a1f] border border-transparent hover:border-[#3d4d5c] rounded-lg transition-all duration-200">
+    <div className="bg-black/70 border border-cyan-400/40 rounded-xl p-6 group hover:border-cyan-400/60 transition-all duration-200 backdrop-blur-sm">
       {/* Move Header */}
-      <div className="flex items-center gap-4 px-4 min-h-[72px] py-2 justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-[#9daebe] text-sm font-normal">Move {index + 1}</span>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center space-x-4">
+          <span className="text-gray-400 text-sm font-medium">Move {index + 1}</span>
           <div className="flex flex-col justify-center flex-1">
             {isEditing ? (
               <input
@@ -48,53 +48,51 @@ function MoveItem({ move, index, onUpdate, onDelete }: MoveItemProps) {
                 onChange={(e) => setEditName(e.target.value)}
                 onBlur={handleNameSubmit}
                 onKeyDown={handleKeyPress}
-                className="text-white text-base font-medium bg-transparent border-b border-[#3d4d5c] focus:border-[#dce8f3] outline-none"
+                className="bg-black/50 border border-cyan-400/40 rounded-lg px-3 py-2 text-white text-base font-medium focus:border-cyan-400 focus:outline-none backdrop-blur-sm"
                 autoFocus
               />
             ) : (
               <button
                 onClick={() => setIsEditing(true)}
-                className="text-white text-base font-medium leading-normal line-clamp-1 text-left hover:text-[#dce8f3] transition-colors"
+                className="text-white text-base font-medium leading-normal text-left hover:text-cyan-400 transition-colors"
               >
                 {move.name}
               </button>
             )}
           </div>
         </div>
-        <div className="shrink-0">
-          <button
-            onClick={onDelete}
-            className="text-white hover:text-red-400 transition-colors flex size-7 items-center justify-center opacity-0 group-hover:opacity-100"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" fill="currentColor" viewBox="0 0 256 256">
-              <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
-            </svg>
-          </button>
-        </div>
+        <button
+          onClick={onDelete}
+          className="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-all text-sm font-medium opacity-0 group-hover:opacity-100"
+          title="Delete move"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" fill="currentColor" viewBox="0 0 256 256">
+            <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
+          </svg>
+        </button>
       </div>
 
       {/* Power Slider */}
-      <div className="px-4 pb-4">
-        <div className="flex w-full flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="flex w-full shrink-[3] items-center justify-between">
-            <p className="text-white text-base font-medium leading-normal">Power</p>
-            <p className="text-white text-sm font-normal leading-normal sm:hidden">{move.power}</p>
-          </div>
-          <div className="flex h-4 w-full items-center gap-4">
-            <Slider.Root
-              value={[move.power]}
-              onValueChange={(value) => onUpdate({ power: value[0] })}
-              max={100}
-              step={1}
-              className="relative flex h-1 w-full touch-none select-none items-center"
-            >
-              <Slider.Track className="relative h-1 w-full grow overflow-hidden rounded-full bg-[#3d4d5c]">
-                <Slider.Range className="absolute h-full bg-[#dce8f3]" />
-              </Slider.Track>
-              <Slider.Thumb className="block h-4 w-4 rounded-full bg-[#dce8f3] shadow-lg hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#dce8f3] focus:ring-offset-2 focus:ring-offset-[#141a1f] transition-colors" />
-            </Slider.Root>
-            <p className="text-white text-sm font-normal leading-normal hidden sm:block min-w-[2rem] text-right">{move.power}</p>
-          </div>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-white text-base font-medium">Power</p>
+          <span className="text-cyan-400 text-sm font-medium bg-cyan-400/10 px-3 py-1 rounded-lg border border-cyan-400/40">
+            {move.power}
+          </span>
+        </div>
+        <div className="flex items-center space-x-4">
+          <Slider.Root
+            value={[move.power]}
+            onValueChange={(value) => onUpdate({ power: value[0] })}
+            max={100}
+            step={1}
+            className="relative flex h-2 w-full touch-none select-none items-center"
+          >
+            <Slider.Track className="relative h-2 w-full grow overflow-hidden rounded-full bg-black/50 border border-cyan-400/40">
+              <Slider.Range className="absolute h-full bg-gradient-to-r from-cyan-400 to-cyan-300 rounded-full" />
+            </Slider.Track>
+            <Slider.Thumb className="block h-5 w-5 rounded-full bg-cyan-400 shadow-lg hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-black transition-colors border-2 border-white/20" />
+          </Slider.Root>
         </div>
       </div>
     </div>
@@ -103,7 +101,7 @@ function MoveItem({ move, index, onUpdate, onDelete }: MoveItemProps) {
 
 export function MoveList({ moves, onAddMove, onUpdateMove, onDeleteMove }: MoveListProps) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-6">
       {moves.map((move, index) => (
         <MoveItem
           key={move.id}
@@ -117,15 +115,15 @@ export function MoveList({ moves, onAddMove, onUpdateMove, onDeleteMove }: MoveL
       {/* Add New Move Button */}
       <button
         onClick={onAddMove}
-        className="flex items-center gap-4 bg-[#141a1f] hover:bg-[#1f2937] border border-dashed border-[#3d4d5c] hover:border-[#dce8f3] rounded-lg px-4 min-h-[72px] py-2 justify-between w-full transition-all duration-200 group"
+        className="w-full bg-black/50 hover:bg-black/70 border border-dashed border-cyan-400/40 hover:border-cyan-400/60 rounded-xl p-6 transition-all duration-200 group backdrop-blur-sm"
       >
-        <div className="flex flex-col justify-center">
-          <p className="text-white text-base font-medium leading-normal line-clamp-1">Add a new move</p>
-          <p className="text-[#9daebe] text-sm font-normal leading-normal line-clamp-2">Click to add move {moves.length + 1}</p>
-        </div>
-        <div className="shrink-0">
-          <div className="text-white group-hover:text-[#dce8f3] transition-colors flex size-7 items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" fill="currentColor" viewBox="0 0 256 256">
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col items-start">
+            <p className="text-white text-base font-medium">Add a new move</p>
+            <p className="text-gray-400 text-sm">Click to add move {moves.length + 1}</p>
+          </div>
+          <div className="px-4 py-2 bg-cyan-400/20 hover:bg-cyan-400/30 text-cyan-400 rounded-lg transition-all group-hover:bg-cyan-400/30">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20px" height="20px" fill="currentColor" viewBox="0 0 256 256">
               <path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z" />
             </svg>
           </div>

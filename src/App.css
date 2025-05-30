@@ -3,7 +3,7 @@
 /* Global app styles */
 .app {
   min-height: 100vh;
-  background-color: #000000;
+  background: transparent; /* Let the body gradient show through */
 }
 
 /* Ensure full height layout */
@@ -18,20 +18,22 @@ canvas {
   outline: none;
 }
 
-/* Scrollbar styling for dark theme */
+/* Scrollbar styling for dark theme with glassy effect */
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1f1f1f;
+  background: rgba(31, 31, 31, 0.3);
+  backdrop-filter: blur(4px);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #444;
+  background: rgba(26, 222, 186, 0.3);
   border-radius: 4px;
+  backdrop-filter: blur(4px);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: rgba(26, 222, 186, 0.5);
 } 

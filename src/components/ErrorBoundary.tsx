@@ -33,26 +33,28 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       }
 
       return (
-        <div className="bg-red-900/20 border border-red-400 rounded-lg p-4 m-4">
-          <div className="text-red-400 font-bold mb-2">⚠️ Component Error</div>
-          <div className="text-red-300 text-sm mb-2">
+        <div className="glass-card border-red-500/30 bg-red-900/20 m-6">
+          <div className="text-red-400 font-bold mb-4 text-lg">⚠️ Component Error</div>
+          <div className="text-red-300 text-sm mb-4">
             Something went wrong with this component. This might be due to:
           </div>
-          <ul className="text-red-300 text-xs list-disc list-inside mb-3">
+          <ul className="text-red-300 text-sm list-disc list-inside mb-6 space-y-1">
             <li>Rapid data updates causing DOM conflicts</li>
             <li>WebGL context issues</li>
             <li>Memory constraints</li>
           </ul>
           <button 
             onClick={() => this.setState({ hasError: false, error: undefined, errorInfo: undefined })}
-            className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-500"
+            className="glass-btn glass-btn--danger"
           >
             Try Again
           </button>
           {process.env.NODE_ENV === 'development' && this.state.error && (
-            <details className="mt-3">
-              <summary className="text-red-400 text-xs cursor-pointer">Error Details (Dev)</summary>
-              <pre className="text-red-300 text-xs mt-2 overflow-auto">
+            <details className="mt-6">
+              <summary className="text-red-400 text-sm cursor-pointer hover:text-red-300 transition-colors">
+                Error Details (Dev)
+              </summary>
+              <pre className="text-red-300 text-xs mt-3 overflow-auto glass-card bg-red-950/30 p-4">
                 {this.state.error.toString()}
               </pre>
             </details>

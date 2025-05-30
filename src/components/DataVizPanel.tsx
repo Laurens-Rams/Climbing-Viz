@@ -382,70 +382,73 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
   if (!isVisible) return null
 
   return (
-    <div className="fixed top-16 inset-x-0 bottom-0 bg-gradient-to-br from-black via-blue-900/20 to-black text-cyan-400 overflow-y-auto z-10">
-      <div className="p-6 flex flex-col">
-        
-        {/* Top Controls - 50/50 Split with Equal Height */}
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          
-          {/* Left: Data Selection & Key Stats */}
-          <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-4 backdrop-blur-sm">
-            <h3 className="text-lg font-bold text-cyan-400 mb-3">📊 Data Controls</h3>
-            
-            {/* Boulder Name Display */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-cyan-400 mb-2">Selected Boulder:</label>
-              <div className="w-full px-4 py-2.5 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 backdrop-blur-sm">
-                {isLoading ? "Loading..." : currentDisplayBoulder ? currentDisplayBoulder.name : "None selected"}
-                {currentDisplayBoulder && ` (${currentDisplayBoulder.stats.sampleCount} pts)`}
-              </div>
+    <div className={`fixed top-6 left-6 z-40 transition-all duration-300 ${!isVisible ? '-translate-x-full opacity-0' : ''}`}>
+      <div className="w-[900px] max-h-[calc(100vh-3rem)] overflow-y-auto">
+        {/* Header */}
+        <div className="glass-panel mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-lg">
+              <BarChart className="w-6 h-6 text-accent" />
+              <h2 className="text-2xl font-bold text-white">Data Analysis</h2>
             </div>
+            <div className="text-sm text-muted">
+              Boulder ID: {currentDisplayBoulder?.id || 'None'}
+              {currentDisplayBoulder && ` (${currentDisplayBoulder.stats.sampleCount} pts)`}
+            </div>
+          </div>
+        </div>
 
+        {/* Top Controls Row */}
+        <div className="grid grid-cols-2 gap-xl mb-8">
+          {/* Left: Key Stats */}
+          <div className="glass-panel">
+            <h3 className="text-xl font-bold text-white mb-6">📊 Key Statistics</h3>
+            
             {/* Key Stats Grid - 2x2 */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
-                <div className="text-lg font-bold text-blue-400">{stats.moveCount}</div>
-                <div className="text-sm text-gray-400">Moves</div>
+            <div className="grid grid-cols-2 gap-lg">
+              <div className="glass-card text-center">
+                <div className="text-2xl font-bold text-blue-400">{stats.moveCount}</div>
+                <div className="text-sm text-muted">Moves</div>
               </div>
-              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
-                <div className="text-lg font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
-                <div className="text-sm text-gray-400">Duration</div>
+              <div className="glass-card text-center">
+                <div className="text-2xl font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
+                <div className="text-sm text-muted">Duration</div>
               </div>
-              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
-                <div className="text-lg font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
-                <div className="text-sm text-gray-400">Max (m/s²)</div>
+              <div className="glass-card text-center">
+                <div className="text-2xl font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
+                <div className="text-sm text-muted">Max (m/s²)</div>
               </div>
-              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
-                <div className="text-lg font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
-                <div className="text-sm text-gray-400">Avg (m/s²)</div>
+              <div className="glass-card text-center">
+                <div className="text-2xl font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
+                <div className="text-sm text-muted">Avg (m/s²)</div>
               </div>
             </div>
           </div>
 
           {/* Right: Analysis Controls */}
-          <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-4 backdrop-blur-sm">
-            <h3 className="text-lg font-bold text-cyan-400 mb-3">🎯 Analysis Settings</h3>
+          <div className="glass-panel">
+            <h3 className="text-xl font-bold text-white mb-6">🎯 Analysis Settings</h3>
             
             {/* Visualization Mode */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-cyan-400 mb-2">Visualization:</label>
+            <div className="space-y-lg mb-6">
+              <label className="text-sm font-medium text-white">Visualization:</label>
               <Select.Root value={visualizationMode} onValueChange={setVisualizationMode}>
-                <Select.Trigger className="w-full px-4 py-2.5 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none backdrop-blur-sm">
+                <Select.Trigger className="glass-select w-full flex items-center justify-between">
                   <Select.Value />
                   <Select.Icon>
                     <ChevronDownIcon className="w-4 h-4" />
                   </Select.Icon>
                 </Select.Trigger>
                 <Select.Portal>
-                  <Select.Content className="bg-black/90 border border-cyan-400/40 rounded-xl shadow-lg z-[99999] backdrop-blur-sm">
-                    <Select.Viewport className="p-2">
-                      <Select.Item value="standard" className="px-4 py-2.5 text-gray-200 hover:bg-cyan-400/20 hover:text-cyan-400 rounded-lg cursor-pointer">
+                  <Select.Content className="glass-panel border-2 border-glass-border-hover z-50">
+                    <Select.Viewport className="space-y-1">
+                      <Select.Item value="standard" className="glass-btn glass-btn--secondary w-full text-left cursor-pointer hover:glass-btn--primary">
                         <Select.ItemText>Time Series</Select.ItemText>
                       </Select.Item>
-                      <Select.Item value="moves" className="px-4 py-2.5 text-gray-200 hover:bg-cyan-400/20 hover:text-cyan-400 rounded-lg cursor-pointer">
+                      <Select.Item value="moves" className="glass-btn glass-btn--secondary w-full text-left cursor-pointer hover:glass-btn--primary">
                         <Select.ItemText>Move Detection</Select.ItemText>
                       </Select.Item>
-                      <Select.Item value="histogram" className="px-4 py-2.5 text-gray-200 hover:bg-cyan-400/20 hover:text-cyan-400 rounded-lg cursor-pointer">
+                      <Select.Item value="histogram" className="glass-btn glass-btn--secondary w-full text-left cursor-pointer hover:glass-btn--primary">
                         <Select.ItemText>Distribution</Select.ItemText>
                       </Select.Item>
                     </Select.Viewport>
@@ -455,10 +458,13 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
             </div>
             
             {/* Threshold */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-cyan-400 mb-2">
-                Move Threshold: {currentThreshold.toFixed(1)} m/s²
-              </label>
+            <div className="space-y-lg mb-6">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-medium text-white">Move Threshold</label>
+                <span className="text-accent text-sm font-medium glass-card px-3 py-1 rounded-lg">
+                  {currentThreshold.toFixed(1)} m/s²
+                </span>
+              </div>
               <ElasticSlider
                 defaultValue={currentThreshold}
                 startingValue={8}
@@ -471,10 +477,13 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
             </div>
 
             {/* Time Range */}
-            <div>
-              <label className="block text-sm font-medium text-cyan-400 mb-2">
-                Time Range: {timeRange === 100 ? 'All' : `${timeRange}%`}
-              </label>
+            <div className="space-y-lg">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-medium text-white">Time Range</label>
+                <span className="text-accent text-sm font-medium glass-card px-3 py-1 rounded-lg">
+                  {timeRange === 100 ? 'All' : `${timeRange}%`}
+                </span>
+              </div>
               <ElasticSlider
                 defaultValue={timeRange}
                 startingValue={10}
@@ -489,12 +498,12 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
         </div>
 
         {/* Statistics View Module */}
-        <div className="flex flex-col space-y-4">
+        <div className="space-y-xl">
           {/* Main Plot Area */}
-          <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-4 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <BarChart className="w-5 h-5 text-cyan-400" />
-              <h3 className="text-lg font-bold text-cyan-400">
+          <div className="glass-panel">
+            <div className="flex items-center gap-lg mb-6">
+              <BarChart className="w-6 h-6 text-accent" />
+              <h3 className="text-xl font-bold text-white">
                 {visualizationMode === 'standard' && 'Acceleration Time Series'}
                 {visualizationMode === 'moves' && 'Move Detection Analysis'}
                 {visualizationMode === 'histogram' && 'Acceleration Distribution'}
@@ -502,15 +511,15 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
             </div>
             <div 
               ref={plotRef}
-              className="w-full h-[500px] bg-black/50 border border-cyan-400/20 rounded-xl flex items-center justify-center backdrop-blur-sm"
+              className="w-full h-[500px] glass-card flex items-center justify-center"
             >
               {currentDisplayBoulder?.csvData ? (
                 <canvas
-                  className="w-full h-full bg-black/50 rounded-xl"
+                  className="w-full h-full rounded-xl"
                   style={{ maxWidth: '100%', maxHeight: '100%' }}
                 />
               ) : (
-                <div className="text-gray-500 text-center">
+                <div className="text-muted text-center">
                   <BarChart className="w-16 h-16 mx-auto mb-4 opacity-50" />
                   <p className="text-lg">Select a boulder to begin analysis</p>
                 </div>
@@ -519,33 +528,33 @@ export function DataVizPanel({ isVisible, onBoulderDataUpdate, currentBoulderId:
           </div>
 
           {/* Full Width Statistics at Bottom */}
-          <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-4 backdrop-blur-sm">
-            <h3 className="text-sm font-bold text-cyan-400 mb-3">📈 Complete Data Overview</h3>
-            <div className="grid grid-cols-5 gap-3">
+          <div className="glass-panel">
+            <h3 className="text-lg font-bold text-white mb-6">📈 Complete Data Overview</h3>
+            <div className="grid grid-cols-5 gap-lg">
               
-              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
-                <div className="text-lg font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
-                <div className="text-sm text-gray-400">Max (m/s²)</div>
+              <div className="glass-card text-center">
+                <div className="text-2xl font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
+                <div className="text-sm text-muted">Max (m/s²)</div>
               </div>
               
-              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
-                <div className="text-lg font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
-                <div className="text-sm text-gray-400">Avg (m/s²)</div>
+              <div className="glass-card text-center">
+                <div className="text-2xl font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
+                <div className="text-sm text-muted">Avg (m/s²)</div>
               </div>
               
-              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
-                <div className="text-lg font-bold text-blue-400">{stats.moveCount}</div>
-                <div className="text-sm text-gray-400">Moves</div>
+              <div className="glass-card text-center">
+                <div className="text-2xl font-bold text-blue-400">{stats.moveCount}</div>
+                <div className="text-sm text-muted">Moves</div>
               </div>
               
-              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
-                <div className="text-lg font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
-                <div className="text-sm text-gray-400">Duration</div>
+              <div className="glass-card text-center">
+                <div className="text-2xl font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
+                <div className="text-sm text-muted">Duration</div>
               </div>
               
-              <div className="text-center p-3 bg-black/50 rounded-xl border border-cyan-400/20 backdrop-blur-sm">
-                <div className="text-lg font-bold text-purple-400">{stats.sampleCount.toLocaleString()}</div>
-                <div className="text-sm text-gray-400">Data Points</div>
+              <div className="glass-card text-center">
+                <div className="text-2xl font-bold text-purple-400">{stats.sampleCount.toLocaleString()}</div>
+                <div className="text-sm text-muted">Data Points</div>
               </div>
               
             </div>

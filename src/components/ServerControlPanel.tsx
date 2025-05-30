@@ -132,120 +132,109 @@ export function ServerControlPanel({ onModeChange, onServerToggle, onServerComma
   }, [hasAttemptedConnection, servers, showError, isLiveModeActive])
 
   return (
-    <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-40">
+    <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-40">
       {/* Error/Status Display */}
       {errorMessage && (
-        <div className="mb-4 px-4 py-2 bg-red-900/70 border border-red-400 rounded-lg text-red-200 text-sm text-center backdrop-blur-sm">
-          {errorMessage}
+        <div className="mb-6 glass-card border-red-500/30 bg-red-900/20 text-center">
+          <p className="text-red-200 text-sm">{errorMessage}</p>
         </div>
       )}
 
       {/* Main Control Module */}
-      <div className="flex items-center gap-4 px-5 py-3 bg-black/95 border-2 border-cyan-400/40 rounded-2xl backdrop-blur-sm shadow-xl">
-        
-        {/* Mode Switch */}
-        <div className="flex items-center gap-2 pr-4 border-r border-cyan-400/30">
-          <span className="text-cyan-400 text-sm font-bold">Mode:</span>
-          <button
-            onClick={handleModeSwitch}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-w-[70px] ${
-              currentMode === 'frontend'
-                ? 'bg-red-500/80 text-white hover:bg-red-500'
-                : 'bg-green-500/80 text-white hover:bg-green-500'
-            }`}
-          >
-            {currentMode === 'frontend' ? 'Frontend' : 'Backend'}
-          </button>
-        </div>
+      <div className="glass-panel glass-panel--compact">
+        <div className="flex items-center gap-xl">
+          
+          {/* Mode Switch */}
+          <div className="flex items-center gap-lg">
+            <span className="text-accent text-sm font-bold">Mode:</span>
+            <button
+              onClick={handleModeSwitch}
+              className={`glass-toggle ${
+                currentMode === 'frontend'
+                  ? 'glass-toggle--danger'
+                  : 'glass-toggle--success'
+              }`}
+            >
+              {currentMode === 'frontend' ? 'Frontend' : 'Backend'}
+            </button>
+          </div>
 
-        {/* Live Mode Toggle */}
-        <div className="flex items-center gap-2 pr-4 border-r border-cyan-400/30">
-          <span className="text-cyan-400 text-sm font-bold">Live Mode:</span>
-          <button
-            onClick={handleLiveModeToggle}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all min-w-[50px] ${
-              isLiveModeActive
-                ? 'bg-green-500/80 text-white hover:bg-green-500'
-                : 'bg-red-500/80 text-white hover:bg-red-500'
-            }`}
-          >
-            {isLiveModeActive ? 'ON' : 'OFF'}
-          </button>
-        </div>
+          {/* Live Mode Toggle */}
+          <div className="flex items-center gap-lg">
+            <span className="text-accent text-sm font-bold">Live Mode:</span>
+            <button
+              onClick={handleLiveModeToggle}
+              className={`glass-toggle ${
+                isLiveModeActive
+                  ? 'glass-toggle--success'
+                  : 'glass-toggle--danger'
+              }`}
+            >
+              {isLiveModeActive ? 'ON' : 'OFF'}
+            </button>
+          </div>
 
-        {/* Server Selection */}
-        <div className="flex items-center gap-2 pr-4 border-r border-cyan-400/30">
-          <Server className="w-4 h-4 text-cyan-400" />
-          <select
-            value={selectedServer}
-            onChange={(e) => handleServerChange(parseInt(e.target.value))}
-            className="bg-gray-800 text-cyan-400 border border-gray-600 rounded px-2 py-1 text-xs focus:border-cyan-400 focus:outline-none"
-          >
-            {servers.map((server, index) => (
-              <option key={index} value={index} className="bg-gray-800">
-                {server.name}
-              </option>
-            ))}
-          </select>
-        </div>
+          {/* Server Selection */}
+          <div className="flex items-center gap-lg">
+            <Server className="w-4 h-4 text-accent" />
+            <select
+              value={selectedServer}
+              onChange={(e) => handleServerChange(parseInt(e.target.value))}
+              className="glass-select text-xs min-w-[200px]"
+            >
+              {servers.map((server, index) => (
+                <option key={index} value={index} className="bg-gray-800">
+                  {server.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        {/* Playback Controls - only show when connected */}
-        {isLiveModeActive && connectionStatus === 'connected' && (
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => handleServerCommand('start')}
-            className="p-2 bg-green-600/80 hover:bg-green-600 text-white rounded-lg transition-colors"
-            title="Start Recording"
-          >
-            <Play className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => handleServerCommand('stop')}
-            className="p-2 bg-red-600/80 hover:bg-red-600 text-white rounded-lg transition-colors"
-            title="Stop Recording"
-          >
-            <Square className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => handleServerCommand('clear')}
-            className="p-2 bg-yellow-600/80 hover:bg-yellow-600 text-white rounded-lg transition-colors"
-            title="Clear Data"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-        </div>
-        )}
+          {/* Playback Controls - only show when connected */}
+          {isLiveModeActive && connectionStatus === 'connected' && (
+          <div className="flex items-center gap-sm">
+            <button
+              onClick={() => handleServerCommand('start')}
+              className="glass-btn glass-btn--success glass-btn--small"
+              title="Start Recording"
+            >
+              <Play className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleServerCommand('stop')}
+              className="glass-btn glass-btn--danger glass-btn--small"
+              title="Stop Recording"
+            >
+              <Square className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleServerCommand('clear')}
+              className="glass-btn glass-btn--secondary glass-btn--small"
+              title="Clear Data"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+          )}
 
-        {/* Connection Status Indicator */}
-        <div className="flex items-center gap-2 pl-4 border-l border-cyan-400/30">
-          <Circle 
-            className={`w-3 h-3 fill-current ${
-              connectionStatus === 'connected' 
-                ? 'text-green-500' 
-                : connectionStatus === 'checking'
-                ? 'text-yellow-500'
-                : 'text-red-500'
-            }`}
-          />
-          <span className="text-xs text-gray-300">
-            {connectionStatus === 'connected' && `Server: Online (${servers[selectedServer]?.url.replace('http://', '')})`}
-            {connectionStatus === 'checking' && 'Server: Checking...'}
-            {connectionStatus === 'disconnected' && `Server: Offline (${servers[selectedServer]?.url.replace('http://', '')})`}
-          </span>
+          {/* Connection Status Indicator */}
+          <div className="flex items-center gap-sm">
+            <Circle 
+              className={`w-3 h-3 ${
+                connectionStatus === 'connected' 
+                  ? 'text-green-400 fill-current' 
+                  : connectionStatus === 'checking'
+                  ? 'text-yellow-400 fill-current animate-pulse'
+                  : 'text-red-400 fill-current'
+              }`} 
+            />
+            <span className="text-xs text-muted">
+              {connectionStatus === 'connected' ? 'Connected' : 
+               connectionStatus === 'checking' ? 'Connecting...' : 'Disconnected'}
+            </span>
+          </div>
         </div>
       </div>
-
-      {/* Live Data Indicator (when backend mode and connected) */}
-      {currentMode === 'backend' && isLiveModeActive && connectionStatus === 'connected' && (
-        <div className="mt-3 px-4 py-2 bg-red-900/70 border border-red-400 rounded-lg text-center backdrop-blur-sm">
-          <div className="flex items-center justify-center gap-2">
-            <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
-            <span className="text-red-200 font-bold text-sm">🔴 LIVE DATA</span>
-            <Wifi className="w-4 h-4 text-red-400" />
-          </div>
-          <div className="text-red-300 text-xs mt-1">Real-time visualization active</div>
-        </div>
-      )}
     </div>
   )
 } 

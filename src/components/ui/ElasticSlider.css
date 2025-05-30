@@ -3,7 +3,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: var(--space-md);
   width: 100%;
   position: relative;
 }
@@ -15,8 +15,8 @@
   user-select: none;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0;
 }
 
 .slider-root {
@@ -28,7 +28,7 @@
   touch-action: none;
   user-select: none;
   align-items: center;
-  padding: 0.5rem 0;
+  padding: var(--space-md) 0;
 }
 
 .slider-root:active {
@@ -43,39 +43,51 @@
 
 .slider-track {
   position: relative;
-  height: 100%;
+  height: 6px;
   flex-grow: 1;
   overflow: hidden;
   border-radius: 9999px;
-  transition: background-color 0.2s ease;
+  background: var(--glass-bg-secondary);
+  border: 1px solid var(--glass-border);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .slider-range {
   position: absolute;
   height: 100%;
   border-radius: 9999px;
-  transition: background-color 0.2s ease, width 0.1s ease;
+  background: linear-gradient(90deg, var(--color-teal) 0%, var(--color-teal-light) 100%);
+  transition: background 0.2s ease, width 0.1s ease;
+  box-shadow: 0 0 8px rgba(26, 222, 186, 0.3);
 }
 
 .value-indicator {
   position: absolute;
-  transform: translateY(1.5rem);
+  transform: translateY(2rem);
   font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: 0.05em;
+  color: var(--color-accent);
+  background: var(--glass-bg-primary);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(8px);
   transition: color 0.2s ease;
 }
 
 .icon {
   width: 1.25rem;
   height: 1.25rem;
+  color: var(--color-accent);
   transition: color 0.2s ease, transform 0.2s ease;
 }
 
 .icon:hover {
   transform: scale(1.1);
+  color: var(--color-teal-light);
 }
 
 .icon.dark {
-  color: #ddd;
+  color: rgba(255, 255, 255, 0.7);
 }

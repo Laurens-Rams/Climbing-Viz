@@ -42,11 +42,11 @@ export function AddCustomBoulder() {
   }
 
   return (
-    <div className="h-full bg-[#141a1f] overflow-y-auto">
-      <div className="max-w-4xl mx-auto p-6">
+    <div className="h-full overflow-y-auto bg-gradient-to-br from-gray-900 to-black">
+      <div className="max-w-4xl mx-auto p-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-white tracking-light text-[32px] font-bold leading-tight mb-2">
+        <div className="mb-12">
+          <h1 className="text-white tracking-light text-4xl font-bold leading-tight mb-4">
             Add Custom Boulder
           </h1>
           <p className="text-gray-400 text-lg">
@@ -55,18 +55,18 @@ export function AddCustomBoulder() {
         </div>
 
         {/* Grade Selection */}
-        <div className="mb-8">
-          <h3 className="text-white text-lg font-bold leading-tight tracking-[-0.015em] mb-4">Grade</h3>
+        <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-8 mb-8 backdrop-blur-sm">
+          <h3 className="text-cyan-400 text-xl font-bold mb-6">Grade</h3>
           <RadioGroup.Root
             value={selectedGrade}
             onValueChange={setSelectedGrade}
-            className="flex flex-wrap gap-3"
+            className="flex flex-wrap gap-4"
           >
             {grades.map((grade) => (
               <RadioGroup.Item
                 key={grade}
                 value={grade}
-                className="text-sm font-medium leading-normal flex items-center justify-center rounded-xl border border-[#3d4d5c] px-4 h-11 text-white hover:border-[#dce8f3] transition-colors data-[state=checked]:border-[3px] data-[state=checked]:border-[#dce8f3] data-[state=checked]:px-3.5 cursor-pointer"
+                className="px-6 py-3 bg-black/50 hover:bg-cyan-400/20 border border-cyan-400/40 hover:border-cyan-400/60 text-gray-300 hover:text-cyan-400 data-[state=checked]:bg-cyan-400/20 data-[state=checked]:text-cyan-400 data-[state=checked]:border-cyan-400/60 rounded-xl text-sm font-medium cursor-pointer transition-all backdrop-blur-sm"
               >
                 {grade}
               </RadioGroup.Item>
@@ -75,8 +75,8 @@ export function AddCustomBoulder() {
         </div>
 
         {/* Moves Section */}
-        <div className="mb-8">
-          <h3 className="text-white text-lg font-bold leading-tight tracking-[-0.015em] mb-4">Moves</h3>
+        <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-8 mb-8 backdrop-blur-sm">
+          <h3 className="text-cyan-400 text-xl font-bold mb-6">Moves</h3>
           <MoveList
             moves={moves}
             onAddMove={addMove}
@@ -86,13 +86,15 @@ export function AddCustomBoulder() {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end pt-6 border-t border-[#2b3640]">
-          <button
-            onClick={handleSave}
-            className="bg-[#1e64e7] text-white px-6 py-3 rounded-lg font-medium hover:bg-[#1557d1] transition-colors"
-          >
-            Save Boulder
-          </button>
+        <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-8 backdrop-blur-sm">
+          <div className="flex justify-end">
+            <button
+              onClick={handleSave}
+              className="px-8 py-4 bg-green-500/80 hover:bg-green-500 text-white rounded-xl font-medium transition-all shadow-lg hover:shadow-xl"
+            >
+              Save Boulder
+            </button>
+          </div>
         </div>
       </div>
     </div>
