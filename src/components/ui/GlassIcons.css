@@ -1,0 +1,80 @@
+.icon-btns {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem;
+}
+
+.icon-btns.vertical {
+  flex-direction: column;
+}
+
+.icon-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-btn:not(:disabled):hover {
+  transform: translateY(-2px);
+}
+
+.icon-btn__front {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.2s ease;
+}
+
+.icon-btn.active .icon-btn__front {
+  background: rgba(34, 211, 238, 0.2);
+  border-color: rgba(34, 211, 238, 0.4);
+}
+
+.icon-btn:not(:disabled):hover .icon-btn__front {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.icon-btn__icon {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.25rem;
+  transition: color 0.2s ease;
+}
+
+.icon-btn.active .icon-btn__icon {
+  color: rgb(34, 211, 238);
+}
+
+.icon-btn__label {
+  position: absolute;
+  bottom: -1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.icon-btn:hover .icon-btn__label {
+  opacity: 1;
+}
