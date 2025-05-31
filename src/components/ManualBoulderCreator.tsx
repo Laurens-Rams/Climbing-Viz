@@ -28,20 +28,82 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
     { id: '1', name: 'Describe the move', moveType: 0, isCrux: false }
   ])
   
-  // Grade systems
+  // Grade systems data with conversion mappings (from PhyphoxTutorial)
   const gradeSystems = {
-    V: {
-      name: 'V-Scale',
-      grades: ['V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9', 'V10', 'V11', 'V12', 'V13', 'V14', 'V15', 'V16', 'V17']
-    },
-    Font: {
-      name: 'Font',
-      grades: ['3', '4', '4+', '5', '5+', '6A', '6A+', '6B', '6B+', '6C', '6C+', '7A', '7A+', '7B', '7B+', '7C', '7C+', '8A', '8A+', '8B', '8B+', '8C', '8C+']
-    },
-    YDS: {
-      name: 'YDS',
-      grades: ['5.6', '5.7', '5.8', '5.9', '5.10a', '5.10b', '5.10c', '5.10d', '5.11a', '5.11b', '5.11c', '5.11d', '5.12a', '5.12b', '5.12c', '5.12d', '5.13a', '5.13b', '5.13c', '5.13d', '5.14a', '5.14b', '5.14c', '5.14d', '5.15a']
+    V: { name: 'V-Scale', grades: ['VB', 'V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9', 'V10', 'V11', 'V12', 'V13', 'V14', 'V15', 'V16', 'V17'] },
+    Font: { name: 'French', grades: ['3', '4', '4+', '5', '5+', '6A', '6A+', '6B', '6B+', '6C', '6C+', '7A', '7A+', '7B', '7B+', '7C', '7C+', '8A', '8A+', '8B', '8B+', '8C', '8C+', '9A'] },
+    YDS: { name: 'YDS', grades: ['5.6', '5.7', '5.8', '5.9', '5.10a', '5.10b', '5.10c', '5.10d', '5.11a', '5.11b', '5.11c', '5.11d', '5.12a', '5.12b', '5.12c', '5.12d', '5.13a', '5.13b', '5.13c', '5.13d', '5.14a', '5.14b', '5.14c', '5.14d', '5.15a'] }
+  }
+
+  // Grade conversion mapping (from PhyphoxTutorial)
+  const gradeConversions: Record<string, Record<string, string>> = {
+    // V-Scale to others
+    'VB': { Font: '4', YDS: '5.6' },
+    'V0': { Font: '4+', YDS: '5.7' },
+    'V1': { Font: '5+', YDS: '5.8' },
+    'V2': { Font: '6A', YDS: '5.9' },
+    'V3': { Font: '6A+', YDS: '5.10a' },
+    'V4': { Font: '6B+', YDS: '5.10d' },
+    'V5': { Font: '6C+', YDS: '5.11b' },
+    'V6': { Font: '7A', YDS: '5.11d' },
+    'V7': { Font: '7A+', YDS: '5.12a' },
+    'V8': { Font: '7B+', YDS: '5.12c' },
+    'V9': { Font: '7C', YDS: '5.13a' },
+    'V10': { Font: '7C+', YDS: '5.13c' },
+    'V11': { Font: '8A', YDS: '5.14a' },
+    'V12': { Font: '8A+', YDS: '5.14b' },
+    'V13': { Font: '8B', YDS: '5.14c' },
+    'V14': { Font: '8B+', YDS: '5.14d' },
+    'V15': { Font: '8C', YDS: '5.15a' },
+    
+    // French to others
+    '4': { V: 'VB', YDS: '5.6' },
+    '4+': { V: 'V0', YDS: '5.7' },
+    '5+': { V: 'V1', YDS: '5.8' },
+    '6A': { V: 'V2', YDS: '5.9' },
+    '6A+': { V: 'V3', YDS: '5.10a' },
+    '6B+': { V: 'V4', YDS: '5.10d' },
+    '6C+': { V: 'V5', YDS: '5.11b' },
+    '7A': { V: 'V6', YDS: '5.11d' },
+    '7A+': { V: 'V7', YDS: '5.12a' },
+    '7B+': { V: 'V8', YDS: '5.12c' },
+    '7C': { V: 'V9', YDS: '5.13a' },
+    '7C+': { V: 'V10', YDS: '5.13c' },
+    '8A': { V: 'V11', YDS: '5.14a' },
+    '8A+': { V: 'V12', YDS: '5.14b' },
+    '8B': { V: 'V13', YDS: '5.14c' },
+    '8B+': { V: 'V14', YDS: '5.14d' },
+    '8C': { V: 'V15', YDS: '5.15a' },
+    
+    // YDS to others
+    '5.6': { V: 'VB', Font: '4' },
+    '5.7': { V: 'V0', Font: '4+' },
+    '5.8': { V: 'V1', Font: '5+' },
+    '5.9': { V: 'V2', Font: '6A' },
+    '5.10a': { V: 'V3', Font: '6A+' },
+    '5.10d': { V: 'V4', Font: '6B+' },
+    '5.11b': { V: 'V5', Font: '6C+' },
+    '5.11d': { V: 'V6', Font: '7A' },
+    '5.12a': { V: 'V7', Font: '7A+' },
+    '5.12c': { V: 'V8', Font: '7B+' },
+    '5.13a': { V: 'V9', Font: '7C' },
+    '5.13c': { V: 'V10', Font: '7C+' },
+    '5.14a': { V: 'V11', Font: '8A' },
+    '5.14b': { V: 'V12', Font: '8A+' },
+    '5.14c': { V: 'V13', Font: '8B' },
+    '5.14d': { V: 'V14', Font: '8B+' },
+    '5.15a': { V: 'V15', Font: '8C' }
+  }
+
+  const convertGrade = (currentGrade: string, fromSystem: string, toSystem: string): string => {
+    if (!currentGrade || fromSystem === toSystem) return ''
+    
+    const conversion = gradeConversions[currentGrade]
+    if (conversion && conversion[toSystem]) {
+      return conversion[toSystem]
     }
+    
+    return '' // Reset if no conversion found
   }
 
   const addMove = () => {
@@ -85,22 +147,37 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
         isControlPanelVisible ? 'pr-[25rem]' : 'pr-0'
       }`}>
         <div className="w-full max-w-5xl mx-auto p-8 h-full flex flex-col">
-          {/* Header with back button */}
-          <div className="flex items-center mb-6">
-            <button
-              onClick={onBack}
-              className="px-4 py-2 bg-black/50 hover:bg-black/70 text-cyan-400 rounded-lg transition-all text-sm font-medium border border-cyan-400/40 mr-6"
-            >
-              ← Back
-            </button>
-            <div className="flex-1">
-              <h1 className="text-white tracking-light text-3xl font-bold leading-tight">
-                Add Boulder Manually
-              </h1>
-              <p className="text-gray-400 text-base mt-1">
-                Create a custom boulder with moves and difficulty settings
-              </p>
+          {/* Header with back button, title, and save button */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center">
+              <button
+                onClick={onBack}
+                className="px-4 py-2 bg-black/50 hover:bg-black/70 text-cyan-400 rounded-lg transition-all text-sm font-medium border border-cyan-400/40 mr-6"
+              >
+                ← Back
+              </button>
+              <div>
+                <h1 className="text-white tracking-light text-3xl font-bold leading-tight">
+                  Add Boulder Manually
+                </h1>
+                <p className="text-gray-400 text-base mt-1">
+                  Create a custom boulder with moves and difficulty settings
+                </p>
+              </div>
             </div>
+            
+            {/* Save Button - Moved to top right */}
+            <button
+              onClick={saveBoulder}
+              disabled={!canSave}
+              className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                canSave
+                  ? 'bg-green-400/20 text-green-400 hover:bg-green-400/30 border border-green-400/40'
+                  : 'bg-gray-600/20 text-gray-500 cursor-not-allowed border border-gray-600/40'
+              }`}
+            >
+              💾 Save Boulder
+            </button>
           </div>
 
           {/* Boulder Info Fields */}
@@ -160,11 +237,14 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
                       const nextIndex = (currentIndex + 1) % systems.length
                       const nextSystem = systems[nextIndex]
                       
-                      // Update grade system first
-                      setGradeSystem(nextSystem)
+                      // Convert current grade to new system if possible
+                      if (selectedGrade) {
+                        const convertedGrade = convertGrade(selectedGrade, gradeSystem, nextSystem)
+                        setSelectedGrade(convertedGrade)
+                      }
                       
-                      // Clear selected grade when changing system to avoid confusion
-                      setSelectedGrade('')
+                      // Update grade system
+                      setGradeSystem(nextSystem)
                       
                       console.log(`Grade system changed from ${gradeSystem} to ${nextSystem}`)
                     }}
@@ -235,21 +315,6 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
                     onDeleteMove={deleteMove}
                   />
                 </div>
-              </div>
-
-              {/* Save Button */}
-              <div className="mt-6 pt-4 border-t border-cyan-400/20 flex-shrink-0">
-                <button
-                  onClick={saveBoulder}
-                  disabled={!boulderName.trim() || moves.length === 0}
-                  className={`w-full px-6 py-3 rounded-lg font-medium transition-all ${
-                    boulderName.trim() && moves.length > 0
-                      ? 'bg-green-400/20 text-green-400 hover:bg-green-400/30 border border-green-400/40'
-                      : 'bg-gray-600/20 text-gray-500 cursor-not-allowed border border-gray-600/40'
-                  }`}
-                >
-                  💾 Save Boulder to Library
-                </button>
               </div>
             </div>
           </div>
