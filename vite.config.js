@@ -6,12 +6,13 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/Climbing-Viz/' : '/',
   server: {
     port: 3000,
-    open: true
+    open: true,
+    strictPort: true
   },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: true,
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
@@ -23,5 +24,8 @@ export default defineConfig(({ command }) => ({
   },
   optimizeDeps: {
     include: ['three', '@react-three/fiber', '@react-three/drei']
+  },
+  esbuild: {
+    logOverride: { 'this-is-undefined-in-esm': 'silent' }
   }
 })); 
