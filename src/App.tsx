@@ -22,27 +22,27 @@ function App() {
   
   const [visualizerSettings, setVisualizerSettings] = useState({
     // Basics
-    dynamicsMultiplier: 4.9,
-    combinedSize: 1.0,
-    ringCount: 28,
-    ringSpacing: 0.0,
+    dynamicsMultiplier: 3.3,
+    combinedSize: 1.6,
+    ringCount: 59.0,
+    ringSpacing: 0.020,
     
     // Visuals
     opacity: 1.0,
-    centerFade: 1.0,
-    depthEffect: 2.0,
-    organicNoise: 0.02,
+    centerFade: 0.75,
+    depthEffect: 1.2,
+    organicNoise: 0.12,
     moveColor: '#22d3ee', // Default cyan for moves
     cruxColor: '#f59e0b', // Default amber for crux
     
     // Dynamic Effects
-    cruxEmphasis: 8.0,
+    cruxEmphasis: 1.6,
     
     // Animation
     animationEnabled: true,
     rotationSpeed: 0.0,
-    liquidSpeed: 0.5,
-    liquidSize: 1.0,
+    liquidSpeed: 1.85,
+    liquidSize: 3.9,
     
     // Advanced
     curveResolution: 240,
@@ -53,11 +53,11 @@ function App() {
     centerTextSize: 1.0,
     
     // Attempt Visualization - Updated defaults to match current values
-    showAttemptLines: false,
-    attemptCount: 58.0,
-    attemptZHeight: 2.6,
-    attemptWaveEffect: 0.11,
-    maxRadiusScale: 1.35
+    showAttemptLines: true,
+    attemptCount: 71.0,
+    attemptZHeight: 1.5,
+    attemptWaveEffect: 0.06,
+    maxRadiusScale: 1.20
   })
   
   // Centralized boulder data management
