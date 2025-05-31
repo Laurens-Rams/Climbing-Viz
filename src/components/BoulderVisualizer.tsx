@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useBoulderVisualizer } from '../hooks/useBoulderVisualizer'
 import { useCSVData } from '../hooks/useCSVData'
+import { useBoulderConfig } from '../context/BoulderConfigContext'
 import type { BoulderData } from '../utils/csvLoader'
 
 interface BoulderVisualizerProps {
@@ -72,11 +73,11 @@ function convertBoulderDataForHook(boulderData: BoulderData | null) {
   }
 }
 
-function BoulderScene({ boulderData, settings }: { boulderData?: BoulderData | null, settings?: any }) {
+function BoulderScene({ boulderData, settings, threshold }: { boulderData?: BoulderData | null, settings?: any, threshold?: number }) {
   // Memoize the conversion to prevent excessive re-computation
   const convertedData = useMemo(() => {
     return convertBoulderDataForHook(boulderData || null)
-  }, [boulderData?.id, boulderData?.moves?.length]) // Only recalculate if ID or move count changes
+  }, [boulderData?.id, boulderData?.moves?.length, threshold]) // Add threshold to dependencies
   
   // Use the hook within the Canvas context - let it manage its own refs
   const { ringsRef, centerTextRef, attemptLinesRef, moveLinesRef, moveSegmentsRef } = useBoulderVisualizer(convertedData, settings)
@@ -109,6 +110,11 @@ function BoulderScene({ boulderData, settings }: { boulderData?: BoulderData | n
 }
 
 export function BoulderVisualizer({ boulderData, settings, currentBoulderId, boulders, selectedBoulder, isLoading, error, selectBoulder: selectBoulderFromAppProps, isControlPanelVisible }: BoulderVisualizerProps) {
+  const { getThreshold } = useBoulderConfig()
+  
+  // Get current threshold for the selected boulder
+  const currentThreshold = selectedBoulder ? getThreshold(selectedBoulder.id) : 12.0
+  
   // Use effect to react to boulderSelectionChanged events, primarily for logging or side-effects if needed in future.
   // The component will primarily re-render based on prop changes (selectedBoulder, currentBoulderId).
   useEffect(() => {
@@ -151,7 +157,7 @@ export function BoulderVisualizer({ boulderData, settings, currentBoulderId, bou
         style={{ background: '#000000' }}
       >
         <Suspense fallback={null}>
-          <BoulderScene boulderData={effectiveBoulderData} settings={settings} />
+          <BoulderScene boulderData={effectiveBoulderData} settings={settings} threshold={currentThreshold} />
         </Suspense>
       </Canvas>
       

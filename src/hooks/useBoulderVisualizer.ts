@@ -47,8 +47,6 @@ interface VisualizerSettings {
   liquidEffect: boolean;
   organicNoise: number;
   cruxEmphasis: number;
-  moveEmphasis: number;
-  waveComplexity: number;
   depthEffect: number;
   centerFade: number;
   showMoveSegments: boolean;
@@ -60,24 +58,22 @@ interface VisualizerSettings {
   dotSize: number;
   dotOpacity: number;
   combinedSize: number;
+  liquidSize: number;
   showAttempts: boolean;
   attemptOpacity: number;
   attemptWaviness: number;
   attemptFadeStrength: number;
   attemptThickness: number;
-  attemptIntensity: number;
-  maxAttempts: number;
-  attemptRadius: number;
-  moveDetectionThreshold: number;
-  magnitudeThreshold: number;
-  minMoveDuration: number;
-  maxTimeBetweenMoves: number;
-  lineWidth: number;
-  attemptDotZOffsetMax: number;
-  attemptDotZEffectStrength: number;
   animationEnabled: boolean;
   rotationSpeed: number;
   liquidSpeed: number;
+  
+  // New attempt visualization settings
+  showAttemptLines: boolean;
+  attemptCount: number;
+  attemptZHeight: number;
+  attemptWaveEffect: number;
+  maxRadiusScale: number;
 }
 
 interface VisualizerColors {
@@ -97,10 +93,8 @@ const initialSettings: VisualizerSettings = {
     centerTextSize: 1.0,
     showMoveNumbers: true,
     liquidEffect: true,
-    organicNoise: 0.1,
-    cruxEmphasis: 3.0,
-    moveEmphasis: 0.0,
-    waveComplexity: 1.0,
+    organicNoise: 0.02,
+    cruxEmphasis: 8.0,
     depthEffect: 2.0,
     centerFade: 1.0,
     showMoveSegments: false,
@@ -112,24 +106,22 @@ const initialSettings: VisualizerSettings = {
     dotSize: 0.07,
     dotOpacity: 1,
     combinedSize: 1.0,
+    liquidSize: 1.0,
     showAttempts: true,
     attemptOpacity: 0.55,
     attemptWaviness: 0.124,
     attemptFadeStrength: 1.8,
-    attemptThickness: 0.3,
-    attemptIntensity: 0.6,
-    maxAttempts: 65,
-    attemptRadius: 2.55,
-    moveDetectionThreshold: 15.0,
-    magnitudeThreshold: 1.5,
-    minMoveDuration: 0.2,
-    maxTimeBetweenMoves: 1.5,
-    lineWidth: 0.02,
-    attemptDotZOffsetMax: 0.85,
-    attemptDotZEffectStrength: 1.6,
+    attemptThickness: 0.02,
     animationEnabled: true,
     rotationSpeed: 0.0,
-    liquidSpeed: 0.5
+    liquidSpeed: 0.5,
+    
+    // New attempt visualization settings
+    showAttemptLines: false,
+    attemptCount: 12,
+    attemptZHeight: 1.0,
+    attemptWaveEffect: 0.0,
+    maxRadiusScale: 1.0
 };
 
 const initialColors: VisualizerColors = {
@@ -230,6 +222,27 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
     const prevMoveCountRef = useRef<number>(0);
     const prevBuiltSettingsRef = useRef<VisualizerSettings>({ ...initialSettings, ...(userSettings || {}) });
 
+    // Update colors from settings if provided
+    useEffect(() => {
+        if (userSettings?.moveColor || userSettings?.cruxColor) {
+            const colorUpdates: Partial<VisualizerColors> = {};
+            
+            if (userSettings.moveColor) {
+                // Convert hex color to THREE.js color number
+                const moveColor = new THREE.Color(userSettings.moveColor);
+                colorUpdates.normalMove = moveColor.getHex();
+            }
+            
+            if (userSettings.cruxColor) {
+                // Convert hex color to THREE.js color number  
+                const cruxColor = new THREE.Color(userSettings.cruxColor);
+                colorUpdates.cruxMove = cruxColor.getHex();
+            }
+            
+            dispatch({ type: 'UPDATE_COLORS', payload: colorUpdates });
+        }
+    }, [userSettings?.moveColor, userSettings?.cruxColor]);
+
     const clearSceneObjects = useCallback(() => {
         managedObjects.forEach(obj => {
             if (obj.parent) obj.parent.remove(obj);
@@ -318,13 +331,15 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
             radius += dynamicsEffect * Math.pow(ringProgress, 0.6);
 
             if (settings.organicNoise > 0) {
-                 const complexity = settings.waveComplexity;
+                 const complexity = 1.0; // Fixed complexity value since waveComplexity was removed
                  const staticNoiseAngleComponent = normalizedPosition * Math.PI;
+                 // Make the noise waves much smaller and more detailed with extreme frequency
                  const noise = (
-                    Math.sin(staticNoiseAngleComponent * (8 * complexity)) * 0.15 +
-                    Math.sin(staticNoiseAngleComponent * (12 * complexity)) * 0.08 +
-                    Math.sin(staticNoiseAngleComponent * (16 * complexity)) * 0.04
-                ) * dynamicsEffect * Math.pow(ringProgress, 0.6) * settings.organicNoise;
+                    Math.sin(staticNoiseAngleComponent * (200 * complexity)) * 0.005 +
+                    Math.sin(staticNoiseAngleComponent * (400 * complexity)) * 0.003 +
+                    Math.sin(staticNoiseAngleComponent * (800 * complexity)) * 0.002 +
+                    Math.sin(staticNoiseAngleComponent * (1600 * complexity)) * 0.001
+                ) * dynamicsEffect * Math.pow(ringProgress, 0.6) * settings.organicNoise * 10; // Multiply by 10 to make it more extreme
                 radius += noise;
             }
 
@@ -335,24 +350,33 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
                     const cruxPosition = j / moveCount;
                     let distance = Math.abs(normalizedPosition - cruxPosition);
                     distance = Math.min(distance, 1 - distance);
-                    const cruxRange = 0.02;
-                    if (distance < cruxRange) {
-                        const cruxStrength = 1 - (distance / cruxRange);
-                        const moveDyn = (move.dynamics !== undefined && isFinite(move.dynamics)) ? move.dynamics : (move.move_number || 1) / moveCount;
-                        cruxBoost = Math.max(cruxBoost, moveDyn * settings.cruxEmphasis * 0.3 * cruxStrength);
-                    }
+                    
+                    // Smooth exponential falloff instead of hard cutoff
+                    const falloffRate = 15; // Higher = sharper falloff
+                    const cruxStrength = Math.exp(-distance * falloffRate);
+                    
+                    const moveDyn = (move.dynamics !== undefined && isFinite(move.dynamics)) ? move.dynamics : (move.move_number || 1) / moveCount;
+                    cruxBoost = Math.max(cruxBoost, moveDyn * settings.cruxEmphasis * 0.3 * cruxStrength);
                 }
             }
             radius += cruxBoost * ringProgress;
             
-            radius += (Math.sin(normalizedPosition * Math.PI * 20 + ringIndex * 0.5) * 0.05 + Math.cos(normalizedPosition * Math.PI * 15 + ringIndex * 0.3) * 0.03) * dynamicsEffect * Math.pow(ringProgress, 0.6);
-            const boulderSeed = boulderData.id ? boulderData.id * 1000 : 12345;
-            radius += (seededRandom(boulderSeed + ringIndex + i) - 0.5) * 0.02 * dynamicsEffect * Math.pow(ringProgress, 0.6);
+            // Liquid effect with liquidSize controlling wave frequency/length
+            const liquidFrequency = 20 * settings.liquidSize; // liquidSize now controls wave frequency
+            const liquidAmplitude = 0.05;
+            radius += (Math.sin(normalizedPosition * Math.PI * liquidFrequency + ringIndex * 0.5) * liquidAmplitude + Math.cos(normalizedPosition * Math.PI * (liquidFrequency * 0.75) + ringIndex * 0.3) * (liquidAmplitude * 0.6)) * dynamicsEffect * Math.pow(ringProgress, 0.6);
 
             const x = Math.cos(angle) * radius;
             const y = Math.sin(angle) * radius;
-            const depthOffset = Math.sin(normalizedPosition * Math.PI * 2) * settings.depthEffect * ringProgress;
-            const z = depthOffset;
+            
+            // Improved 3D depth effect with multiple layers and better distribution
+            const primaryDepth = Math.sin(normalizedPosition * Math.PI * 2) * settings.depthEffect * ringProgress;
+            const secondaryDepth = Math.sin(normalizedPosition * Math.PI * 4 + ringIndex * 0.3) * settings.depthEffect * 0.3 * ringProgress;
+            const tertiaryDepth = Math.cos(normalizedPosition * Math.PI * 6 + ringIndex * 0.7) * settings.depthEffect * 0.15 * ringProgress;
+            // Add dynamics-based depth variation
+            const dynamicsDepth = (dynamics - 0.5) * settings.depthEffect * 0.4 * ringProgress;
+            
+            const z = primaryDepth + secondaryDepth + tertiaryDepth + dynamicsDepth;
 
             if (isFinite(x) && isFinite(y) && isFinite(z)) {
                 points.push(new THREE.Vector3(x, y, z));
@@ -404,6 +428,93 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
         }
     }, [boulderData, settings.ringCount, createSingleRing, managedObjects]);
 
+    const createAttemptLines = useCallback(() => {
+        if (!boulderData || !settings.showAttemptLines) return;
+        
+        const centerRadius = settings.baseRadius * settings.combinedSize;
+        const maxRadius = (settings.baseRadius * settings.combinedSize + (settings.ringCount * settings.ringSpacing) + 8) * settings.maxRadiusScale;
+        
+        for (let i = 0; i < settings.attemptCount; i++) {
+            // Calculate base angle with equal spacing
+            const baseAngle = (i / settings.attemptCount) * Math.PI * 2;
+            
+            // Add random distribution to the angle
+            const randomOffset = (seededRandom(i * 123.456) - 0.5) * settings.attemptWaveEffect * Math.PI * 2;
+            const angle = baseAngle + randomOffset;
+            
+            // Generate random end radius (some complete, some fail at different points)
+            const completionRate = seededRandom(i * 789.123);
+            const endRadius = centerRadius + (maxRadius - centerRadius) * (0.2 + completionRate * 0.8);
+            
+            // Calculate Z height based on line length (shorter lines = higher Z)
+            const lineLength = endRadius - centerRadius;
+            const maxLineLength = maxRadius - centerRadius;
+            const lengthRatio = 1 - (lineLength / maxLineLength); // Inverted: shorter = higher ratio
+            const zHeight = lengthRatio * settings.attemptZHeight * 2;
+            
+            // Create line points
+            const points = [];
+            const segments = 20; // Number of segments for wave effect
+            
+            for (let j = 0; j <= segments; j++) {
+                const t = j / segments;
+                const currentRadius = centerRadius + (endRadius - centerRadius) * t;
+                
+                // Apply wave effect
+                let waveOffset = 0;
+                if (settings.attemptWaveEffect > 0) {
+                    waveOffset = Math.sin(t * Math.PI * 4 + i * 0.5) * settings.attemptWaveEffect * 0.5;
+                }
+                
+                const x = Math.cos(angle + waveOffset) * currentRadius;
+                const y = Math.sin(angle + waveOffset) * currentRadius;
+                const z = zHeight * t; // Z increases along the line
+                
+                points.push(new THREE.Vector3(x, y, z));
+            }
+            
+            // Create line geometry
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            
+            // Create gradient colors for stroke fade (outside 100% opacity, inside 0% opacity)
+            const colors = [];
+            for (let j = 0; j <= segments; j++) {
+                const t = j / segments;
+                const opacity = t; // 0 at center, 1 at outside
+                const color = new THREE.Color(0x00ffff);
+                colors.push(color.r * opacity, color.g * opacity, color.b * opacity);
+            }
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            
+            // Create line material
+            const material = new THREE.LineBasicMaterial({ 
+                vertexColors: true, 
+                transparent: true, 
+                opacity: 0.7,
+                linewidth: 2
+            });
+            
+            const line = new THREE.Line(geometry, material);
+            attemptLinesRef.current.add(line);
+            managedObjects.push(line);
+            
+            // Add dot at the end of the line
+            const dotGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+            const dotMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x00ffff, 
+                transparent: true, 
+                opacity: 0.8 
+            });
+            const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+            
+            const lastPoint = points[points.length - 1];
+            dot.position.set(lastPoint.x, lastPoint.y, lastPoint.z);
+            
+            attemptLinesRef.current.add(dot);
+            managedObjects.push(dot);
+        }
+    }, [boulderData, settings, managedObjects]);
+
     const createVisualization = useCallback(() => {
         if (!boulderData) return;
         clearSceneObjects();
@@ -423,7 +534,8 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
             managedObjects.push(centerTextRef.current);
         }
         createLiquidRings();
-    }, [boulderData, scene, clearSceneObjects, createCenterText, createLiquidRings, colors, managedObjects]);
+        createAttemptLines();
+    }, [boulderData, scene, clearSceneObjects, createCenterText, createLiquidRings, colors, managedObjects, createAttemptLines]);
 
     useEffect(() => {
         const newEffectiveSettings = { ...initialSettings, ...(userSettings || {}) };
@@ -452,9 +564,9 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
         
         // Define which settings require full recreation vs just material updates
         const structuralChangeKeys: (keyof VisualizerSettings)[] = [
-            'ringCount', 'baseRadius', 'ringSpacing', 'curveResolution', 'combinedSize',
-            'dynamicsMultiplier', 'organicNoise', 'depthEffect', 'cruxEmphasis', 'moveEmphasis',
-            'centerTextSize'
+            'ringCount', 'baseRadius', 'ringSpacing', 'curveResolution', 'combinedSize', 'liquidSize',
+            'dynamicsMultiplier', 'organicNoise', 'depthEffect', 'cruxEmphasis', 'centerTextSize',
+            'showAttemptLines', 'attemptCount', 'attemptZHeight', 'attemptWaveEffect', 'maxRadiusScale'
         ];
 
         const materialChangeKeys: (keyof VisualizerSettings)[] = [
@@ -596,11 +708,11 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
 
                         let currentRadius = baseRadiusForPoint;
                         
-                        const dynamicWave = Math.sin(angle * settings.waveComplexity * 5 + waveTime * 2) *
+                        const dynamicWave = Math.sin(angle * 1.0 * 5 + waveTime * 2) *
                                        settings.organicNoise * ringProgress * 0.5;
                         currentRadius += dynamicWave;
                         
-                        const dynamicZOffset = Math.sin(angle * settings.waveComplexity * 2 + waveTime) *
+                        const dynamicZOffset = Math.sin(angle * 1.0 * 2 + waveTime) *
                                           settings.depthEffect * ringProgress * 0.5;
 
                         positions[i * 3] = Math.cos(angle) * currentRadius;

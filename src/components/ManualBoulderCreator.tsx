@@ -7,6 +7,8 @@ export interface Move {
   name: string
   moveType: number // -100 to 100: -100 = fully static, 0 = neutral, 100 = fully dynamic
   isCrux: boolean
+  color?: string // Color for regular moves
+  cruxColor?: string // Color for crux moves
 }
 
 interface ManualBoulderCreatorProps {
@@ -156,8 +158,15 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
                       const systems: ('V' | 'Font' | 'YDS')[] = ['V', 'Font', 'YDS']
                       const currentIndex = systems.indexOf(gradeSystem)
                       const nextIndex = (currentIndex + 1) % systems.length
-                      setGradeSystem(systems[nextIndex])
-                      setSelectedGrade('') // Reset grade when changing system
+                      const nextSystem = systems[nextIndex]
+                      
+                      // Update grade system first
+                      setGradeSystem(nextSystem)
+                      
+                      // Clear selected grade when changing system to avoid confusion
+                      setSelectedGrade('')
+                      
+                      console.log(`Grade system changed from ${gradeSystem} to ${nextSystem}`)
                     }}
                     className="px-3 py-2 bg-cyan-400/20 border border-cyan-400/40 text-cyan-400 rounded-lg hover:bg-cyan-400/30 transition-all text-sm font-medium whitespace-nowrap"
                     title="Switch grade system"
@@ -207,26 +216,29 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 bg-black/70 border border-cyan-400/40 rounded-2xl backdrop-blur-sm overflow-hidden">
-            <div className="h-full p-6 flex flex-col">
+          <div className="flex-1 bg-black/70 border border-cyan-400/40 rounded-2xl backdrop-blur-sm flex flex-col min-h-0">
+            <div className="flex-1 p-6 flex flex-col min-h-0">
               
               {/* Moves Section */}
               <div className="flex-1 flex flex-col min-h-0">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4 flex-shrink-0">
                   <h3 className="text-lg font-semibold text-cyan-400">Boulder Moves</h3>
                   <span className="text-sm text-gray-400">{moves.length} moves</span>
                 </div>
                 
-                <MoveList
-                  moves={moves}
-                  onAddMove={addMove}
-                  onUpdateMove={updateMove}
-                  onDeleteMove={deleteMove}
-                />
+                {/* Fixed height container for moves list with scrolling */}
+                <div className="h-80 overflow-hidden">
+                  <MoveList
+                    moves={moves}
+                    onAddMove={addMove}
+                    onUpdateMove={updateMove}
+                    onDeleteMove={deleteMove}
+                  />
+                </div>
               </div>
 
               {/* Save Button */}
-              <div className="mt-6 pt-4 border-t border-cyan-400/20">
+              <div className="mt-6 pt-4 border-t border-cyan-400/20 flex-shrink-0">
                 <button
                   onClick={saveBoulder}
                   disabled={!boulderName.trim() || moves.length === 0}

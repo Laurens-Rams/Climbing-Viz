@@ -31,25 +31,33 @@ function App() {
     opacity: 1.0,
     centerFade: 1.0,
     depthEffect: 2.0,
-    organicNoise: 0.1,
+    organicNoise: 0.02,
+    moveColor: '#22d3ee', // Default cyan for moves
+    cruxColor: '#f59e0b', // Default amber for crux
     
     // Dynamic Effects
-    cruxEmphasis: 3.0,
-    moveEmphasis: 0.0,
-    waveComplexity: 1.0,
+    cruxEmphasis: 8.0,
     
     // Animation
     animationEnabled: true,
     rotationSpeed: 0.0,
     liquidSpeed: 0.5,
+    liquidSize: 1.0,
     
     // Advanced
     curveResolution: 240,
-    baseRadius: 2.5,
+    baseRadius: 1.0,
     liquidEffect: true,
     
     // Text Display
-    centerTextSize: 1.0
+    centerTextSize: 1.0,
+    
+    // Attempt Visualization - Updated defaults to match current values
+    showAttemptLines: false,
+    attemptCount: 58.0,
+    attemptZHeight: 2.6,
+    attemptWaveEffect: 0.11,
+    maxRadiusScale: 1.35
   })
   
   // Centralized boulder data management

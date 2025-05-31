@@ -33,11 +33,82 @@ export function PhyphoxTutorial({
   const [numberOfMoves, setNumberOfMoves] = useState('')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
 
-  // Grade systems data
+  // Grade systems data with conversion mappings
   const gradeSystems = {
     V: { name: 'V-Scale', grades: ['VB', 'V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9', 'V10', 'V11', 'V12', 'V13', 'V14', 'V15', 'V16', 'V17'] },
     Font: { name: 'French', grades: ['3', '4', '4+', '5', '5+', '6A', '6A+', '6B', '6B+', '6C', '6C+', '7A', '7A+', '7B', '7B+', '7C', '7C+', '8A', '8A+', '8B', '8B+', '8C', '8C+', '9A'] },
     YDS: { name: 'YDS', grades: ['5.6', '5.7', '5.8', '5.9', '5.10a', '5.10b', '5.10c', '5.10d', '5.11a', '5.11b', '5.11c', '5.11d', '5.12a', '5.12b', '5.12c', '5.12d', '5.13a', '5.13b', '5.13c', '5.13d', '5.14a', '5.14b', '5.14c', '5.14d', '5.15a'] }
+  }
+
+  // Grade conversion mapping (approximate conversions)
+  const gradeConversions: Record<string, Record<string, string>> = {
+    // V-Scale to others
+    'VB': { Font: '4', YDS: '5.6' },
+    'V0': { Font: '4+', YDS: '5.7' },
+    'V1': { Font: '5+', YDS: '5.8' },
+    'V2': { Font: '6A', YDS: '5.9' },
+    'V3': { Font: '6A+', YDS: '5.10a' },
+    'V4': { Font: '6B+', YDS: '5.10d' },
+    'V5': { Font: '6C+', YDS: '5.11b' },
+    'V6': { Font: '7A', YDS: '5.11d' },
+    'V7': { Font: '7A+', YDS: '5.12a' },
+    'V8': { Font: '7B+', YDS: '5.12c' },
+    'V9': { Font: '7C', YDS: '5.13a' },
+    'V10': { Font: '7C+', YDS: '5.13c' },
+    'V11': { Font: '8A', YDS: '5.14a' },
+    'V12': { Font: '8A+', YDS: '5.14b' },
+    'V13': { Font: '8B', YDS: '5.14c' },
+    'V14': { Font: '8B+', YDS: '5.14d' },
+    'V15': { Font: '8C', YDS: '5.15a' },
+    
+    // French to others
+    '4': { V: 'VB', YDS: '5.6' },
+    '4+': { V: 'V0', YDS: '5.7' },
+    '5+': { V: 'V1', YDS: '5.8' },
+    '6A': { V: 'V2', YDS: '5.9' },
+    '6A+': { V: 'V3', YDS: '5.10a' },
+    '6B+': { V: 'V4', YDS: '5.10d' },
+    '6C+': { V: 'V5', YDS: '5.11b' },
+    '7A': { V: 'V6', YDS: '5.11d' },
+    '7A+': { V: 'V7', YDS: '5.12a' },
+    '7B+': { V: 'V8', YDS: '5.12c' },
+    '7C': { V: 'V9', YDS: '5.13a' },
+    '7C+': { V: 'V10', YDS: '5.13c' },
+    '8A': { V: 'V11', YDS: '5.14a' },
+    '8A+': { V: 'V12', YDS: '5.14b' },
+    '8B': { V: 'V13', YDS: '5.14c' },
+    '8B+': { V: 'V14', YDS: '5.14d' },
+    '8C': { V: 'V15', YDS: '5.15a' },
+    
+    // YDS to others
+    '5.6': { V: 'VB', Font: '4' },
+    '5.7': { V: 'V0', Font: '4+' },
+    '5.8': { V: 'V1', Font: '5+' },
+    '5.9': { V: 'V2', Font: '6A' },
+    '5.10a': { V: 'V3', Font: '6A+' },
+    '5.10d': { V: 'V4', Font: '6B+' },
+    '5.11b': { V: 'V5', Font: '6C+' },
+    '5.11d': { V: 'V6', Font: '7A' },
+    '5.12a': { V: 'V7', Font: '7A+' },
+    '5.12c': { V: 'V8', Font: '7B+' },
+    '5.13a': { V: 'V9', Font: '7C' },
+    '5.13c': { V: 'V10', Font: '7C+' },
+    '5.14a': { V: 'V11', Font: '8A' },
+    '5.14b': { V: 'V12', Font: '8A+' },
+    '5.14c': { V: 'V13', Font: '8B' },
+    '5.14d': { V: 'V14', Font: '8B+' },
+    '5.15a': { V: 'V15', Font: '8C' }
+  }
+
+  const convertGrade = (currentGrade: string, fromSystem: string, toSystem: string): string => {
+    if (!currentGrade || fromSystem === toSystem) return ''
+    
+    const conversion = gradeConversions[currentGrade]
+    if (conversion && conversion[toSystem]) {
+      return conversion[toSystem]
+    }
+    
+    return '' // Reset if no conversion found
   }
 
   const handleConnectToServer = async () => {
@@ -432,7 +503,7 @@ export function PhyphoxTutorial({
                     value={boulderName}
                     onChange={(e) => setBoulderName(e.target.value)}
                     placeholder="Enter boulder name"
-                    className="w-4/5 px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none overflow-hidden text-ellipsis whitespace-nowrap"
+                    className="w-full px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none overflow-hidden text-ellipsis whitespace-nowrap"
                     required
                   />
                 </div>
@@ -473,8 +544,13 @@ export function PhyphoxTutorial({
                         const systems: ('V' | 'Font' | 'YDS')[] = ['V', 'Font', 'YDS']
                         const currentIndex = systems.indexOf(gradeSystem)
                         const nextIndex = (currentIndex + 1) % systems.length
-                        setGradeSystem(systems[nextIndex])
-                        setGrade('') // Reset grade when changing system
+                        const newSystem = systems[nextIndex]
+                        
+                        // Convert current grade to new system if possible
+                        const convertedGrade = convertGrade(grade, gradeSystem, newSystem)
+                        
+                        setGradeSystem(newSystem)
+                        setGrade(convertedGrade) // Use converted grade or empty string
                       }}
                       className="px-3 py-2 bg-cyan-400/20 border border-cyan-400/40 text-cyan-400 rounded-lg hover:bg-cyan-400/30 transition-all text-sm font-medium whitespace-nowrap"
                       title="Switch grade system"

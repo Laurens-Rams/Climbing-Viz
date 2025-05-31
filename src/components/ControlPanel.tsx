@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { RefreshCwIcon, SettingsIcon, WifiIcon, WifiOffIcon } from 'lucide-react'
 import type { BoulderData } from '../utils/csvLoader'
 import { useBoulderConfig } from '../context/BoulderConfigContext'
@@ -107,21 +107,25 @@ export function ControlPanel({
   const [currentFolder, setCurrentFolder] = useState<string | null>('selection')
   const [isLiveModeActive, setIsLiveModeActive] = useState(false)
   const [selectedServer, setSelectedServer] = useState(0)
+  const [serverUrl, setServerUrl] = useState('http://192.168.1.36')
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('disconnected')
-  const [manuallyClosed, setManuallyClosed] = useState(false)
+  
+  // Scroll position ref to maintain scroll position
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [scrollPosition, setScrollPosition] = useState(0)
   
   const { getThreshold, setThreshold } = useBoulderConfig()
   
-  // Only auto-hide when switching to add-boulder, but respect manual state for visualizer
+  // Only auto-hide when switching to add-boulder
   useEffect(() => {
     if (currentView === 'add-boulder') {
       setIsVisible(false)
       onVisibilityChange(false)
-    } else if (currentView === 'visualizer' && !manuallyClosed) {
+    } else if (currentView === 'visualizer') {
       setIsVisible(true)
       onVisibilityChange(true)
     }
-  }, [currentView, manuallyClosed, onVisibilityChange])
+  }, [currentView, onVisibilityChange])
   
   // Notify parent of initial visibility state
   useEffect(() => {
@@ -131,6 +135,7 @@ export function ControlPanel({
   // Settings state
   const [settings, setSettings] = useState({
     // Basics
+    baseRadius: 1.0,
     dynamicsMultiplier: 4.9,
     combinedSize: 1.0,
     ringCount: 28,
@@ -140,25 +145,32 @@ export function ControlPanel({
     opacity: 1.0,
     centerFade: 1.0,
     depthEffect: 2.0,
-    organicNoise: 0.1,
+    organicNoise: 0.02,
+    moveColor: '#22d3ee', // Default cyan for moves
+    cruxColor: '#f59e0b', // Default amber for crux
     
     // Dynamic Effects
-    cruxEmphasis: 3.0,
-    moveEmphasis: 0.0,
-    waveComplexity: 1.0,
+    cruxEmphasis: 8.0,
     
     // Animation
     animationEnabled: true,
     rotationSpeed: 0.0,
     liquidSpeed: 0.5,
+    liquidSize: 1.0,
     
     // Advanced
     curveResolution: 240,
-    baseRadius: 2.5,
     liquidEffect: true,
     
     // Move Detection
-    centerTextSize: 1.0
+    centerTextSize: 1.0,
+    
+    // Attempt Visualization - Updated to match App.tsx defaults
+    showAttemptLines: false,
+    attemptCount: 58.0,
+    attemptZHeight: 2.6,
+    attemptWaveEffect: 0.11,
+    maxRadiusScale: 1.35
   })
 
   const servers: ServerOption[] = [
@@ -192,11 +204,23 @@ export function ControlPanel({
     };
   }, [selectedBoulder, currentThreshold]);
 
-  const updateSetting = useCallback((key: string, value: number | boolean) => {
+  const updateSetting = useCallback((key: string, value: number | boolean | string) => {
+    // Save scroll position before update
+    if (scrollContainerRef.current) {
+      setScrollPosition(scrollContainerRef.current.scrollTop)
+    }
+    
     const newSettings = { ...settings, [key]: value }
     setSettings(newSettings)
     onSettingsChange(newSettings)
   }, [settings, onSettingsChange])
+
+  // Restore scroll position after updates
+  useEffect(() => {
+    if (scrollContainerRef.current && scrollPosition > 0) {
+      scrollContainerRef.current.scrollTop = scrollPosition
+    }
+  }, [settings, scrollPosition])
 
   const handleBoulderSelect = useCallback((boulderId: string) => {
     if (boulderId) {
@@ -256,7 +280,6 @@ export function ControlPanel({
       setConnectionStatus('checking')
       
       try {
-        const serverUrl = servers[selectedServer].url
         await testConnection(serverUrl)
         
         setIsLiveModeActive(true)
@@ -273,7 +296,7 @@ export function ControlPanel({
       setConnectionStatus('disconnected')
       onServerToggle(false)
     }
-  }, [isLiveModeActive, selectedServer, servers, testConnection, onServerToggle])
+  }, [isLiveModeActive, serverUrl, testConnection, onServerToggle])
 
   const folders = [
     {
@@ -287,6 +310,7 @@ export function ControlPanel({
       name: '⚙️ Basics',
       icon: '⚙️',
       controls: [
+        { key: 'baseRadius', name: 'Overall Radius', min: 0.1, max: 2.0, step: 0.05 },
         { key: 'dynamicsMultiplier', name: 'Dynamics Effect', min: 0.5, max: 15.0, step: 0.1 },
         { key: 'combinedSize', name: 'Overall Size', min: 0.5, max: 5.0, step: 0.1 },
         { key: 'ringCount', name: 'Ring Count', min: 10, max: 150, step: 1 },
@@ -300,8 +324,12 @@ export function ControlPanel({
       controls: [
         { key: 'opacity', name: 'Line Opacity', min: 0.1, max: 1.0, step: 0.05 },
         { key: 'centerFade', name: 'Center Fade', min: 0.0, max: 1.0, step: 0.05 },
-        { key: 'depthEffect', name: '3D Depth Effect', min: 0.0, max: 2.0, step: 0.1 },
-        { key: 'organicNoise', name: 'Organic Noise', min: 0.0, max: 0.1, step: 0.005 }
+        { key: 'depthEffect', name: '3D Depth Effect', min: 0.0, max: 8.0, step: 0.1 },
+        { key: 'organicNoise', name: 'Organic Noise', min: 0.0, max: 2.0, step: 0.01 }
+      ],
+      colorControls: [
+        { key: 'moveColor', name: 'Move Color' },
+        { key: 'cruxColor', name: 'Crux Color' }
       ]
     },
     {
@@ -309,9 +337,7 @@ export function ControlPanel({
       name: '🌊 Dynamic Effects',
       icon: '🌊',
       controls: [
-        { key: 'cruxEmphasis', name: 'Crux Emphasis', min: 0.5, max: 3.0, step: 0.1 },
-        { key: 'moveEmphasis', name: 'Move Emphasis', min: 0.0, max: 2.0, step: 0.1 },
-        { key: 'waveComplexity', name: 'Wave Complexity', min: 0.5, max: 2.0, step: 0.1 }
+        { key: 'cruxEmphasis', name: 'Crux Emphasis', min: 0.5, max: 50.0, step: 0.1 }
       ]
     },
     {
@@ -320,20 +346,27 @@ export function ControlPanel({
       icon: '🔄',
       controls: [
         { key: 'rotationSpeed', name: 'Rotation Speed', min: 0.0, max: 2.0, step: 0.1 },
-        { key: 'liquidSpeed', name: 'Liquid Speed', min: 0.0, max: 1.0, step: 0.05 }
+        { key: 'liquidSpeed', name: 'Animation Speed', min: 0.0, max: 10.0, step: 0.05 },
+        { key: 'liquidSize', name: 'Liquid Size', min: 0.1, max: 5.0, step: 0.1 }
+      ]
+    },
+    {
+      id: 'attempts',
+      name: '🎯 Attempts',
+      icon: '🎯',
+      controls: [
+        { key: 'attemptCount', name: 'Attempt Count', min: 0, max: 200, step: 1 },
+        { key: 'attemptZHeight', name: 'Z-Height Effect', min: 0.0, max: 3.0, step: 0.1 },
+        { key: 'attemptWaveEffect', name: 'Wave Effect', min: 0.0, max: 1.0, step: 0.01 },
+        { key: 'maxRadiusScale', name: 'Overall Radius', min: 0.5, max: 3.0, step: 0.05 }
       ]
     }
   ]
 
   const ControlSlider = ({ control }: { control: any }) => {
-    const [localSliderValue, setLocalSliderValue] = useState<number>(Number(settings[control.key as keyof typeof settings]));
-
-    useEffect(() => {
-      setLocalSliderValue(Number(settings[control.key as keyof typeof settings]));
-    }, [settings[control.key as keyof typeof settings], control.key]);
+    const currentValue = Number(settings[control.key as keyof typeof settings]);
 
     const handleValueChange = (value: number) => {
-      setLocalSliderValue(value);
       updateSetting(control.key, value);
     };
 
@@ -342,11 +375,12 @@ export function ControlPanel({
         <div className="flex justify-between items-center mb-3">
           <label className="text-sm font-medium text-cyan-400">{control.name}</label>
           <span className="text-xs text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded-lg border border-cyan-400/40">
-            {localSliderValue.toFixed(control.step < 0.01 ? 3 : control.step < 0.1 ? 2 : 1)}
+            {currentValue.toFixed(control.step < 0.01 ? 3 : control.step < 0.1 ? 2 : 1)}
           </span>
         </div>
         <ElasticSlider
-          defaultValue={localSliderValue}
+          key={`${control.key}-${currentValue}`}
+          defaultValue={currentValue}
           startingValue={control.min}
           maxValue={control.max}
           isStepped={control.step > 0}
@@ -354,6 +388,67 @@ export function ControlPanel({
           className="w-full"
           onChange={handleValueChange}
         />
+      </div>
+    );
+  };
+
+  const ColorPicker = ({ control }: { control: { key: string; name: string } }) => {
+    const currentColor = settings[control.key as keyof typeof settings] as string;
+
+    const handleColorChange = (color: string) => {
+      updateSetting(control.key, color);
+    };
+
+    const predefinedColors = [
+      '#22d3ee', // Cyan
+      '#f59e0b', // Amber
+      '#ef4444', // Red
+      '#10b981', // Emerald
+      '#8b5cf6', // Violet
+      '#f97316', // Orange
+      '#06b6d4', // Sky
+      '#84cc16', // Lime
+      '#ec4899', // Pink
+      '#6366f1', // Indigo
+      '#14b8a6', // Teal
+      '#f59e0b', // Yellow
+    ];
+
+    return (
+      <div className="mb-6">
+        <div className="flex justify-between items-center mb-3">
+          <label className="text-sm font-medium text-cyan-400">{control.name}</label>
+          <div 
+            className="w-8 h-6 rounded border border-cyan-400/40"
+            style={{ backgroundColor: currentColor }}
+          />
+        </div>
+        
+        {/* Color Input */}
+        <div className="mb-3">
+          <input
+            type="color"
+            value={currentColor}
+            onChange={(e) => handleColorChange(e.target.value)}
+            className="w-full h-10 rounded-lg border border-cyan-400/40 bg-black/50 cursor-pointer"
+          />
+        </div>
+        
+        {/* Predefined Colors */}
+        <div className="grid grid-cols-6 gap-2">
+          {predefinedColors.map((color) => (
+            <button
+              key={color}
+              onClick={() => handleColorChange(color)}
+              className={`w-8 h-8 rounded border-2 transition-all ${
+                currentColor === color 
+                  ? 'border-cyan-400 scale-110' 
+                  : 'border-gray-600 hover:border-cyan-400/60'
+              }`}
+              style={{ backgroundColor: color }}
+            />
+          ))}
+        </div>
       </div>
     );
   };
@@ -366,16 +461,6 @@ export function ControlPanel({
           const newVisibility = !isVisible
           setIsVisible(newVisibility)
           onVisibilityChange(newVisibility)
-          
-          // Track manual state: if closing in visualizer mode, mark as manually closed
-          // If opening, reset the manually closed state
-          if (currentView === 'visualizer') {
-            if (newVisibility) {
-              setManuallyClosed(false) // User opened it, reset manual state
-            } else {
-              setManuallyClosed(true) // User closed it manually
-            }
-          }
         }}
         className="absolute -left-14 top-6 bg-black/70 hover:bg-black/90 text-cyan-400 p-3 rounded-l-xl border border-cyan-400/40 border-r-0 transition-all backdrop-blur-sm"
       >
@@ -486,7 +571,7 @@ export function ControlPanel({
         </div>
 
         {/* Control content - scrollable */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6">
           {currentFolder === 'selection' && (
             <div className="space-y-6">
               {/* Statistics - Current Raw Data */}
@@ -569,17 +654,13 @@ export function ControlPanel({
                 {!isLiveModeActive && (
                   <div>
                     <label className="block text-sm font-medium text-cyan-400 mb-3">Server</label>
-                    <select
-                      value={selectedServer}
-                      onChange={(e) => setSelectedServer(parseInt(e.target.value))}
+                    <input
+                      type="text"
+                      value={serverUrl}
+                      onChange={(e) => setServerUrl(e.target.value)}
+                      placeholder="http://192.168.1.36"
                       className="w-full px-4 py-3 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none text-sm backdrop-blur-sm transition-all"
-                    >
-                      {servers.map((server, index) => (
-                        <option key={index} value={index} className="bg-gray-800">
-                          {server.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
                 )}
               </div>
@@ -587,9 +668,56 @@ export function ControlPanel({
           )}
 
           {/* Settings Folders */}
-          {folders.find(f => f.id === currentFolder)?.controls.map((control) => (
-            <ControlSlider key={control.key} control={control} />
-          ))}
+          {currentFolder === 'attempts' && (
+            <div className="space-y-6">
+              {/* Attempts Toggle */}
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-cyan-400">Show Attempt Lines</label>
+                <button
+                  onClick={() => {
+                    const newValue = !settings.showAttemptLines
+                    setSettings(prev => ({ ...prev, showAttemptLines: newValue }))
+                    onSettingsChange({ showAttemptLines: newValue })
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    settings.showAttemptLines ? 'bg-cyan-400' : 'bg-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      settings.showAttemptLines ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              
+              {/* Attempt Controls - only show when enabled */}
+              {settings.showAttemptLines && (
+                <div className="space-y-4">
+                  {folders.find(f => f.id === 'attempts')?.controls.map((control) => (
+                    <ControlSlider key={control.key} control={control} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Other Settings Folders */}
+          {currentFolder && currentFolder !== 'selection' && currentFolder !== 'attempts' && (
+            <div className="space-y-4">
+              {/* Regular Controls */}
+              {folders.find(f => f.id === currentFolder)?.controls.map((control) => (
+                <ControlSlider key={control.key} control={control} />
+              ))}
+              
+              {/* Color Controls (only for visuals tab) */}
+              {currentFolder === 'visuals' && 
+                folders.find(f => f.id === 'visuals')?.colorControls?.map((control) => (
+                  <ColorPicker key={control.key} control={control} />
+                ))
+              }
+            </div>
+          )}
         </div>
       </div>
     </div>
