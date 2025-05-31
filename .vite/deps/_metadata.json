@@ -1,0 +1,106 @@
+{
+  "hash": "e4318562",
+  "configHash": "e09005f2",
+  "lockfileHash": "d509832a",
+  "browserHash": "eeb86d22",
+  "optimized": {
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "0dcf5521",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "4ff8df2a",
+      "needsInterop": true
+    },
+    "@chakra-ui/react": {
+      "src": "../../node_modules/@chakra-ui/react/dist/esm/index.js",
+      "file": "@chakra-ui_react.js",
+      "fileHash": "3e3448ee",
+      "needsInterop": false
+    },
+    "@react-three/fiber": {
+      "src": "../../node_modules/@react-three/fiber/dist/react-three-fiber.esm.js",
+      "file": "@react-three_fiber.js",
+      "fileHash": "27daed46",
+      "needsInterop": false
+    },
+    "@react-three/drei": {
+      "src": "../../node_modules/@react-three/drei/index.js",
+      "file": "@react-three_drei.js",
+      "fileHash": "e18593b7",
+      "needsInterop": false
+    },
+    "lucide-react": {
+      "src": "../../node_modules/lucide-react/dist/esm/lucide-react.js",
+      "file": "lucide-react.js",
+      "fileHash": "b4de9756",
+      "needsInterop": false
+    },
+    "three": {
+      "src": "../../node_modules/three/build/three.module.js",
+      "file": "three.js",
+      "fileHash": "71856967",
+      "needsInterop": false
+    },
+    "three/examples/jsm/loaders/FontLoader.js": {
+      "src": "../../node_modules/three/examples/jsm/loaders/FontLoader.js",
+      "file": "three_examples_jsm_loaders_FontLoader__js.js",
+      "fileHash": "b55b4b44",
+      "needsInterop": false
+    },
+    "three/examples/jsm/geometries/TextGeometry.js": {
+      "src": "../../node_modules/three/examples/jsm/geometries/TextGeometry.js",
+      "file": "three_examples_jsm_geometries_TextGeometry__js.js",
+      "fileHash": "7cea1a1d",
+      "needsInterop": false
+    },
+    "framer-motion": {
+      "src": "../../node_modules/framer-motion/dist/es/index.mjs",
+      "file": "framer-motion.js",
+      "fileHash": "797833bb",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "hls-WQNMNVUJ": {
+      "file": "hls-WQNMNVUJ.js"
+    },
+    "vision_bundle-WCDRDSFH": {
+      "file": "vision_bundle-WCDRDSFH.js"
+    },
+    "chunk-2E6KOAY2": {
+      "file": "chunk-2E6KOAY2.js"
+    },
+    "chunk-IOPKX3SS": {
+      "file": "chunk-IOPKX3SS.js"
+    },
+    "chunk-CIW2JBMH": {
+      "file": "chunk-CIW2JBMH.js"
+    },
+    "chunk-37D2POBM": {
+      "file": "chunk-37D2POBM.js"
+    },
+    "chunk-YNDS2U4Y": {
+      "file": "chunk-YNDS2U4Y.js"
+    },
+    "chunk-4YDHSTW5": {
+      "file": "chunk-4YDHSTW5.js"
+    },
+    "chunk-32NEGIXE": {
+      "file": "chunk-32NEGIXE.js"
+    },
+    "chunk-65KY755N": {
+      "file": "chunk-65KY755N.js"
+    },
+    "chunk-YBQFZCMK": {
+      "file": "chunk-YBQFZCMK.js"
+    },
+    "chunk-V4OQ3NZ2": {
+      "file": "chunk-V4OQ3NZ2.js"
+    }
+  }
+}
