@@ -331,7 +331,7 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
                 </div>
                 {/* Moves List - scrolls to bottom, no border below */}
                 <div
-                  className="flex-1 overflow-y-auto space-y-3 pr-2 min-h-0 bg-black/70"
+                  className="flex-1 overflow-y-auto space-y-3 pr-2 min-h-0"
                   style={movesListHeight ? { height: movesListHeight } : {}}
                 >
                   {moves.map((move, index) => (
