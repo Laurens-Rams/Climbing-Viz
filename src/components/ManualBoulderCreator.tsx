@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useLayoutEffect } from 'react'
 import * as RadioGroup from '@radix-ui/react-radio-group'
 import MoveList from './MoveList'
+import { MoveItem } from './MoveList'
 
 export interface Move {
   id: string
@@ -27,7 +28,28 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
   const [moves, setMoves] = useState<Move[]>([
     { id: '1', name: 'Describe the move', moveType: 0, isCrux: false }
   ])
+  const [boulderInfoOpen, setBoulderInfoOpen] = useState(true)
   
+  const headerRef = useRef<HTMLDivElement>(null)
+  const infoRef = useRef<HTMLDivElement>(null)
+  const buttonRowRef = useRef<HTMLDivElement>(null)
+  const [movesListHeight, setMovesListHeight] = useState<number | undefined>(undefined)
+
+  // Dynamically calculate moves list height
+  useLayoutEffect(() => {
+    function updateHeight() {
+      const headerH = headerRef.current?.offsetHeight || 0
+      const infoH = boulderInfoOpen ? infoRef.current?.offsetHeight || 0 : 0
+      const buttonRowH = buttonRowRef.current?.offsetHeight || 0
+      // Subtract an extra 64px (4rem) for margin
+      const available = window.innerHeight - headerH - infoH - buttonRowH
+      setMovesListHeight(available > 0 ? available : 0)
+    }
+    updateHeight()
+    window.addEventListener('resize', updateHeight)
+    return () => window.removeEventListener('resize', updateHeight)
+  }, [boulderInfoOpen])
+
   // Grade systems data with conversion mappings (from PhyphoxTutorial)
   const gradeSystems = {
     V: { name: 'V-Scale', grades: ['VB', 'V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9', 'V10', 'V11', 'V12', 'V13', 'V14', 'V15', 'V16', 'V17'] },
@@ -142,13 +164,13 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
   const canSave = boulderName.trim() && selectedGrade && moves.length > 0
 
   return (
-    <div className="h-full bg-gradient-to-br from-gray-900 to-black">
+    <div className="h-screen bg-gradient-to-br from-gray-900 to-black relative">
       <div className={`h-full flex items-center justify-center transition-all duration-300 ${
         isControlPanelVisible ? 'pr-[25rem]' : 'pr-0'
       }`}>
         <div className="w-full max-w-5xl mx-auto p-8 h-full flex flex-col">
           {/* Header with back button, title, and save button */}
-          <div className="flex items-center justify-between mb-6">
+          <div ref={headerRef} className="flex items-center justify-between mb-6">
             <div className="flex items-center">
               <button
                 onClick={onBack}
@@ -165,157 +187,179 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
                 </p>
               </div>
             </div>
-            
-            {/* Save Button - Moved to top right */}
-            <button
-              onClick={saveBoulder}
-              disabled={!canSave}
-              className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                canSave
-                  ? 'bg-green-400/20 text-green-400 hover:bg-green-400/30 border border-green-400/40'
-                  : 'bg-gray-600/20 text-gray-500 cursor-not-allowed border border-gray-600/40'
-              }`}
-            >
-              💾 Save Boulder
-            </button>
           </div>
 
           {/* Boulder Info Fields */}
-          <div className="mb-6 bg-black/50 border border-cyan-400/40 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-cyan-400 mb-4">Boulder Information</h3>
-            
-            {/* Boulder Name - First field with 80% width */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-cyan-400/80 mb-2">
-                Type the name *
-              </label>
-              <input
-                type="text"
-                value={boulderName}
-                onChange={(e) => setBoulderName(e.target.value)}
-                placeholder="Enter boulder name (e.g., 'Crimpy Corner', 'Overhang Beast')"
-                className="w-4/5 px-4 py-3 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none text-lg overflow-hidden text-ellipsis whitespace-nowrap"
-                required
-              />
+          <div ref={infoRef} className="mb-6 bg-black/50 border border-cyan-400/40 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-cyan-400">Boulder Information</h3>
+              <button
+                onClick={() => setBoulderInfoOpen((open) => !open)}
+                className="text-cyan-400 bg-cyan-400/10 border border-cyan-400/30 rounded-lg px-3 py-1 text-xs font-medium hover:bg-cyan-400/20 transition-all"
+                aria-expanded={boulderInfoOpen}
+                aria-controls="boulder-info-fields"
+              >
+                {boulderInfoOpen ? 'Hide' : 'Show'} Info
+              </button>
             </div>
-            
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
+            <div
+              id="boulder-info-fields"
+              className={`transition-all duration-300 overflow-hidden ${boulderInfoOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}
+            >
+              {/* Boulder Name - First field with 80% width */}
+              <div className="mb-4">
                 <label className="block text-sm font-medium text-cyan-400/80 mb-2">
-                  Route Setter
+                  Type the name *
                 </label>
                 <input
                   type="text"
-                  value={routeSetter}
-                  onChange={(e) => setRouteSetter(e.target.value)}
-                  placeholder="Who set this route?"
-                  className="w-full px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none"
+                  value={boulderName}
+                  onChange={(e) => setBoulderName(e.target.value)}
+                  placeholder="Enter boulder name (e.g., 'Crimpy Corner', 'Overhang Beast')"
+                  className="w-4/5 px-4 py-3 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none text-lg overflow-hidden text-ellipsis whitespace-nowrap"
+                  required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-cyan-400/80 mb-2">
-                  Grade
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    value={selectedGrade}
-                    onChange={(e) => setSelectedGrade(e.target.value)}
-                    className="flex-1 px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 focus:border-cyan-400 focus:outline-none"
-                  >
-                    <option value="" className="bg-black text-cyan-400">Select grade...</option>
-                    {gradeSystems[gradeSystem].grades.map((grade) => (
-                      <option key={grade} value={grade} className="bg-black text-cyan-400">
-                        {grade}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const systems: ('V' | 'Font' | 'YDS')[] = ['V', 'Font', 'YDS']
-                      const currentIndex = systems.indexOf(gradeSystem)
-                      const nextIndex = (currentIndex + 1) % systems.length
-                      const nextSystem = systems[nextIndex]
-                      
-                      // Convert current grade to new system if possible
-                      if (selectedGrade) {
-                        const convertedGrade = convertGrade(selectedGrade, gradeSystem, nextSystem)
-                        setSelectedGrade(convertedGrade)
-                      }
-                      
-                      // Update grade system
-                      setGradeSystem(nextSystem)
-                      
-                      console.log(`Grade system changed from ${gradeSystem} to ${nextSystem}`)
-                    }}
-                    className="px-3 py-2 bg-cyan-400/20 border border-cyan-400/40 text-cyan-400 rounded-lg hover:bg-cyan-400/30 transition-all text-sm font-medium whitespace-nowrap"
-                    title="Switch grade system"
-                  >
-                    {gradeSystems[gradeSystem].name}
-                  </button>
+              
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-cyan-400/80 mb-2">
+                    Route Setter
+                  </label>
+                  <input
+                    type="text"
+                    value={routeSetter}
+                    onChange={(e) => setRouteSetter(e.target.value)}
+                    placeholder="Who set this route?"
+                    className="w-full px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-cyan-400/80 mb-2">
+                    Grade
+                  </label>
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedGrade}
+                      onChange={(e) => setSelectedGrade(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 focus:border-cyan-400 focus:outline-none"
+                    >
+                      <option value="" className="bg-black text-cyan-400">Select grade...</option>
+                      {gradeSystems[gradeSystem].grades.map((grade) => (
+                        <option key={grade} value={grade} className="bg-black text-cyan-400">
+                          {grade}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const systems: ('V' | 'Font' | 'YDS')[] = ['V', 'Font', 'YDS']
+                        const currentIndex = systems.indexOf(gradeSystem)
+                        const nextIndex = (currentIndex + 1) % systems.length
+                        const nextSystem = systems[nextIndex]
+                        
+                        // Convert current grade to new system if possible
+                        if (selectedGrade) {
+                          const convertedGrade = convertGrade(selectedGrade, gradeSystem, nextSystem)
+                          setSelectedGrade(convertedGrade)
+                        }
+                        
+                        // Update grade system
+                        setGradeSystem(nextSystem)
+                        
+                        console.log(`Grade system changed from ${gradeSystem} to ${nextSystem}`)
+                      }}
+                      className="px-3 py-2 bg-cyan-400/20 border border-cyan-400/40 text-cyan-400 rounded-lg hover:bg-cyan-400/30 transition-all text-sm font-medium whitespace-nowrap"
+                      title="Switch grade system"
+                    >
+                      {gradeSystems[gradeSystem].name}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-cyan-400/80 mb-2">
-                  Number of Moves
-                </label>
-                <input
-                  type="number"
-                  value={numberOfMoves}
-                  onChange={(e) => setNumberOfMoves(e.target.value)}
-                  placeholder="Total moves"
-                  className="w-full px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none"
-                />
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-cyan-400/80 mb-2">
+                    Number of Moves
+                  </label>
+                  <input
+                    type="number"
+                    value={numberOfMoves}
+                    onChange={(e) => setNumberOfMoves(e.target.value)}
+                    placeholder="Total moves"
+                    className="w-full px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-cyan-400/80 mb-2">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 focus:border-cyan-400 focus:outline-none"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-cyan-400/80 mb-2">
-                  Date
+                  Beta Insight
                 </label>
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 focus:border-cyan-400 focus:outline-none"
+                <textarea
+                  value={betaInsight}
+                  onChange={(e) => setBetaInsight(e.target.value)}
+                  placeholder="Key tips for climbing this boulder..."
+                  rows={2}
+                  className="w-full px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none resize-none"
                 />
               </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-cyan-400/80 mb-2">
-                Beta Insight
-              </label>
-              <textarea
-                value={betaInsight}
-                onChange={(e) => setBetaInsight(e.target.value)}
-                placeholder="Key tips for climbing this boulder..."
-                rows={2}
-                className="w-full px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none resize-none"
-              />
             </div>
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 bg-black/70 border border-cyan-400/40 rounded-2xl backdrop-blur-sm flex flex-col min-h-0">
+          <div
+            className={`bg-black/70 rounded-2xl backdrop-blur-sm flex flex-col min-h-0 transition-all duration-500 ${boulderInfoOpen ? 'flex-1' : 'h-[60vh]'} overflow-hidden`}
+          >
             <div className="flex-1 p-6 flex flex-col min-h-0">
-              
               {/* Moves Section */}
               <div className="flex-1 flex flex-col min-h-0">
                 <div className="flex items-center justify-between mb-4 flex-shrink-0">
                   <h3 className="text-lg font-semibold text-cyan-400">Boulder Moves</h3>
                   <span className="text-sm text-gray-400">{moves.length} moves</span>
                 </div>
-                
-                {/* Fixed height container for moves list with scrolling */}
-                <div className="h-80 overflow-hidden">
-                  <MoveList
-                    moves={moves}
-                    onAddMove={addMove}
-                    onUpdateMove={updateMove}
-                    onDeleteMove={deleteMove}
-                  />
+                {/* Moves List - scrolls to bottom, no border below */}
+                <div
+                  className="flex-1 overflow-y-auto space-y-3 pr-2 min-h-0 bg-black/70"
+                  style={movesListHeight ? { height: movesListHeight } : {}}
+                >
+                  {moves.map((move, index) => (
+                    <MoveItem
+                      key={move.id}
+                      move={move}
+                      index={index}
+                      onUpdate={(updates: Partial<Move>) => updateMove(move.id, updates)}
+                      onDelete={() => deleteMove(move.id)}
+                    />
+                  ))}
                 </div>
               </div>
+            </div>
+            {/* Add Move + Save Boulder Buttons Row INSIDE main card, no border, same bg */}
+            <div ref={buttonRowRef} className="flex flex-row gap-4 w-full px-8 pb-6 pt-2 bg-black/70 rounded-b-2xl">
+              <button
+                onClick={addMove}
+                className="flex-1 px-4 py-4 bg-cyan-400/20 border border-cyan-400/40 text-cyan-400 rounded-xl font-bold text-lg shadow-lg transition-all hover:bg-cyan-400/30 hover:border-cyan-400/60 backdrop-blur-md"
+              >
+                + Add New Move
+              </button>
+              <button
+                onClick={saveBoulder}
+                className="w-48 px-4 py-4 bg-cyan-400 text-black rounded-xl font-bold text-lg shadow-lg transition-all hover:bg-cyan-300 hover:text-cyan-900 backdrop-blur-md border border-cyan-400/60"
+              >
+                Save Boulder
+              </button>
             </div>
           </div>
         </div>

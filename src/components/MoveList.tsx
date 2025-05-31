@@ -16,7 +16,7 @@ interface MoveItemProps {
   onDelete: () => void
 }
 
-function MoveItem({ move, index, onUpdate, onDelete }: MoveItemProps) {
+export function MoveItem({ move, index, onUpdate, onDelete }: MoveItemProps) {
   const [isEditingName, setIsEditingName] = useState(false)
   const [editName, setEditName] = useState(move.name)
 
@@ -143,7 +143,7 @@ function MoveItem({ move, index, onUpdate, onDelete }: MoveItemProps) {
 export default function MoveList({ moves, onAddMove, onUpdateMove, onDeleteMove }: MoveListProps) {
   return (
     <div className="flex flex-col h-full">
-      {/* Moves List - Scrollable with Add Move button inline */}
+      {/* Moves List - Scrollable */}
       <div className="flex-1 overflow-y-auto space-y-3 pr-2 min-h-0">
         {moves.map((move, index) => (
           <MoveItem
@@ -154,16 +154,6 @@ export default function MoveList({ moves, onAddMove, onUpdateMove, onDeleteMove 
             onDelete={() => onDeleteMove(move.id)}
           />
         ))}
-        
-        {/* Add Move Button - Now inline after the last move */}
-        <div className="pt-3">
-          <button
-            onClick={onAddMove}
-            className="w-full px-4 py-3 bg-cyan-400/20 border border-cyan-400/40 text-cyan-400 rounded-lg font-medium transition-all hover:bg-cyan-400/30 hover:border-cyan-400/60"
-          >
-            + Add New Move
-          </button>
-        </div>
       </div>
     </div>
   )

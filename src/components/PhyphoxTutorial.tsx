@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Stepper, Step } from './Stepper'
 import { Play, Square, Trash2, Upload } from 'lucide-react'
+import ElasticSlider from './ui/ElasticSlider'
 
 interface PhyphoxTutorialProps {
   onBack: () => void
@@ -263,6 +264,7 @@ export function PhyphoxTutorial({
   const handleStepComplete = () => {
     handleSaveBoulder()
   }
+
 
   const renderStepContent = () => {
     switch (currentStep) {
