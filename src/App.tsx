@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { AddCustomBoulder } from './components/AddCustomBoulder'
 import { BoulderVisualizer } from './components/BoulderVisualizer'
 import { StatisticsView } from './components/StatisticsView'
