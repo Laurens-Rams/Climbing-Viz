@@ -15,6 +15,7 @@ interface BoulderVisualizerProps {
   isLoading?: boolean
   error?: string | null
   selectBoulder?: (id: number) => void
+  isControlPanelVisible?: boolean
 }
 
 // Convert CSV BoulderData to hook-compatible format - memoized to prevent excessive conversions
@@ -107,7 +108,7 @@ function BoulderScene({ boulderData, settings }: { boulderData?: BoulderData | n
   )
 }
 
-export function BoulderVisualizer({ boulderData, settings, currentBoulderId, boulders, selectedBoulder, isLoading, error, selectBoulder: selectBoulderFromAppProps }: BoulderVisualizerProps) {
+export function BoulderVisualizer({ boulderData, settings, currentBoulderId, boulders, selectedBoulder, isLoading, error, selectBoulder: selectBoulderFromAppProps, isControlPanelVisible }: BoulderVisualizerProps) {
   // Use effect to react to boulderSelectionChanged events, primarily for logging or side-effects if needed in future.
   // The component will primarily re-render based on prop changes (selectedBoulder, currentBoulderId).
   useEffect(() => {
@@ -144,7 +145,7 @@ export function BoulderVisualizer({ boulderData, settings, currentBoulderId, bou
   const hasValidData = effectiveBoulderData && effectiveBoulderData.moves && effectiveBoulderData.moves.length > 0
   
   return (
-    <div className="w-full h-full relative">
+    <div className={`w-full h-full relative transition-all duration-300 ${isControlPanelVisible ? 'mr-[25rem]' : 'mr-0'}`}>
       <Canvas
         camera={{ position: [0, 0, 20], fov: 50 }}
         style={{ background: '#000000' }}

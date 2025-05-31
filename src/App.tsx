@@ -1,10 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Header } from './components/Header'
 import { AddCustomBoulder } from './components/AddCustomBoulder'
 import { BoulderVisualizer } from './components/BoulderVisualizer'
+import { StatisticsView } from './components/StatisticsView'
 import { ControlPanel } from './components/ControlPanel'
-import { ServerControlPanel } from './components/ServerControlPanel'
-import { DataVizPanel } from './components/DataVizPanel'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { BoulderConfigProvider } from './context/BoulderConfigContext'
 import { useCSVData } from './hooks/useCSVData'
@@ -12,13 +10,14 @@ import type { BoulderData } from './utils/csvLoader'
 import './utils/corsHelper' // Initialize CORS helper
 import './App.css'
 
-type View = 'visualizer' | 'add-boulder' | 'dataviz';
-type Mode = 'frontend' | 'backend';
+type View = 'visualizer' | 'add-boulder';
+type VisualizationMode = '3d' | 'statistics';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('visualizer')
-  const [currentMode, setCurrentMode] = useState<Mode>('frontend')
+  const [visualizationMode, setVisualizationMode] = useState<VisualizationMode>('3d')
   const [isServerConnected, setIsServerConnected] = useState(false)
+  const [isControlPanelVisible, setIsControlPanelVisible] = useState(true)
   const viewChangeTimeoutRef = useRef<NodeJS.Timeout>()
   
   const [visualizerSettings, setVisualizerSettings] = useState({
@@ -63,22 +62,11 @@ function App() {
       selectedBoulder: selectedBoulder?.name,
       selectedBoulderId: selectedBoulder?.id,
       currentView,
-      currentMode,
+      visualizationMode,
       bouldersCount: boulders.length
     })
     }
-  }, [selectedBoulder?.id, currentView, currentMode, boulders.length]) // Only log when ID changes, not name
-
-  const handleModeChange = useCallback((mode: Mode) => {
-    console.log('[App] Mode changing to:', mode)
-    setCurrentMode(mode)
-    // Switch to appropriate view based on mode
-    if (mode === 'backend') {
-      setCurrentView('dataviz')
-    } else {
-      setCurrentView('visualizer')
-    }
-  }, [])
+  }, [selectedBoulder?.id, currentView, visualizationMode, boulders.length]) // Only log when ID changes, not name
 
   const handleViewChange = useCallback((view: View) => {
     console.log('[App] View changing to:', view)
@@ -92,6 +80,14 @@ function App() {
     viewChangeTimeoutRef.current = setTimeout(() => {
       setCurrentView(view)
       
+      // Auto-hide control panel when switching to Add Boulder mode
+      // Auto-show control panel when switching to Visualizer mode
+      if (view === 'add-boulder') {
+        setIsControlPanelVisible(false)
+      } else if (view === 'visualizer') {
+        setIsControlPanelVisible(true)
+      }
+      
       // Ensure boulder selection is maintained when switching views
       if (selectedBoulder) {
         document.dispatchEvent(new CustomEvent('boulderSelectionChanged', {
@@ -100,6 +96,11 @@ function App() {
       }
     }, 100)
   }, [selectedBoulder])
+
+  const handleVisualizationModeChange = useCallback((mode: VisualizationMode) => {
+    console.log('[App] Visualization mode changing to:', mode)
+    setVisualizationMode(mode)
+  }, [])
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -147,96 +148,138 @@ function App() {
     updateBoulderData(boulder)
   }, [updateBoulderData])
 
-  const handleSharedBoulderUpdate = useCallback((boulder: BoulderData) => {
-    if (process.env.NODE_ENV === 'development') {
-    console.log('[App] Shared boulder data updated:', boulder.name, 'ID:', boulder.id)
+  const handleControlPanelVisibilityChange = useCallback((visible: boolean) => {
+    setIsControlPanelVisible(visible)
+  }, [])
+
+  const handleBoulderSelect = useCallback((value: string) => {
+    if (value) {
+      handleBoulderChange(parseInt(value))
     }
-    
-    // Update the boulder data in the global state
-    updateBoulderData(boulder)
-  }, [updateBoulderData])
+  }, [handleBoulderChange])
 
   const renderView = () => {
     switch (currentView) {
       case 'add-boulder':
-        return <AddCustomBoulder />
-      case 'dataviz':
         return (
-          <ErrorBoundary>
-            <DataVizPanel 
-              isVisible={true}
-              onBoulderDataUpdate={handleBoulderDataUpdate}
-              currentBoulderId={selectedBoulder?.id || 0}
+          <div className={`transition-all duration-300 ${isControlPanelVisible ? 'mr-[25rem]' : 'mr-0'}`}>
+            <AddCustomBoulder 
+              uploadFile={uploadFile}
+              onServerToggle={handleServerToggle}
+              onServerCommand={handleServerCommand}
+              isServerConnected={isServerConnected}
+              currentView={currentView}
+              isControlPanelVisible={isControlPanelVisible}
             />
-          </ErrorBoundary>
+          </div>
         )
       case 'visualizer':
       default:
-        // Use shared boulder data with fallback to current boulder data
-        const boulderDataToUse = selectedBoulder || boulders[0]
-        if (process.env.NODE_ENV === 'development') {
-        console.log('[App] Rendering visualizer with boulder data:', boulderDataToUse?.name || 'None')
+        if (visualizationMode === 'statistics') {
+          return (
+            <ErrorBoundary>
+              <StatisticsView 
+                selectedBoulder={selectedBoulder}
+                onBoulderDataUpdate={handleBoulderDataUpdate}
+                isControlPanelVisible={isControlPanelVisible}
+              />
+            </ErrorBoundary>
+          )
+        } else {
+          // Use shared boulder data with fallback to current boulder data
+          const boulderDataToUse = selectedBoulder || boulders[0]
+          if (process.env.NODE_ENV === 'development') {
+          console.log('[App] Rendering 3D visualizer with boulder data:', boulderDataToUse?.name || 'None')
+          }
+          
+          return (
+            <ErrorBoundary>
+              <BoulderVisualizer 
+                settings={visualizerSettings} 
+                boulderData={boulderDataToUse}
+                currentBoulderId={selectedBoulder?.id || 0}
+                boulders={boulders}
+                selectedBoulder={selectedBoulder}
+                isLoading={isLoading}
+                error={error}
+                selectBoulder={selectBoulder}
+                isControlPanelVisible={isControlPanelVisible}
+              />
+            </ErrorBoundary>
+          )
         }
-        
-        return (
-          <ErrorBoundary>
-            <BoulderVisualizer 
-              settings={visualizerSettings} 
-              boulderData={boulderDataToUse}
-              currentBoulderId={selectedBoulder?.id || 0}
-              boulders={boulders}
-              selectedBoulder={selectedBoulder}
-              isLoading={isLoading}
-              error={error}
-              selectBoulder={selectBoulder}
-            />
-          </ErrorBoundary>
-        )
     }
   }
 
   return (
     <BoulderConfigProvider>
     <div className="min-h-screen bg-black relative">
-      <Header currentView={currentView} onViewChange={handleViewChange} />
-      
-      <main className="h-[calc(100vh-4rem)] relative">
+      <main className="h-screen relative">
         {renderView()}
         
-        {/* Control Panel - always show in frontend mode */}
-        {currentMode === 'frontend' && (
-          <ControlPanel 
-            onSettingsChange={handleSettingsChange}
-            onBoulderChange={handleBoulderChange}
-            onBoulderDataUpdate={handleSharedBoulderUpdate}
-            currentBoulderId={selectedBoulder?.id || 0}
-            boulders={boulders}
-            selectedBoulder={selectedBoulder}
-            isLoading={isLoading}
-            error={error}
-            selectBoulder={selectBoulder}
-            uploadFile={uploadFile}
-            refreshBoulders={refreshBoulders}
-          />
-        )}
-        
-        {/* Server Control Panel - always visible, positioned above DataViz */}
-        <ServerControlPanel 
-          onModeChange={handleModeChange}
+        {/* Control Panel - now includes view switching and server controls */}
+        <ControlPanel 
+          currentView={currentView}
+          onViewChange={handleViewChange}
+          visualizationMode={visualizationMode}
+          onVisualizationModeChange={handleVisualizationModeChange}
+          onSettingsChange={handleSettingsChange}
+          onBoulderChange={handleBoulderChange}
+          onBoulderDataUpdate={handleBoulderDataUpdate}
           onServerToggle={handleServerToggle}
           onServerCommand={handleServerCommand}
+          currentBoulderId={selectedBoulder?.id || 0}
+          boulders={boulders}
+          selectedBoulder={selectedBoulder}
+          isLoading={isLoading}
+          error={error}
+          selectBoulder={selectBoulder}
+          uploadFile={uploadFile}
+          refreshBoulders={refreshBoulders}
+          isServerConnected={isServerConnected}
+          onVisibilityChange={handleControlPanelVisibilityChange}
         />
+        
+        {/* Floating Playback Controls - only show when server is connected and not in add-boulder view */}
+        {isServerConnected && currentView !== 'add-boulder' && (
+          <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50">
+            <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-4 backdrop-blur-sm flex items-center space-x-4">
+              <button
+                onClick={() => handleServerCommand('start')}
+                className="px-4 py-2 bg-green-500/80 hover:bg-green-500 text-white rounded-lg transition-all"
+                title="Start Recording"
+              >
+                ▶️
+              </button>
+              <button
+                onClick={() => handleServerCommand('stop')}
+                className="px-4 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-all"
+                title="Stop Recording"
+              >
+                ⏹️
+              </button>
+              <button
+                onClick={() => handleServerCommand('clear')}
+                className="px-4 py-2 bg-gray-500/80 hover:bg-gray-500 text-white rounded-lg transition-all"
+                title="Clear Data"
+              >
+                🔄
+              </button>
+            </div>
+          </div>
+        )}
       </main>
       
       {/* Debug info in development */}
       {process.env.NODE_ENV === 'development' && (
         <div className="fixed bottom-4 left-4 bg-black/80 text-white p-2 text-xs rounded border border-gray-600 z-50">
-          <div>Mode: {currentMode}</div>
           <div>View: {currentView}</div>
+          <div>Viz Mode: {visualizationMode}</div>
           <div>Boulder ID: {selectedBoulder?.id || 'None'}</div>
           <div>Current Data: {selectedBoulder?.name || 'None'}</div>
           <div>Boulders Count: {boulders.length}</div>
-            <div>Config: Global boulder settings active</div>
+          <div>Server: {isServerConnected ? 'Connected' : 'Disconnected'}</div>
+          <div>Panel: {isControlPanelVisible ? 'Visible' : 'Hidden'}</div>
         </div>
       )}
     </div>

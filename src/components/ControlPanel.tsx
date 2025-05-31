@@ -1,14 +1,24 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import * as Select from '@radix-ui/react-select'
-import { ChevronDownIcon, PlayIcon, Square, RefreshCwIcon, SettingsIcon, PlusIcon, SearchIcon } from 'lucide-react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { RefreshCwIcon, SettingsIcon, WifiIcon, WifiOffIcon } from 'lucide-react'
 import type { BoulderData } from '../utils/csvLoader'
+import { useBoulderConfig } from '../context/BoulderConfigContext'
 import ElasticSlider from "./ui/ElasticSlider"
-import GlassIcons from "./ui/GlassIcons"
 
 interface ControlPanelProps {
+  // View management
+  currentView: 'visualizer' | 'add-boulder'
+  onViewChange: (view: 'visualizer' | 'add-boulder') => void
+  
+  // Visualization mode (within visualizer view)
+  visualizationMode: '3d' | 'statistics'
+  onVisualizationModeChange: (mode: '3d' | 'statistics') => void
+  
+  // Settings
   onSettingsChange: (settings: any) => void
   onBoulderChange: (boulderId: number) => void
   onBoulderDataUpdate?: (boulder: BoulderData) => void
+  
+  // Boulder data
   currentBoulderId: number
   boulders: BoulderData[]
   selectedBoulder: BoulderData | null
@@ -17,11 +27,106 @@ interface ControlPanelProps {
   selectBoulder: (id: number) => void
   uploadFile: (file: File) => Promise<void>
   refreshBoulders: () => void
+  
+  // Server controls
+  onServerToggle: (connected: boolean) => void
+  onServerCommand: (command: string) => void
+  isServerConnected: boolean
+  
+  // Visibility control
+  onVisibilityChange: (visible: boolean) => void
 }
 
-export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataUpdate, currentBoulderId, boulders, selectedBoulder, isLoading, error, selectBoulder, uploadFile, refreshBoulders }: ControlPanelProps) {
+interface ServerOption {
+  name: string
+  url: string
+}
+
+interface StatData {
+  maxAccel: number
+  avgAccel: number
+  moveCount: number
+  duration: number
+  sampleCount: number
+}
+
+// Move detection function for statistics
+const detectMoves = (time: number[], acceleration: number[], threshold: number) => {
+  const detectedMoves = [];
+  const minMoveDuration = 0.5;
+  let lastMoveTime = -minMoveDuration;
+  
+  detectedMoves.push({
+    time: 0,
+    acceleration: acceleration[0] || 9.8
+  });
+  
+  for (let i = 1; i < acceleration.length - 1; i++) {
+    const currentAccel = acceleration[i];
+    const currentTime = time[i];
+    
+    if (currentAccel > threshold && 
+        currentAccel > acceleration[i-1] && 
+        currentAccel > acceleration[i+1] &&
+        (currentTime - lastMoveTime) > minMoveDuration) {
+      
+      detectedMoves.push({
+        time: currentTime,
+        acceleration: currentAccel
+      });
+      
+      lastMoveTime = currentTime;
+    }
+  }
+  
+  return detectedMoves;
+};
+
+export function ControlPanel({ 
+  currentView, 
+  onViewChange, 
+  visualizationMode, 
+  onVisualizationModeChange, 
+  onSettingsChange, 
+  onBoulderChange, 
+  onBoulderDataUpdate, 
+  currentBoulderId, 
+  boulders, 
+  selectedBoulder, 
+  isLoading, 
+  error, 
+  selectBoulder, 
+  uploadFile, 
+  refreshBoulders,
+  onServerToggle, 
+  onServerCommand, 
+  isServerConnected, 
+  onVisibilityChange
+}: ControlPanelProps) {
   const [isVisible, setIsVisible] = useState(true)
-  const [currentFolder, setCurrentFolder] = useState<string | null>('basics')
+  const [currentFolder, setCurrentFolder] = useState<string | null>('selection')
+  const [isLiveModeActive, setIsLiveModeActive] = useState(false)
+  const [selectedServer, setSelectedServer] = useState(0)
+  const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('disconnected')
+  const [manuallyClosed, setManuallyClosed] = useState(false)
+  
+  const { getThreshold, setThreshold } = useBoulderConfig()
+  
+  // Only auto-hide when switching to add-boulder, but respect manual state for visualizer
+  useEffect(() => {
+    if (currentView === 'add-boulder') {
+      setIsVisible(false)
+      onVisibilityChange(false)
+    } else if (currentView === 'visualizer' && !manuallyClosed) {
+      setIsVisible(true)
+      onVisibilityChange(true)
+    }
+  }, [currentView, manuallyClosed, onVisibilityChange])
+  
+  // Notify parent of initial visibility state
+  useEffect(() => {
+    onVisibilityChange(isVisible)
+  }, []) // Only run on mount
   
   // Settings state
   const [settings, setSettings] = useState({
@@ -53,10 +158,39 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
     liquidEffect: true,
     
     // Move Detection
-    moveThreshold: 12.0,
-    useThresholdBasedMoveCount: true,
     centerTextSize: 1.0
   })
+
+  const servers: ServerOption[] = [
+    { name: 'Server 1 (192.168.1.36)', url: 'http://192.168.1.36' },
+    { name: 'Server 2 (10.237.1.101)', url: 'http://10.237.1.101' },
+    { name: 'Server 3 (192.168.1.100)', url: 'http://192.168.1.100' },
+    { name: 'Server 4 (172.20.10.1)', url: 'http://172.20.10.1' },
+    { name: 'Server 5 (10.224.1.221)', url: 'http://10.224.1.221' }
+  ]
+
+  const currentThreshold = selectedBoulder ? getThreshold(selectedBoulder.id) : 12.0
+
+  // Calculate statistics
+  const stats = useMemo((): StatData => {
+    if (!selectedBoulder?.csvData) return {
+      maxAccel: 0,
+      avgAccel: 0,
+      moveCount: 0,
+      duration: 0,
+      sampleCount: 0
+    };
+    
+    const moves = detectMoves(selectedBoulder.csvData.time, selectedBoulder.csvData.absoluteAcceleration, currentThreshold);
+    
+    return {
+      maxAccel: selectedBoulder.csvData.maxAcceleration,
+      avgAccel: selectedBoulder.csvData.avgAcceleration,
+      moveCount: moves.length,
+      duration: selectedBoulder.csvData.duration,
+      sampleCount: selectedBoulder.csvData.sampleCount
+    };
+  }, [selectedBoulder, currentThreshold]);
 
   const updateSetting = useCallback((key: string, value: number | boolean) => {
     const newSettings = { ...settings, [key]: value }
@@ -81,7 +215,6 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
         console.error('Upload failed:', error)
         alert('Failed to upload file: ' + (error instanceof Error ? error.message : 'Unknown error'))
       } finally {
-        // Reset file input
         event.target.value = ''
       }
     } else if (file) {
@@ -90,10 +223,62 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
     }
   }, [uploadFile])
 
+  // Server connection logic
+  const testConnection = useCallback(async (serverUrl: string) => {
+    try {
+      const response = await fetch(`${serverUrl}/get?acc_time`, {
+        method: 'GET',
+        mode: 'cors',
+        signal: AbortSignal.timeout(5000)
+      })
+      
+      if (response.ok) {
+        return true
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+    } catch (error) {
+      const err = error as Error
+      if (err.name === 'AbortError') {
+        throw new Error('Connection timeout - check if Phyphox is running and accessible')
+      } else if (err.message.includes('Failed to fetch')) {
+        throw new Error('Cannot reach server - check IP address and WiFi connection')
+      } else {
+        throw new Error(err.message)
+      }
+    }
+  }, [])
+
+  const handleLiveModeToggle = useCallback(async () => {
+    const newState = !isLiveModeActive
+    
+    if (newState) {
+      setConnectionStatus('checking')
+      
+      try {
+        const serverUrl = servers[selectedServer].url
+        await testConnection(serverUrl)
+        
+        setIsLiveModeActive(true)
+        setConnectionStatus('connected')
+        onServerToggle(true)
+        
+      } catch (error) {
+        setIsLiveModeActive(false)
+        setConnectionStatus('disconnected')
+        onServerToggle(false)
+      }
+    } else {
+      setIsLiveModeActive(false)
+      setConnectionStatus('disconnected')
+      onServerToggle(false)
+    }
+  }, [isLiveModeActive, selectedServer, servers, testConnection, onServerToggle])
+
   const folders = [
     {
       id: 'selection',
-      name: '🧗 Boulder Selection',
+      name: '🧗 Data & Live',
       icon: '🧗',
       controls: []
     },
@@ -137,25 +322,13 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
         { key: 'rotationSpeed', name: 'Rotation Speed', min: 0.0, max: 2.0, step: 0.1 },
         { key: 'liquidSpeed', name: 'Liquid Speed', min: 0.0, max: 1.0, step: 0.05 }
       ]
-    },
-    {
-      id: 'detection',
-      name: '🎯 Move Detection', 
-      icon: '🎯',
-      controls: [
-        { key: 'moveThreshold', name: 'Move Threshold (m/s²)', min: 8.0, max: 50.0, step: 0.5 },
-        { key: 'centerTextSize', name: 'Center Text Size', min: 0.5, max: 3.0, step: 0.1 }
-      ]
     }
   ]
 
   const ControlSlider = ({ control }: { control: any }) => {
-    // Use a local state for the slider value during drag operations
-    // to prevent issues with the main settings state updating too quickly.
     const [localSliderValue, setLocalSliderValue] = useState<number>(Number(settings[control.key as keyof typeof settings]));
 
     useEffect(() => {
-      // Sync local slider value when the global settings change from outside
       setLocalSliderValue(Number(settings[control.key as keyof typeof settings]));
     }, [settings[control.key as keyof typeof settings], control.key]);
 
@@ -186,21 +359,43 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
   };
 
   return (
-    <div className={`fixed top-6 right-6 z-50 transition-all duration-300 ${!isVisible ? 'translate-x-full' : ''}`}>
+    <div className={`fixed top-20 right-6 bottom-6 z-50 transition-all duration-300 ${!isVisible ? 'translate-x-full' : ''}`}>
       {/* Toggle button */}
       <button
-        onClick={() => setIsVisible(!isVisible)}
+        onClick={() => {
+          const newVisibility = !isVisible
+          setIsVisible(newVisibility)
+          onVisibilityChange(newVisibility)
+          
+          // Track manual state: if closing in visualizer mode, mark as manually closed
+          // If opening, reset the manually closed state
+          if (currentView === 'visualizer') {
+            if (newVisibility) {
+              setManuallyClosed(false) // User opened it, reset manual state
+            } else {
+              setManuallyClosed(true) // User closed it manually
+            }
+          }
+        }}
         className="absolute -left-14 top-6 bg-black/70 hover:bg-black/90 text-cyan-400 p-3 rounded-l-xl border border-cyan-400/40 border-r-0 transition-all backdrop-blur-sm"
       >
         <SettingsIcon size={20} />
       </button>
 
       {/* Control panel */}
-      <div className="w-96 bg-black/70 border border-cyan-400/40 rounded-2xl shadow-xl overflow-hidden backdrop-blur-sm">
-        {/* Header */}
-        <div className="bg-black/50 border-b border-cyan-400/40 p-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-cyan-400 font-bold text-xl">Boulder Controls</h2>
+      <div className="w-96 h-full bg-black/70 border border-cyan-400/40 rounded-2xl shadow-xl overflow-hidden backdrop-blur-sm flex flex-col">
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-900/20 border-b border-red-400/40 p-4">
+            <div className="text-red-400 text-sm">⚠️ {error}</div>
+          </div>
+        )}
+
+        {/* Header with View Switcher and CSV Selector */}
+        <div className="p-4 border-b border-cyan-400/20 bg-black/50">
+          {/* Header row with title and refresh */}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-cyan-400 font-bold text-xl">Control Center</h2>
             <button
               onClick={refreshBoulders}
               className="px-3 py-2 bg-cyan-400/20 hover:bg-cyan-400/30 text-cyan-400 rounded-lg transition-all text-sm font-medium"
@@ -209,14 +404,66 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
               <RefreshCwIcon size={16} className={isLoading ? 'animate-spin' : ''} />
             </button>
           </div>
-        </div>
-
-        {/* Error Display */}
-        {error && (
-          <div className="bg-red-900/20 border-b border-red-400/40 p-4">
-            <div className="text-red-400 text-sm">⚠️ {error}</div>
+          
+          {/* View Switcher */}
+          <div className="flex space-x-2 mb-4">
+            <button
+              onClick={() => {
+                if (currentView === 'visualizer') {
+                  // Toggle visualization mode if already in visualizer
+                  onVisualizationModeChange(visualizationMode === '3d' ? 'statistics' : '3d')
+                } else {
+                  // Switch to visualizer view
+                  onViewChange('visualizer')
+                }
+              }}
+              className={`px-4 py-2 rounded-lg transition-all text-sm font-medium ${
+                currentView === 'visualizer'
+                  ? 'bg-cyan-400/20 text-cyan-400 border border-cyan-400/40'
+                  : 'text-gray-300 hover:text-cyan-400 hover:bg-cyan-400/10'
+              }`}
+            >
+              {currentView === 'visualizer' 
+                ? (visualizationMode === '3d' ? '🧗 3D View' : '📊 Statistics')
+                : '🧗 Visualizer'
+              }
+            </button>
+            <button
+              onClick={() => onViewChange('add-boulder')}
+              className={`px-4 py-2 rounded-lg transition-all text-sm font-medium ${
+                currentView === 'add-boulder'
+                  ? 'bg-cyan-400/20 text-cyan-400 border border-cyan-400/40'
+                  : 'text-gray-300 hover:text-cyan-400 hover:bg-cyan-400/10'
+              }`}
+            >
+              ➕ Add Boulder
+            </button>
           </div>
-        )}
+          
+          {/* CSV Data Selector */}
+          <div>
+            <label className="block text-sm font-medium text-cyan-400 mb-2">Current Data</label>
+            <select
+              value={selectedBoulder?.id.toString() || ''}
+              onChange={(e) => {
+                if (e.target.value) {
+                  onBoulderChange(parseInt(e.target.value))
+                }
+              }}
+              disabled={isLoading}
+              className="w-full px-4 py-2 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none disabled:opacity-50 backdrop-blur-sm transition-all text-sm"
+            >
+              <option value="" disabled>
+                {isLoading ? "Loading..." : "Select CSV..."}
+              </option>
+              {boulders.map((boulder) => (
+                <option key={boulder.id} value={boulder.id.toString()}>
+                  {boulder.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         {/* Folder tabs */}
         <div className="flex border-b border-cyan-400/20 bg-black/50">
@@ -238,71 +485,108 @@ export function ControlPanel({ onSettingsChange, onBoulderChange, onBoulderDataU
           ))}
         </div>
 
-        {/* Control content */}
-        <div className="p-6 max-h-96 overflow-y-auto">
+        {/* Control content - scrollable */}
+        <div className="flex-1 overflow-y-auto p-6">
           {currentFolder === 'selection' && (
             <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-cyan-400 mb-3">Select CSV Data</label>
-                <Select.Root 
-                  value={selectedBoulder?.id.toString() || ''} 
-                  onValueChange={handleBoulderSelect}
-                  disabled={isLoading}
-                >
-                  <Select.Trigger className="w-full px-4 py-3 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none disabled:opacity-50 backdrop-blur-sm transition-all">
-                    <Select.Value placeholder={isLoading ? "Loading..." : "Select CSV..."} />
-                    <Select.Icon>
-                      <ChevronDownIcon className="w-4 h-4" />
-                    </Select.Icon>
-                  </Select.Trigger>
-                  <Select.Portal>
-                    <Select.Content className="bg-black/90 border border-cyan-400/40 rounded-xl shadow-lg z-[99999] backdrop-blur-sm">
-                      <Select.Viewport className="p-2">
-                        {boulders.map((boulder) => (
-                          <Select.Item
-                            key={boulder.id}
-                            value={boulder.id.toString()}
-                            className="px-4 py-3 text-gray-200 hover:bg-cyan-400/20 hover:text-cyan-400 rounded-lg cursor-pointer focus:outline-none transition-all"
-                          >
-                            <Select.ItemText>
-                              {boulder.name}
-                            </Select.ItemText>
-                          </Select.Item>
-                        ))}
-                        {boulders.length === 0 && !isLoading && (
-                          <Select.Item value="" disabled className="px-4 py-3 text-gray-400 rounded-lg">
-                            <Select.ItemText>No CSV files found</Select.ItemText>
-                          </Select.Item>
-                        )}
-                      </Select.Viewport>
-                    </Select.Content>
-                  </Select.Portal>
-                </Select.Root>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-cyan-400 mb-3">Upload CSV File</label>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileUpload}
-                  className="w-full px-4 py-3 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-cyan-400/20 file:text-cyan-400 file:cursor-pointer text-sm backdrop-blur-sm transition-all"
-                />
-              </div>
-
+              {/* Statistics - Current Raw Data */}
               {selectedBoulder && (
-                <div className="p-4 bg-cyan-400/10 border border-cyan-400/40 rounded-xl text-sm backdrop-blur-sm">
-                  <div className="font-bold text-cyan-400 mb-2">Current: {selectedBoulder.name}</div>
-                  <div className="text-gray-300 space-y-1">
-                    <div>• {selectedBoulder.stats.moveCount} moves detected</div>
-                    <div>• {selectedBoulder.stats.duration}s duration</div>
-                    <div>• {selectedBoulder.stats.sampleCount} data points</div>
+                <div>
+                  <h4 className="text-cyan-400 font-medium mb-4">Current: {selectedBoulder.name}</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-3 text-center backdrop-blur-sm">
+                      <div className="text-lg font-bold text-blue-400">{stats.moveCount}</div>
+                      <div className="text-xs text-gray-400">Moves</div>
+                    </div>
+                    <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-3 text-center backdrop-blur-sm">
+                      <div className="text-lg font-bold text-yellow-400">{stats.duration.toFixed(1)}s</div>
+                      <div className="text-xs text-gray-400">Duration</div>
+                    </div>
+                    <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-3 text-center backdrop-blur-sm">
+                      <div className="text-lg font-bold text-red-400">{stats.maxAccel.toFixed(1)}</div>
+                      <div className="text-xs text-gray-400">Max (m/s²)</div>
+                    </div>
+                    <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-3 text-center backdrop-blur-sm">
+                      <div className="text-lg font-bold text-green-400">{stats.avgAccel.toFixed(1)}</div>
+                      <div className="text-xs text-gray-400">Avg (m/s²)</div>
+                    </div>
                   </div>
                 </div>
               )}
+
+              {/* Move Threshold */}
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <label className="text-sm font-medium text-cyan-400">Move Threshold</label>
+                  <span className="text-cyan-400 text-sm font-medium bg-cyan-400/10 px-2 py-1 rounded-lg border border-cyan-400/40">
+                    {currentThreshold.toFixed(1)} m/s²
+                  </span>
+                </div>
+                <ElasticSlider
+                  defaultValue={currentThreshold}
+                  startingValue={8}
+                  maxValue={50}
+                  isStepped={true}
+                  stepSize={0.5}
+                  className="w-full"
+                  onChange={(value) => setThreshold(selectedBoulder?.id || 0, value)}
+                />
+              </div>
+
+              {/* Live Mode Section */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <label className="text-sm font-medium text-cyan-400">Connect to Live Server</label>
+                  <div className="flex items-center space-x-2">
+                    <div 
+                      className={`w-3 h-3 rounded-full ${
+                        connectionStatus === 'connected' 
+                          ? 'bg-green-400' 
+                          : connectionStatus === 'checking'
+                          ? 'bg-yellow-400 animate-pulse'
+                          : 'bg-red-400'
+                      }`} 
+                    />
+                    <span className="text-xs text-gray-400">
+                      {connectionStatus === 'connected' ? 'Connected' : 
+                       connectionStatus === 'checking' ? 'Connecting...' : 'Disconnected'}
+                    </span>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={handleLiveModeToggle}
+                  className={`w-full px-4 py-3 rounded-xl font-medium transition-all mb-4 ${
+                    isLiveModeActive
+                      ? 'bg-green-500/80 hover:bg-green-500 text-white'
+                      : 'bg-cyan-400/20 hover:bg-cyan-400/30 text-cyan-400 border border-cyan-400/40'
+                  }`}
+                >
+                  {isLiveModeActive ? 'Disconnect Live Mode' : 'Go Live Mode'}
+                </button>
+
+                {/* Server Selection - only show when not connected */}
+                {!isLiveModeActive && (
+                  <div>
+                    <label className="block text-sm font-medium text-cyan-400 mb-3">Server</label>
+                    <select
+                      value={selectedServer}
+                      onChange={(e) => setSelectedServer(parseInt(e.target.value))}
+                      className="w-full px-4 py-3 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none text-sm backdrop-blur-sm transition-all"
+                    >
+                      {servers.map((server, index) => (
+                        <option key={index} value={index} className="bg-gray-800">
+                          {server.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
+          {/* Settings Folders */}
           {folders.find(f => f.id === currentFolder)?.controls.map((control) => (
             <ControlSlider key={control.key} control={control} />
           ))}

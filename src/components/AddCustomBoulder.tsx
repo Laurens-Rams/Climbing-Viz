@@ -1,99 +1,138 @@
 import React, { useState } from 'react'
-import * as RadioGroup from '@radix-ui/react-radio-group'
-import * as Slider from '@radix-ui/react-slider'
-import { MoveList } from './MoveList'
+import { ManualBoulderCreator } from './ManualBoulderCreator'
+import { PhyphoxTutorial } from './PhyphoxTutorial'
 
-export interface Move {
-  id: string
-  name: string
-  power: number
+type BoulderCreationMode = 'selection' | 'manual' | 'phyphox'
+
+interface AddCustomBoulderProps {
+  uploadFile?: (file: File) => Promise<void>
+  onServerToggle?: (connected: boolean) => void
+  onServerCommand?: (command: string) => void
+  isServerConnected?: boolean
+  currentView?: string
+  isControlPanelVisible?: boolean
 }
 
-export function AddCustomBoulder() {
-  const [selectedGrade, setSelectedGrade] = useState('')
-  const [moves, setMoves] = useState<Move[]>([
-    { id: '1', name: 'Describe the move', power: 50 }
-  ])
+export function AddCustomBoulder({ 
+  uploadFile, 
+  onServerToggle, 
+  onServerCommand, 
+  isServerConnected = false,
+  currentView,
+  isControlPanelVisible = true
+}: AddCustomBoulderProps = {}) {
+  const [mode, setMode] = useState<BoulderCreationMode>('selection')
 
-  const grades = ['V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8']
-
-  const addMove = () => {
-    const newMove: Move = {
-      id: Date.now().toString(),
-      name: 'Describe the move',
-      power: 50
-    }
-    setMoves([...moves, newMove])
+  const handleBackToSelection = () => {
+    setMode('selection')
   }
 
-  const updateMove = (id: string, updates: Partial<Move>) => {
-    setMoves(moves.map(move => 
-      move.id === id ? { ...move, ...updates } : move
-    ))
+  // Calculate if control panel is effectively visible (not hidden by view or visibility state)
+  const isControlPanelEffectivelyVisible = isControlPanelVisible && currentView !== 'add-boulder'
+
+  if (mode === 'manual') {
+    return <ManualBoulderCreator onBack={handleBackToSelection} isControlPanelVisible={isControlPanelEffectivelyVisible} />
   }
 
-  const deleteMove = (id: string) => {
-    setMoves(moves.filter(move => move.id !== id))
+  if (mode === 'phyphox') {
+    return (
+      <PhyphoxTutorial 
+        onBack={handleBackToSelection}
+        onServerToggle={onServerToggle}
+        onServerCommand={onServerCommand}
+        isServerConnected={isServerConnected}
+        uploadFile={uploadFile}
+        isControlPanelVisible={isControlPanelEffectivelyVisible}
+      />
+    )
   }
 
-  const handleSave = () => {
-    // TODO: Save boulder data and possibly navigate to visualizer
-    console.log('Saving boulder:', { grade: selectedGrade, moves })
-  }
-
+  // Selection screen
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-gray-900 to-black">
-      <div className="max-w-4xl mx-auto p-8">
+    <div className="h-full flex items-center justify-center p-8 bg-gradient-to-br from-gray-900 to-black" style={{ paddingTop: '10%' }}>
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="mb-12">
+        <div className="text-center mb-12">
           <h1 className="text-white tracking-light text-4xl font-bold leading-tight mb-4">
-            Add Custom Boulder
+            Add Boulder Data
           </h1>
           <p className="text-gray-400 text-lg">
-            Create a new boulder problem with custom moves and difficulty
+            Choose your creation method
           </p>
         </div>
 
-        {/* Grade Selection */}
-        <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-8 mb-8 backdrop-blur-sm">
-          <h3 className="text-cyan-400 text-xl font-bold mb-6">Grade</h3>
-          <RadioGroup.Root
-            value={selectedGrade}
-            onValueChange={setSelectedGrade}
-            className="flex flex-wrap gap-4"
+        {/* Main Options */}
+        <div className="grid md:grid-cols-2 gap-8">
+          {/* Manual Creation Option */}
+          <div 
+            onClick={() => setMode('manual')}
+            className="bg-black/70 border border-cyan-400/40 rounded-2xl p-8 cursor-pointer hover:border-cyan-400/60 hover:bg-black/80 transition-all duration-300 backdrop-blur-sm group"
+            style={{ minHeight: '400px' }}
           >
-            {grades.map((grade) => (
-              <RadioGroup.Item
-                key={grade}
-                value={grade}
-                className="px-6 py-3 bg-black/50 hover:bg-cyan-400/20 border border-cyan-400/40 hover:border-cyan-400/60 text-gray-300 hover:text-cyan-400 data-[state=checked]:bg-cyan-400/20 data-[state=checked]:text-cyan-400 data-[state=checked]:border-cyan-400/60 rounded-xl text-sm font-medium cursor-pointer transition-all backdrop-blur-sm"
-              >
-                {grade}
-              </RadioGroup.Item>
-            ))}
-          </RadioGroup.Root>
-        </div>
+            <div className="text-center h-full flex flex-col justify-between">
+              <div>
+                <div className="text-6xl mb-6 group-hover:scale-110 transition-transform duration-300">
+                  ✏️
+                </div>
+                <h3 className="text-cyan-400 text-2xl font-bold mb-4">Create Manually</h3>
+                <p className="text-gray-300 text-base leading-relaxed mb-6">
+                  Design custom boulder problems with manual move sequences, difficulty grades, and power levels.
+                </p>
+                <div className="space-y-2 text-sm text-gray-400">
+                  <div className="flex items-center justify-center space-x-2">
+                    <span>✓</span>
+                    <span>Custom move sequences</span>
+                  </div>
+                  <div className="flex items-center justify-center space-x-2">
+                    <span>✓</span>
+                    <span>Difficulty grade selection</span>
+                  </div>
+                  <div className="flex items-center justify-center space-x-2">
+                    <span>✓</span>
+                    <span>Power level adjustments</span>
+                  </div>
+                </div>
+              </div>
+              <button className="mt-6 px-6 py-3 bg-cyan-400/20 hover:bg-cyan-400/30 text-cyan-400 rounded-xl font-medium transition-all border border-cyan-400/40 group-hover:border-cyan-400/60">
+                Start Creating
+              </button>
+            </div>
+          </div>
 
-        {/* Moves Section */}
-        <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-8 mb-8 backdrop-blur-sm">
-          <h3 className="text-cyan-400 text-xl font-bold mb-6">Moves</h3>
-          <MoveList
-            moves={moves}
-            onAddMove={addMove}
-            onUpdateMove={updateMove}
-            onDeleteMove={deleteMove}
-          />
-        </div>
-
-        {/* Footer */}
-        <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-8 backdrop-blur-sm">
-          <div className="flex justify-end">
-            <button
-              onClick={handleSave}
-              className="px-8 py-4 bg-green-500/80 hover:bg-green-500 text-white rounded-xl font-medium transition-all shadow-lg hover:shadow-xl"
-            >
-              Save Boulder
-            </button>
+          {/* Phyphox Recording Option */}
+          <div 
+            onClick={() => setMode('phyphox')}
+            className="bg-black/70 border border-cyan-400/40 rounded-2xl p-8 cursor-pointer hover:border-cyan-400/60 hover:bg-black/80 transition-all duration-300 backdrop-blur-sm group"
+            style={{ minHeight: '400px' }}
+          >
+            <div className="text-center h-full flex flex-col justify-between">
+              <div>
+                <div className="text-6xl mb-6 group-hover:scale-110 transition-transform duration-300">
+                  📱
+                </div>
+                <h3 className="text-cyan-400 text-2xl font-bold mb-4">Record with Phyphox</h3>
+                <p className="text-gray-300 text-base leading-relaxed mb-6">
+                  Connect to live server and record real climbing data with the Phyphox mobile app.
+                </p>
+                <div className="space-y-2 text-sm text-gray-400">
+                  <div className="flex items-center justify-center space-x-2">
+                    <span>✓</span>
+                    <span>Live server connection</span>
+                  </div>
+                  <div className="flex items-center justify-center space-x-2">
+                    <span>✓</span>
+                    <span>Real-time data recording</span>
+                  </div>
+                  <div className="flex items-center justify-center space-x-2">
+                    <span>✓</span>
+                    <span>Step-by-step tutorial</span>
+                  </div>
+                </div>
+              </div>
+              <button className="mt-6 px-6 py-3 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-xl font-medium transition-all border border-green-400/40 group-hover:border-green-400/60">
+                Connect & Record
+              </button>
+            </div>
           </div>
         </div>
       </div>

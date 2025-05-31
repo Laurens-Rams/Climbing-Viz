@@ -27,6 +27,8 @@ interface ElasticSliderProps {
   trackColor?: string;
   rangeColor?: string;
   iconColor?: string;
+  compact?: boolean;
+  powerColor?: string;
 }
 
 const ElasticSlider: React.FC<ElasticSliderProps> = ({
@@ -43,55 +45,8 @@ const ElasticSlider: React.FC<ElasticSliderProps> = ({
   trackColor = "rgba(128, 128, 128, 0.4)",
   rangeColor = "rgb(34, 211, 238)",
   iconColor = "#888",
-}) => {
-  return (
-    <div className={`slider-container ${className}`}>
-      <Slider
-        defaultValue={defaultValue}
-        startingValue={startingValue}
-        maxValue={maxValue}
-        isStepped={isStepped}
-        stepSize={stepSize}
-        leftIcon={leftIcon}
-        rightIcon={rightIcon}
-        onChange={onChange}
-        showValue={showValue}
-        trackColor={trackColor}
-        rangeColor={rangeColor}
-        iconColor={iconColor}
-      />
-    </div>
-  );
-};
-
-interface SliderProps {
-  defaultValue: number;
-  startingValue: number;
-  maxValue: number;
-  isStepped: boolean;
-  stepSize: number;
-  leftIcon: React.ReactNode;
-  rightIcon: React.ReactNode;
-  onChange?: (value: number) => void;
-  showValue: boolean;
-  trackColor: string;
-  rangeColor: string;
-  iconColor: string;
-}
-
-const Slider: React.FC<SliderProps> = ({
-  defaultValue,
-  startingValue,
-  maxValue,
-  isStepped,
-  stepSize,
-  leftIcon,
-  rightIcon,
-  onChange,
-  showValue,
-  trackColor,
-  rangeColor,
-  iconColor,
+  compact = false,
+  powerColor,
 }) => {
   const [value, setValue] = useState<number>(defaultValue);
   const sliderRef = useRef<HTMLDivElement>(null);
@@ -161,7 +116,7 @@ const Slider: React.FC<SliderProps> = ({
   };
 
   return (
-    <>
+    <div className={`slider-container ${className} ${compact ? 'compact' : ''}`}>
       <motion.div
         onHoverStart={() => animate(scale, 1.05)}
         onHoverEnd={() => animate(scale, 1)}
@@ -213,9 +168,9 @@ const Slider: React.FC<SliderProps> = ({
                 }
                 return "center";
               }),
-              height: useTransform(scale, [1, 1.2], [6, 12]),
-              marginTop: useTransform(scale, [1, 1.2], [0, -3]),
-              marginBottom: useTransform(scale, [1, 1.2], [0, -3]),
+              height: useTransform(scale, [1, 1.2], [5.2, 10.4]),
+              marginTop: useTransform(scale, [1, 1.2], [0, -2.6]),
+              marginBottom: useTransform(scale, [1, 1.2], [0, -2.6]),
             }}
             className="slider-track-wrapper"
           >
@@ -227,7 +182,7 @@ const Slider: React.FC<SliderProps> = ({
                 className="slider-range"
                 style={{ 
                   width: `${getRangePercentage()}%`,
-                  backgroundColor: rangeColor
+                  backgroundColor: powerColor || rangeColor
                 }}
               />
             </div>
@@ -249,12 +204,7 @@ const Slider: React.FC<SliderProps> = ({
           {rightIcon}
         </motion.div>
       </motion.div>
-      {showValue && (
-        <p className="value-indicator" style={{ color: iconColor }}>
-          {Math.round(value)}
-        </p>
-      )}
-    </>
+    </div>
   );
 };
 

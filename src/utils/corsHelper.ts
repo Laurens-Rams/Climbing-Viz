@@ -164,8 +164,8 @@ export function showCorsNotification(): void {
 // Initialize CORS helper on load
 if (typeof window !== 'undefined') {
   // Log help to console
-  setTimeout(logCorsHelp, 1000);
+  // setTimeout(logCorsHelp, 1000);
   
   // Show notification if CORS errors are detected
-  setTimeout(showCorsNotification, 2000);
+  // setTimeout(showCorsNotification, 2000);
 } 
