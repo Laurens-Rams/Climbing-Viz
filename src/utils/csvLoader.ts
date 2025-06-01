@@ -21,6 +21,8 @@ export interface BoulderData {
     dynamics: number
     isCrux: boolean
     thresholdDetected?: boolean
+    time?: number
+    acceleration?: number
   }>
   csvData: CSVData
   stats: {
@@ -32,6 +34,7 @@ export interface BoulderData {
     threshold?: number
   }
   appliedThreshold?: number
+  lastUpdated?: number
 }
 
 // Parse Phyphox CSV format
@@ -122,12 +125,31 @@ function detectMovesFromAcceleration(time: number[], acceleration: number[], thr
   const moves = []
   let moveNumber = 1
   
+  // Find the actual max acceleration in the data for better normalization
+  const maxAccel = Math.max(...acceleration)
+  const minAccel = Math.min(...acceleration)
+  const accelRange = maxAccel - minAccel
+  
+  console.log(`[Move Detection] Max accel: ${maxAccel.toFixed(2)}, Min accel: ${minAccel.toFixed(2)}, Range: ${accelRange.toFixed(2)}`)
+  
   for (let i = 1; i < acceleration.length - 1; i++) {
     if (acceleration[i] > threshold) {
       // Check if this is a local peak
       if (acceleration[i] > acceleration[i - 1] && acceleration[i] > acceleration[i + 1]) {
-        const dynamics = Math.min(acceleration[i] / 20, 1) // Normalize to 0-1
+        // Normalize dynamics based on the actual data range, not a fixed value
+        // This ensures we get good variation in the visualization
+        let dynamics
+        if (accelRange > 0) {
+          // Normalize to 0-1 based on actual data range, with some minimum threshold
+          dynamics = Math.max(0.1, (acceleration[i] - threshold) / (maxAccel - threshold))
+          dynamics = Math.min(dynamics, 1.0) // Cap at 1.0
+        } else {
+          dynamics = 0.5 // Fallback if no range
+        }
+        
         const isCrux = acceleration[i] > threshold * 1.5
+        
+        console.log(`[Move Detection] Move ${moveNumber}: accel=${acceleration[i].toFixed(2)}, dynamics=${dynamics.toFixed(3)}, isCrux=${isCrux}`)
         
         moves.push({
           move_number: moveNumber++,
@@ -137,6 +159,8 @@ function detectMovesFromAcceleration(time: number[], acceleration: number[], thr
       }
     }
   }
+  
+  console.log(`[Move Detection] Detected ${moves.length} moves with dynamics range: ${Math.min(...moves.map(m => m.dynamics)).toFixed(3)} - ${Math.max(...moves.map(m => m.dynamics)).toFixed(3)}`)
   
   return moves
 }

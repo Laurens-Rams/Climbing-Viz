@@ -1,0 +1,97 @@
+/* DROPDOWN COMPONENT - Glassy Theme */
+
+/* TODO: Paste ReactBits dropdown CSS here and adapt to glassy theme */
+
+/* Base glassy styles for dropdown */
+.dropdown {
+  background: rgba(20, 26, 31, 0.85);
+  border: 1.5px solid rgba(26, 222, 186, 0.15);
+  border-radius: 1rem;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+}
+
+.dropdown:hover {
+  border-color: rgba(26, 222, 186, 0.25);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
+}
+
+.dropdown:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Primary variant */
+.dropdown--primary {
+  background: rgba(26, 222, 186, 0.2);
+  border-color: rgba(26, 222, 186, 0.4);
+  color: #ffffff;
+}
+
+.dropdown--primary:hover {
+  background: rgba(26, 222, 186, 0.3);
+  border-color: rgba(26, 222, 186, 0.6);
+}
+
+/* Secondary variant */
+.dropdown--secondary {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+/* Danger variant */
+.dropdown--danger {
+  background: rgba(239, 68, 68, 0.8);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #ffffff;
+}
+
+/* Success variant */
+.dropdown--success {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #ffffff;
+}
+
+/* Disabled state */
+.dropdown:disabled,
+.dropdown--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Focus styles */
+.dropdown:focus,
+.dropdown:focus-visible {
+  outline: none;
+  border-color: rgba(26, 222, 186, 0.6);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 0 0 3px rgba(26, 222, 186, 0.2);
+}
+
+/* Text styles */
+.dropdown {
+  font-family: 'Space Grotesk', 'Noto Sans', sans-serif;
+  font-weight: 500;
+}
+
+/* Size variants */
+.dropdown--small {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.dropdown--medium {
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+}
+
+.dropdown--large {
+  padding: 1rem 1.5rem;
+  font-size: 1.125rem;
+}

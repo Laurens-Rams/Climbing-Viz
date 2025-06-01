@@ -598,7 +598,7 @@ export function PhyphoxTutorial({
   }
 
   return (
-    <div className="h-full bg-gradient-to-br from-gray-900 to-black">
+    <div className="h-full">
       <div className={`h-full flex items-center justify-center transition-all duration-300 ${
         isControlPanelVisible ? 'pr-[25rem]' : 'pr-0'
       }`}>

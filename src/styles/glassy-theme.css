@@ -58,23 +58,9 @@
   --shadow-glow-hover: 0 6px 32px 0 rgba(26, 222, 186, 0.16);
 }
 
-/* Enhanced background with subtle gradient */
-body {
-  background: linear-gradient(135deg, #16181c 0%, #23272f 100%) !important;
-}
+/* Removed background gradient to let Silk show through */
 
-/* Subtle noise texture */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image: 
-    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.02) 1px, transparent 0);
-  background-size: 20px 20px;
-  opacity: 0.3;
-  z-index: 0;
-}
+/* Removed noise texture to let Silk show through */
 
 /* Enhanced glass panels - works with existing classes */
 .bg-black\/70,
@@ -166,18 +152,7 @@ body::before {
   background: rgba(26, 222, 186, 0.5);
 }
 
-/* Global Background with Gradient and Noise */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image: 
-    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
-  background-size: 20px 20px;
-  opacity: 0.4;
-  z-index: 0;
-}
+/* Removed duplicate background overlay to let Silk show through */
 
 /* Base Glass Panel */
 .glass-panel {

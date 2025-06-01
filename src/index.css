@@ -13,24 +13,14 @@
 
 body {
   font-family: "Space Grotesk", "Noto Sans", sans-serif;
-  background: linear-gradient(135deg, #16181c 0%, #23272f 100%);
+  /* Removed background gradient to let Silk show through */
+  background: transparent;
   color: white;
   overflow: hidden;
   position: relative;
 }
 
-/* Subtle noise texture overlay */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image: 
-    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
-  background-size: 20px 20px;
-  opacity: 0.4;
-  z-index: 0;
-}
+/* Removed noise texture overlay to let Silk show through */
 
 #root {
   width: 100vw;

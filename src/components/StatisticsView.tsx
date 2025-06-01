@@ -256,32 +256,47 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       const needsUpdate = !selectedBoulder.appliedThreshold || selectedBoulder.appliedThreshold !== currentThreshold;
       
       if (needsUpdate) {
-        const newMoves = detectMoves(
-          selectedBoulder.csvData.time,
-          selectedBoulder.csvData.absoluteAcceleration,
-          currentThreshold
-        ).map((move, index) => ({
-          move_number: index + 1,
-          dynamics: Math.min(move.acceleration / 20, 1),
-          isCrux: move.acceleration > currentThreshold * 1.5,
-          thresholdDetected: true
-        }));
-
-        const updatedBoulder: BoulderData = {
-          ...selectedBoulder,
-          moves: newMoves,
-          stats: {
-            ...selectedBoulder.stats,
-            moveCount: newMoves.length,
-            threshold: currentThreshold
-          },
-          appliedThreshold: currentThreshold
-        };
+        console.log(`[StatisticsView] Threshold changed from ${selectedBoulder.appliedThreshold} to ${currentThreshold}, updating moves`);
         
-        onBoulderDataUpdate(updatedBoulder);
+        // Debounce the update to prevent race conditions
+        const timeoutId = setTimeout(() => {
+          console.log(`[StatisticsView] Executing debounced move update with threshold ${currentThreshold}`);
+          const newMoves = detectMoves(
+            selectedBoulder.csvData.time,
+            selectedBoulder.csvData.absoluteAcceleration,
+            currentThreshold
+          ).map((move, index) => ({
+            move_number: index + 1,
+            dynamics: Math.min(move.acceleration / 20, 1),
+            isCrux: move.acceleration > currentThreshold * 1.5,
+            thresholdDetected: true,
+            time: move.time,
+            acceleration: move.acceleration
+          }));
+
+          const updatedBoulder: BoulderData = {
+            ...selectedBoulder,
+            moves: newMoves,
+            stats: {
+              ...selectedBoulder.stats,
+              moveCount: newMoves.length,
+              threshold: currentThreshold
+            },
+            appliedThreshold: currentThreshold,
+            // Remove lastUpdated to prevent unnecessary re-renders
+            // lastUpdated: Date.now()
+          };
+          
+          console.log(`[StatisticsView] Calling onBoulderDataUpdate with ${newMoves.length} moves`);
+          onBoulderDataUpdate(updatedBoulder);
+        }, 100); // 100ms debounce
+        
+        return () => clearTimeout(timeoutId);
+      } else {
+        console.log(`[StatisticsView] Threshold unchanged at ${currentThreshold}, skipping update`);
       }
     }
-  }, [selectedBoulder, currentThreshold, onBoulderDataUpdate]);
+  }, [selectedBoulder?.id, selectedBoulder?.appliedThreshold, currentThreshold, selectedBoulder?.csvData, onBoulderDataUpdate]);
 
   if (!selectedBoulder?.csvData) {
     return (

@@ -164,7 +164,7 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
   const canSave = boulderName.trim() && selectedGrade && moves.length > 0
 
   return (
-    <div className="h-screen bg-gradient-to-br from-gray-900 to-black relative">
+    <div className="h-screen relative">
       <div className={`h-full flex items-center justify-center transition-all duration-300 ${
         isControlPanelVisible ? 'pr-[25rem]' : 'pr-0'
       }`}>

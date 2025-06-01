@@ -124,7 +124,7 @@ export function MoveItem({ move, index, onUpdate, onDelete }: MoveItemProps) {
             <span className={`text-base font-bold ${getMoveTypeColor(move.moveType)}`}>
               {getMoveTypeLabel(move.moveType)}
             </span>
-          </div>
+        </div>
 
           {/* Delete Button - Always aligned to the right with border and old icon */}
           <button
@@ -145,16 +145,16 @@ export default function MoveList({ moves, onAddMove, onUpdateMove, onDeleteMove 
     <div className="flex flex-col h-full">
       {/* Moves List - Scrollable */}
       <div className="flex-1 overflow-y-auto space-y-3 pr-2 min-h-0">
-        {moves.map((move, index) => (
-          <MoveItem
-            key={move.id}
-            move={move}
-            index={index}
-            onUpdate={(updates) => onUpdateMove(move.id, updates)}
-            onDelete={() => onDeleteMove(move.id)}
-          />
-        ))}
-      </div>
+      {moves.map((move, index) => (
+        <MoveItem
+          key={move.id}
+          move={move}
+          index={index}
+          onUpdate={(updates) => onUpdateMove(move.id, updates)}
+          onDelete={() => onDeleteMove(move.id)}
+        />
+      ))}
+        </div>
     </div>
   )
 } 

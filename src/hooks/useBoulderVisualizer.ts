@@ -199,6 +199,25 @@ loadFont();
         
 // The visualizer should only use move count from boulder data, not calculate thresholds
 
+// Helper function for deep comparison of settings objects
+const deepEqual = (obj1: any, obj2: any): boolean => {
+  if (obj1 === obj2) return true;
+  if (!obj1 || !obj2) return false;
+  if (typeof obj1 !== 'object' || typeof obj2 !== 'object') return obj1 === obj2;
+  
+  const keys1 = Object.keys(obj1);
+  const keys2 = Object.keys(obj2);
+  
+  if (keys1.length !== keys2.length) return false;
+  
+  for (const key of keys1) {
+    if (!keys2.includes(key)) return false;
+    if (!deepEqual(obj1[key], obj2[key])) return false;
+  }
+  
+  return true;
+};
+
 export function useBoulderVisualizer(boulderData: BoulderData | null, userSettings?: any) {
     const { scene } = useThree();
     const [state, dispatch] = useReducer(settingsReducer, {
@@ -220,28 +239,71 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
     const managedObjects = useRef<THREE.Object3D[]>([]).current;
     const prevBoulderDataRef = useRef<BoulderData | null>(null);
     const prevMoveCountRef = useRef<number>(0);
-    const prevBuiltSettingsRef = useRef<VisualizerSettings>({ ...initialSettings, ...(userSettings || {}) });
+    const prevBuiltSettingsRef = useRef<VisualizerSettings | null>(null); // Initialize as null to detect first mount
+    const prevUserSettingsRef = useRef<any>(userSettings); // Add ref to track previous userSettings
 
-    // Update colors from settings if provided
+    // Update colors from settings if provided - separate effect for better performance
     useEffect(() => {
         if (userSettings?.moveColor || userSettings?.cruxColor) {
             const colorUpdates: Partial<VisualizerColors> = {};
             
             if (userSettings.moveColor) {
-                // Convert hex color to THREE.js color number
                 const moveColor = new THREE.Color(userSettings.moveColor);
                 colorUpdates.normalMove = moveColor.getHex();
             }
             
             if (userSettings.cruxColor) {
-                // Convert hex color to THREE.js color number  
                 const cruxColor = new THREE.Color(userSettings.cruxColor);
                 colorUpdates.cruxMove = cruxColor.getHex();
             }
             
             dispatch({ type: 'UPDATE_COLORS', payload: colorUpdates });
+            
+            // Debounce color updates to prevent excessive updates
+            const timeoutId = setTimeout(() => {
+                if (boulderData && ringsRef.current.children.length > 0) {
+                    console.log('[useBoulderVisualizer] Updating colors');
+                    const startTime = performance.now();
+                    
+                    ringsRef.current.children.forEach((ring, ringIndex) => {
+                        if (ring instanceof THREE.LineLoop && ring.geometry) {
+                            const geometry = ring.geometry as THREE.BufferGeometry;
+                            const moveCount = boulderData.moves.length;
+                            const colorsArray = [];
+                            
+                            const positions = geometry.attributes.position;
+                            const pointCount = positions.count;
+                            
+                            for (let i = 0; i < pointCount; i++) {
+                                const normPos = i / pointCount;
+                                let cInf = 0;
+                                for (let j = 0; j < moveCount; j++) {
+                                    const move = boulderData.moves[j];
+                                    if (move && (move.isCrux || move.crux)) {
+                                        const cPos = j / moveCount;
+                                        let dist = Math.abs(normPos - cPos);
+                                        dist = Math.min(dist, 1 - dist);
+                                        if (dist < 0.12) cInf = Math.max(cInf, 1 - (dist / 0.12));
+                                    }
+                                }
+                                const normalColor = new THREE.Color(colorUpdates.normalMove || colors.normalMove);
+                                const cruxColor = new THREE.Color(colorUpdates.cruxMove || colors.cruxMove);
+                                colorsArray.push(...normalColor.lerp(cruxColor, cInf).toArray());
+                            }
+                            
+                            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorsArray, 3));
+                            geometry.attributes.color.needsUpdate = true;
+                        }
+                    });
+                    
+                    const endTime = performance.now();
+                    console.log(`[useBoulderVisualizer] Color update completed in ${(endTime - startTime).toFixed(2)}ms`);
+                }
+            }, 100); // 100ms debounce
+            
+            return () => clearTimeout(timeoutId);
         }
-    }, [userSettings?.moveColor, userSettings?.cruxColor]);
+    }, [userSettings?.moveColor, userSettings?.cruxColor, boulderData, colors]);
 
     const clearSceneObjects = useCallback(() => {
         managedObjects.forEach(obj => {
@@ -283,19 +345,42 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
     }, [boulderData?.id, boulderData?.moves?.length, settings.centerTextSize, helvetikerFont, scene, managedObjects]);
 
     const createSingleRing = useCallback((ringIndex: number, moveCount: number) => {
-        if (!boulderData || !boulderData.moves || boulderData.moves.length === 0) return null;
-        if (moveCount < 2) return null;
+        if (!boulderData || !boulderData.moves || boulderData.moves.length === 0) {
+            console.warn(`[useBoulderVisualizer] No boulder data for ring ${ringIndex}`);
+            return null;
+        }
+        if (moveCount < 2) {
+            console.warn(`[useBoulderVisualizer] Not enough moves (${moveCount}) for ring ${ringIndex}`);
+            return null;
+        }
 
-        const allDynamics = boulderData.moves.map(move => (move.dynamics !== undefined && isFinite(move.dynamics)) ? move.dynamics : (move.move_number || 1) / moveCount);
+        // Improved dynamics normalization
+        const allDynamics = boulderData.moves.map(move => {
+            if (move.dynamics !== undefined && isFinite(move.dynamics)) {
+                return move.dynamics;
+            }
+            // If dynamics is missing, use a more meaningful fallback based on move position
+            const position = move.move_number || 1;
+            return 0.3 + (position / moveCount) * 0.4; // Range from 0.3 to 0.7 based on position
+        });
+        
         const minDynamics = Math.min(...allDynamics);
         const maxDynamics = Math.max(...allDynamics);
         const dynamicsRange = maxDynamics - minDynamics || 1;
         const currentBaseRadius = (settings.baseRadius + (ringIndex * (settings.ringSpacing + 0.001))) * settings.combinedSize;
 
-        if (!isFinite(currentBaseRadius) || currentBaseRadius <= 0) return null;
+        if (!isFinite(currentBaseRadius) || currentBaseRadius <= 0) {
+            console.warn(`[useBoulderVisualizer] Invalid base radius ${currentBaseRadius} for ring ${ringIndex}`);
+            return null;
+        }
+        
+        // Log dynamics info for first ring only to avoid spam
+        if (ringIndex === 0) {
+            console.log(`[useBoulderVisualizer] Ring creation - Dynamics range: ${minDynamics.toFixed(3)} - ${maxDynamics.toFixed(3)}, Base radius: ${currentBaseRadius.toFixed(2)}`);
+        }
 
         const points = [];
-        const detailLevel = Math.min(Math.max(moveCount * 6, 12), 48);
+        const detailLevel = Math.min(Math.max(moveCount * 4, 8), 32);
 
         for (let i = 0; i < detailLevel; i++) {
             const normalizedPosition = i / detailLevel;
@@ -419,21 +504,30 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
     const createLiquidRings = useCallback(() => {
         if (!boulderData) return;
         const moveCount = boulderData.moves.length;
+        console.log(`[useBoulderVisualizer] Creating ${settings.ringCount} rings for ${moveCount} moves`);
+        
+        let ringsCreated = 0;
         for (let ringIndex = 0; ringIndex < settings.ringCount; ringIndex++) {
             const ring = createSingleRing(ringIndex, moveCount);
             if (ring) {
                 ringsRef.current.add(ring);
                 managedObjects.push(ring);
+                ringsCreated++;
             }
         }
+        
+        console.log(`[useBoulderVisualizer] Successfully created ${ringsCreated} rings out of ${settings.ringCount} attempted`);
     }, [boulderData, settings.ringCount, createSingleRing, managedObjects]);
 
     const createAttemptLines = useCallback(() => {
         if (!boulderData || !settings.showAttemptLines) return;
         
+        console.log(`[useBoulderVisualizer] Creating ${settings.attemptCount} attempt lines`);
+        
         const centerRadius = settings.baseRadius * settings.combinedSize;
         const maxRadius = (settings.baseRadius * settings.combinedSize + (settings.ringCount * settings.ringSpacing) + 8) * settings.maxRadiusScale;
         
+        let linesCreated = 0;
         for (let i = 0; i < settings.attemptCount; i++) {
             // Calculate base angle with equal spacing
             const baseAngle = (i / settings.attemptCount) * Math.PI * 2;
@@ -512,11 +606,17 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
             
             attemptLinesRef.current.add(dot);
             managedObjects.push(dot);
+            linesCreated++;
         }
+        
+        console.log(`[useBoulderVisualizer] Successfully created ${linesCreated} attempt lines out of ${settings.attemptCount} attempted`);
     }, [boulderData, settings, managedObjects]);
 
     const createVisualization = useCallback(() => {
         if (!boulderData) return;
+        
+        console.log(`[useBoulderVisualizer] Creating visualization for boulder: ${boulderData.name} with ${boulderData.moves.length} moves`);
+        
         clearSceneObjects();
         scene.add(ringsRef.current);
         scene.add(attemptLinesRef.current);
@@ -526,86 +626,22 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
         const gradeColor = colors.gradeColors[boulderData.grade] || 0x00ffcc;
         if (helvetikerFont) {
             createCenterText(boulderData.moves.length, gradeColor as number);
+            console.log(`[useBoulderVisualizer] Created center text with font`);
         } else {
             const sphereGeo = new THREE.SphereGeometry(0.3, 16, 16);
             const sphereMat = new THREE.MeshBasicMaterial({ color: gradeColor, transparent: true, opacity: 0.8 });
             centerTextRef.current = new THREE.Mesh(sphereGeo, sphereMat);
             scene.add(centerTextRef.current);
             managedObjects.push(centerTextRef.current);
+            console.log(`[useBoulderVisualizer] Created center sphere (font not loaded)`);
         }
         createLiquidRings();
         createAttemptLines();
+        
+        console.log(`[useBoulderVisualizer] Visualization creation complete. Total managed objects: ${managedObjects.length}`);
     }, [boulderData, scene, clearSceneObjects, createCenterText, createLiquidRings, colors, managedObjects, createAttemptLines]);
 
-    useEffect(() => {
-        const newEffectiveSettings = { ...initialSettings, ...(userSettings || {}) };
-
-        let needsRecreation = false;
-        let needsMaterialUpdate = false;
-
-        // Check if boulder data changed
-        if (boulderData && boulderData !== prevBoulderDataRef.current) {
-            needsRecreation = true;
-            prevBoulderDataRef.current = boulderData;
-        }
-
-        // Check if move count changed (important for live data)
-        const currentMoveCount = boulderData?.moves?.length || 0;
-        if (currentMoveCount !== prevMoveCountRef.current) {
-            console.log(`[useBoulderVisualizer] Move count changed from ${prevMoveCountRef.current} to ${currentMoveCount} - will rebuild circles`);
-            needsRecreation = true;
-            prevMoveCountRef.current = currentMoveCount;
-        }
-
-        // Update internal settings state
-        if (userSettings) {
-            dispatch({ type: 'UPDATE_SETTINGS', payload: userSettings });
-        }
-        
-        // Define which settings require full recreation vs just material updates
-        const structuralChangeKeys: (keyof VisualizerSettings)[] = [
-            'ringCount', 'baseRadius', 'ringSpacing', 'curveResolution', 'combinedSize', 'liquidSize',
-            'dynamicsMultiplier', 'organicNoise', 'depthEffect', 'cruxEmphasis', 'centerTextSize',
-            'showAttemptLines', 'attemptCount', 'attemptZHeight', 'attemptWaveEffect', 'maxRadiusScale'
-        ];
-
-        const materialChangeKeys: (keyof VisualizerSettings)[] = [
-            'opacity', 'centerFade', 'lineOpacity', 'segmentOpacity', 'attemptOpacity'
-        ];
-
-        // Check for structural changes that require recreation
-        for (const key of structuralChangeKeys) {
-            if (newEffectiveSettings[key] !== prevBuiltSettingsRef.current[key]) {
-                needsRecreation = true;
-                break;
-            }
-        }
-
-        // Check for material changes that can be updated in place
-        if (!needsRecreation) {
-            for (const key of materialChangeKeys) {
-                if (newEffectiveSettings[key] !== prevBuiltSettingsRef.current[key]) {
-                    needsMaterialUpdate = true;
-                    break;
-                }
-            }
-        }
-        
-        if (needsRecreation && boulderData) {
-            console.log('[useBoulderVisualizer] Recreating visualization due to boulder/move count/settings change');
-            createVisualization();
-            prevBuiltSettingsRef.current = newEffectiveSettings;
-        } else if (needsMaterialUpdate && boulderData) {
-            console.log('[useBoulderVisualizer] Updating materials only');
-            updateMaterialsOnly();
-            prevBuiltSettingsRef.current = newEffectiveSettings;
-        } else if (userSettings) {
-            prevBuiltSettingsRef.current = newEffectiveSettings;
-        }
-
-    }, [userSettings, boulderData, createVisualization, dispatch]);
-
-    // Add material-only update function
+    // Add material-only update function - moved before useEffect
     const updateMaterialsOnly = useCallback(() => {
         // Update ring materials
         ringsRef.current.children.forEach((ring, ringIndex) => {
@@ -649,6 +685,137 @@ export function useBoulderVisualizer(boulderData: BoulderData | null, userSettin
             }
         });
     }, [settings]);
+
+    useEffect(() => {
+        const newEffectiveSettings = { ...initialSettings, ...(userSettings || {}) };
+        
+        // Check if this is the initial mount or if we don't have a visualization yet
+        const isInitialMount = prevBuiltSettingsRef.current === null;
+        const hasNoVisualization = ringsRef.current.children.length === 0;
+        
+        // Skip effect if settings haven't changed AND we already have a visualization
+        if (!isInitialMount && !hasNoVisualization && deepEqual(userSettings, prevUserSettingsRef.current)) {
+            return;
+        }
+        
+        // Update the previous settings reference
+        prevUserSettingsRef.current = userSettings;
+
+        // Only log in development and reduce frequency
+        if (process.env.NODE_ENV === 'development') {
+            console.log('[useBoulderVisualizer] useEffect triggered with userSettings:', {
+                dynamicsMultiplier: userSettings?.dynamicsMultiplier,
+                combinedSize: userSettings?.combinedSize,
+                ringCount: userSettings?.ringCount,
+                opacity: userSettings?.opacity,
+                centerFade: userSettings?.centerFade,
+                isInitialMount,
+                hasNoVisualization
+            });
+        }
+
+        let needsRecreation = false;
+        let needsMaterialUpdate = false;
+
+        // Check if boulder data changed
+        if (boulderData && boulderData !== prevBoulderDataRef.current) {
+            console.log('[useBoulderVisualizer] Boulder data changed from', prevBoulderDataRef.current?.name, 'to', boulderData.name);
+            needsRecreation = true;
+            prevBoulderDataRef.current = boulderData;
+        }
+        
+        // Check if threshold key changed (for threshold-based updates)
+        if (boulderData && (boulderData as any)._thresholdKey && 
+            prevBoulderDataRef.current && (prevBoulderDataRef.current as any)._thresholdKey !== (boulderData as any)._thresholdKey) {
+            console.log('[useBoulderVisualizer] Threshold key changed:', (boulderData as any)._thresholdKey);
+            needsRecreation = true;
+            prevBoulderDataRef.current = boulderData;
+        }
+
+        // Check if move count changed (important for live data)
+        const currentMoveCount = boulderData?.moves?.length || 0;
+        if (currentMoveCount !== prevMoveCountRef.current) {
+            console.log(`[useBoulderVisualizer] Move count changed from ${prevMoveCountRef.current} to ${currentMoveCount} - will rebuild circles`);
+            needsRecreation = true;
+            prevMoveCountRef.current = currentMoveCount;
+        }
+
+        // Define which settings require full recreation vs just material updates
+        const structuralChangeKeys: (keyof VisualizerSettings)[] = [
+            'ringCount', 'baseRadius', 'ringSpacing', 'curveResolution', 'combinedSize', 'liquidSize',
+            'dynamicsMultiplier', 'organicNoise', 'depthEffect', 'cruxEmphasis', 'centerTextSize',
+            'showAttemptLines', 'attemptCount', 'attemptZHeight', 'attemptWaveEffect', 'maxRadiusScale'
+        ];
+
+        const materialChangeKeys: (keyof VisualizerSettings)[] = [
+            'opacity', 'centerFade', 'lineOpacity', 'segmentOpacity', 'attemptOpacity'
+        ];
+
+        // Check if settings actually changed (only if not initial mount)
+        let hasSettingsChanged = false;
+        if (!isInitialMount && userSettings && prevBuiltSettingsRef.current) {
+            // Check for structural changes
+            for (const key of structuralChangeKeys) {
+                if (newEffectiveSettings[key] !== prevBuiltSettingsRef.current[key]) {
+                    console.log(`[useBoulderVisualizer] Structural change detected: ${key} changed from ${prevBuiltSettingsRef.current[key]} to ${newEffectiveSettings[key]}`);
+                    needsRecreation = true;
+                    hasSettingsChanged = true;
+                    break;
+                }
+            }
+
+            // Check for material changes
+            if (!needsRecreation) {
+                for (const key of materialChangeKeys) {
+                    if (newEffectiveSettings[key] !== prevBuiltSettingsRef.current[key]) {
+                        console.log(`[useBoulderVisualizer] Material change detected: ${key} changed from ${prevBuiltSettingsRef.current[key]} to ${newEffectiveSettings[key]}`);
+                        needsMaterialUpdate = true;
+                        hasSettingsChanged = true;
+                        break;
+                    }
+                }
+            }
+        } else if (isInitialMount) {
+            // On initial mount, we need to create the visualization
+            needsRecreation = true;
+            hasSettingsChanged = true;
+        }
+
+        // Only update internal state if settings actually changed or it's initial mount
+        if (hasSettingsChanged || isInitialMount) {
+            console.log('[useBoulderVisualizer] Dispatching settings update');
+            dispatch({ type: 'UPDATE_SETTINGS', payload: userSettings });
+        }
+        
+        // Force recreation if we have boulder data and need to create/update visualization
+        if (boulderData && (needsRecreation || needsMaterialUpdate || hasNoVisualization)) {
+            const startTime = performance.now();
+            
+            if (needsRecreation || hasNoVisualization) {
+                console.log('[useBoulderVisualizer] Creating/recreating visualization', { 
+                    reason: hasNoVisualization ? 'no visualization' : 'changes detected',
+                    isInitialMount,
+                    needsRecreation 
+                });
+                createVisualization();
+            } else {
+                console.log('[useBoulderVisualizer] Updating materials only');
+                updateMaterialsOnly();
+            }
+            
+            const endTime = performance.now();
+            console.log(`[useBoulderVisualizer] Update completed in ${(endTime - startTime).toFixed(2)}ms`);
+            
+            prevBuiltSettingsRef.current = newEffectiveSettings;
+        } else if (hasSettingsChanged) {
+            // Update prevBuiltSettingsRef even without boulder data to prevent infinite loop
+            console.log('[useBoulderVisualizer] Updating prevBuiltSettingsRef without boulder data');
+            prevBuiltSettingsRef.current = newEffectiveSettings;
+        } else {
+            console.log('[useBoulderVisualizer] No update needed - boulderData:', !!boulderData, 'needsRecreation:', needsRecreation, 'needsMaterialUpdate:', needsMaterialUpdate, 'hasSettingsChanged:', hasSettingsChanged);
+        }
+
+    }, [userSettings, boulderData, createVisualization, updateMaterialsOnly, dispatch]);
 
     useFrame((timeState, delta) => {
         if (!boulderData) return;

@@ -3,6 +3,16 @@ import { RefreshCwIcon, SettingsIcon, WifiIcon, WifiOffIcon } from 'lucide-react
 import type { BoulderData } from '../utils/csvLoader'
 import { useBoulderConfig } from '../context/BoulderConfigContext'
 import ElasticSlider from "./ui/ElasticSlider"
+import { useCSVData } from '../hooks/useCSVData'
+import { debounce } from '../utils/debounce'
+import { 
+  updateSelectedBoulder, 
+  updateProcessedMoves, 
+  updateThreshold, 
+  updateVisualizerSettings,
+  detectAndProcessMoves,
+  getVisualizationState
+} from '../store/visualizationStore'
 
 interface ControlPanelProps {
   // View management
@@ -35,6 +45,9 @@ interface ControlPanelProps {
   
   // Visibility control
   onVisibilityChange: (visible: boolean) => void
+
+  visualizerSettings: any
+  setVisualizerSettings: (settings: any) => void
 }
 
 interface ServerOption {
@@ -101,8 +114,12 @@ export function ControlPanel({
   onServerToggle, 
   onServerCommand, 
   isServerConnected, 
-  onVisibilityChange
+  onVisibilityChange,
+  visualizerSettings,
+  setVisualizerSettings
 }: ControlPanelProps) {
+  const { getThreshold, setThreshold } = useBoulderConfig()
+  const { selectBoulder: selectBoulderFromHook } = useCSVData()
   const [isVisible, setIsVisible] = useState(true)
   const [currentFolder, setCurrentFolder] = useState<string | null>('selection')
   const [isLiveModeActive, setIsLiveModeActive] = useState(false)
@@ -114,65 +131,18 @@ export function ControlPanel({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [scrollPosition, setScrollPosition] = useState(0)
   
-  const { getThreshold, setThreshold } = useBoulderConfig()
+  // Add debounce timer ref
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
   
-  // Only auto-hide when switching to add-boulder
-  useEffect(() => {
-    if (currentView === 'add-boulder') {
-      setIsVisible(false)
-      onVisibilityChange(false)
-    } else if (currentView === 'visualizer') {
-      setIsVisible(true)
-      onVisibilityChange(true)
-    }
-  }, [currentView, onVisibilityChange])
+  // Get current state from global store
+  const state = getVisualizationState()
+  const selectedBoulderId = state.selectedBoulder?.id
   
   // Notify parent of initial visibility state
   useEffect(() => {
     onVisibilityChange(isVisible)
   }, []) // Only run on mount
   
-  // Settings state
-  const [settings, setSettings] = useState({
-    // Basics
-    baseRadius: 1.0,
-    dynamicsMultiplier: 4.9,
-    combinedSize: 1.0,
-    ringCount: 28,
-    ringSpacing: 0.0,
-    
-    // Visuals
-    opacity: 1.0,
-    centerFade: 1.0,
-    depthEffect: 2.0,
-    organicNoise: 0.02,
-    moveColor: '#22d3ee', // Default cyan for moves
-    cruxColor: '#f59e0b', // Default amber for crux
-    
-    // Dynamic Effects
-    cruxEmphasis: 8.0,
-    
-    // Animation
-    animationEnabled: true,
-    rotationSpeed: 0.0,
-    liquidSpeed: 0.5,
-    liquidSize: 1.0,
-    
-    // Advanced
-    curveResolution: 240,
-    liquidEffect: true,
-    
-    // Move Detection
-    centerTextSize: 1.0,
-    
-    // Attempt Visualization - Updated to match App.tsx defaults
-    showAttemptLines: false,
-    attemptCount: 58.0,
-    attemptZHeight: 2.6,
-    attemptWaveEffect: 0.11,
-    maxRadiusScale: 1.35
-  })
-
   const servers: ServerOption[] = [
     { name: 'Server 1 (192.168.1.36)', url: 'http://192.168.1.36' },
     { name: 'Server 2 (10.237.1.101)', url: 'http://10.237.1.101' },
@@ -204,31 +174,77 @@ export function ControlPanel({
     };
   }, [selectedBoulder, currentThreshold]);
 
-  const updateSetting = useCallback((key: string, value: number | boolean | string) => {
-    // Save scroll position before update
-    if (scrollContainerRef.current) {
-      setScrollPosition(scrollContainerRef.current.scrollTop)
+  // Create debounced threshold update
+  const debouncedThresholdUpdate = useRef(
+    debounce((boulderId: number, threshold: number) => {
+      console.log(`[ControlPanel] Updating threshold for boulder ${boulderId} to ${threshold}`)
+      
+      // Update config
+      setThreshold(boulderId, threshold)
+      
+      // Recalculate moves if we have CSV data
+      if (state.selectedBoulder?.csvData) {
+        const moves = detectAndProcessMoves(
+          state.selectedBoulder.csvData.time,
+          state.selectedBoulder.csvData.absoluteAcceleration,
+          threshold
+        )
+        updateProcessedMoves(moves)
+      }
+    }, 500)
+  ).current
+  
+  // Handle threshold change
+  const handleThresholdChange = useCallback((value: number) => {
+    if (selectedBoulder?.id !== undefined) {
+      // Update local state for UI
+      setThreshold(selectedBoulder.id, value)
+      
+      // Update global store
+      updateThreshold(value)
+      
+      // Recalculate moves
+      if (selectedBoulder.csvData) {
+        const moves = detectAndProcessMoves(
+          selectedBoulder.csvData.time,
+          selectedBoulder.csvData.absoluteAcceleration,
+          value
+        )
+        updateProcessedMoves(moves)
+      }
     }
-    
-    const newSettings = { ...settings, [key]: value }
-    setSettings(newSettings)
-    onSettingsChange(newSettings)
-  }, [settings, onSettingsChange])
-
-  // Restore scroll position after updates
+  }, [selectedBoulder, setThreshold])
+  
+  // Create debounced settings update
+  const debouncedSettingsUpdate = useRef(
+    debounce((newSettings: any) => {
+      console.log('[ControlPanel] Updating visualizer settings')
+      setVisualizerSettings(newSettings)
+      updateVisualizerSettings(newSettings) // Update global store
+    }, 100)
+  ).current
+  
+  // Handle settings changes
+  const handleSettingChange = useCallback((key: string, value: any) => {
+    const newSettings = { ...visualizerSettings, [key]: value }
+    debouncedSettingsUpdate(newSettings)
+  }, [visualizerSettings, debouncedSettingsUpdate])
+  
+  // Cleanup on unmount
   useEffect(() => {
-    if (scrollContainerRef.current && scrollPosition > 0) {
-      scrollContainerRef.current.scrollTop = scrollPosition
+    return () => {
+      debouncedThresholdUpdate.cancel()
+      debouncedSettingsUpdate.cancel()
     }
-  }, [settings, scrollPosition])
+  }, [debouncedThresholdUpdate, debouncedSettingsUpdate])
 
   const handleBoulderSelect = useCallback((boulderId: string) => {
     if (boulderId) {
       const id = parseInt(boulderId)
-      selectBoulder(id)
+      selectBoulderFromHook(id)
       onBoulderChange(id)
     }
-  }, [selectBoulder, onBoulderChange])
+  }, [selectBoulderFromHook, onBoulderChange])
 
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -323,6 +339,7 @@ export function ControlPanel({
       icon: '🎨',
       controls: [
         { key: 'opacity', name: 'Line Opacity', min: 0.1, max: 1.0, step: 0.05 },
+        { key: 'lineWidth', name: 'Line Thickness', min: 0.1, max: 3.0, step: 0.1 },
         { key: 'centerFade', name: 'Center Fade', min: 0.0, max: 1.0, step: 0.05 },
         { key: 'depthEffect', name: '3D Depth Effect', min: 0.0, max: 8.0, step: 0.1 },
         { key: 'organicNoise', name: 'Organic Noise', min: 0.0, max: 2.0, step: 0.01 }
@@ -355,19 +372,31 @@ export function ControlPanel({
       name: '🎯 Attempts',
       icon: '🎯',
       controls: [
-        { key: 'attemptCount', name: 'Attempt Count', min: 0, max: 200, step: 1 },
-        { key: 'attemptZHeight', name: 'Z-Height Effect', min: 0.0, max: 3.0, step: 0.1 },
-        { key: 'attemptWaveEffect', name: 'Wave Effect', min: 0.0, max: 1.0, step: 0.01 },
-        { key: 'maxRadiusScale', name: 'Overall Radius', min: 0.5, max: 3.0, step: 0.05 }
+        { key: 'maxAttempts', name: 'Number of Attempts', min: 10, max: 200, step: 5 },
+        { key: 'attemptOpacity', name: 'Attempt Opacity', min: 0.0, max: 1.0, step: 0.05 },
+        { key: 'attemptWaviness', name: 'Line Waviness', min: 0.0, max: 1.0, step: 0.01 },
+        { key: 'attemptThickness', name: 'Line Thickness', min: 0.1, max: 2.0, step: 0.1 },
+        { key: 'attemptRadius', name: 'Max Radius', min: 0.5, max: 3.0, step: 0.05 },
+        { key: 'attemptDotZOffsetMax', name: 'Dot Z Offset', min: 0.0, max: 2.0, step: 0.05 },
+        { key: 'attemptFadeStrength', name: 'Fade Effect', min: 0.0, max: 3.0, step: 0.1 }
       ]
     }
   ]
 
   const ControlSlider = ({ control }: { control: any }) => {
-    const currentValue = Number(settings[control.key as keyof typeof settings]);
+    const currentValue = Number(visualizerSettings[control.key as keyof typeof visualizerSettings]);
+    
+    // Local state for immediate UI feedback
+    const [localValue, setLocalValue] = useState(currentValue);
+    
+    // Sync local value with settings when settings change
+    useEffect(() => {
+      setLocalValue(currentValue);
+    }, [currentValue]);
 
     const handleValueChange = (value: number) => {
-      updateSetting(control.key, value);
+      setLocalValue(value); // Update local state immediately for UI feedback
+      handleSettingChange(control.key, value); // Update parent state (debounced)
     };
 
     return (
@@ -375,11 +404,11 @@ export function ControlPanel({
         <div className="flex justify-between items-center mb-3">
           <label className="text-sm font-medium text-cyan-400">{control.name}</label>
           <span className="text-xs text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded-lg border border-cyan-400/40">
-            {currentValue.toFixed(control.step < 0.01 ? 3 : control.step < 0.1 ? 2 : 1)}
+            {localValue.toFixed(control.step < 0.01 ? 3 : control.step < 0.1 ? 2 : 1)}
           </span>
         </div>
         <ElasticSlider
-          key={`${control.key}-${currentValue}`}
+          // Remove the key prop that includes value to prevent remounting
           defaultValue={currentValue}
           startingValue={control.min}
           maxValue={control.max}
@@ -393,10 +422,10 @@ export function ControlPanel({
   };
 
   const ColorPicker = ({ control }: { control: { key: string; name: string } }) => {
-    const currentColor = settings[control.key as keyof typeof settings] as string;
+    const currentColor = visualizerSettings[control.key as keyof typeof visualizerSettings] as string;
 
     const handleColorChange = (color: string) => {
-      updateSetting(control.key, color);
+      handleSettingChange(control.key, color);
     };
 
     const predefinedColors = [
@@ -614,7 +643,7 @@ export function ControlPanel({
                   isStepped={true}
                   stepSize={0.5}
                   className="w-full"
-                  onChange={(value) => setThreshold(selectedBoulder?.id || 0, value)}
+                  onChange={handleThresholdChange}
                 />
               </div>
 
@@ -675,24 +704,23 @@ export function ControlPanel({
                 <label className="text-sm font-medium text-cyan-400">Show Attempt Lines</label>
                 <button
                   onClick={() => {
-                    const newValue = !settings.showAttemptLines
-                    setSettings(prev => ({ ...prev, showAttemptLines: newValue }))
-                    onSettingsChange({ showAttemptLines: newValue })
+                    const newValue = !visualizerSettings.showAttemptLines
+                    handleSettingChange('showAttemptLines', newValue)
                   }}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    settings.showAttemptLines ? 'bg-cyan-400' : 'bg-gray-600'
+                    visualizerSettings.showAttemptLines ? 'bg-cyan-400' : 'bg-gray-600'
                   }`}
                 >
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      settings.showAttemptLines ? 'translate-x-6' : 'translate-x-1'
+                      visualizerSettings.showAttemptLines ? 'translate-x-6' : 'translate-x-1'
                     }`}
                   />
                 </button>
               </div>
               
               {/* Attempt Controls - only show when enabled */}
-              {settings.showAttemptLines && (
+              {visualizerSettings.showAttemptLines && (
                 <div className="space-y-4">
                   {folders.find(f => f.id === 'attempts')?.controls.map((control) => (
                     <ControlSlider key={control.key} control={control} />

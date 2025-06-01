@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   animate,
   motion,
@@ -54,10 +54,55 @@ const ElasticSlider: React.FC<ElasticSliderProps> = ({
   const clientX = useMotionValue(0);
   const overflow = useMotionValue(0);
   const scale = useMotionValue(1);
+  
+  // Refs for throttling
+  const lastCallRef = useRef<number>(0);
+  const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingValueRef = useRef<number | null>(null);
 
   useEffect(() => {
     setValue(defaultValue);
   }, [defaultValue]);
+  
+  // Cleanup throttle timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (throttleTimeoutRef.current) {
+        clearTimeout(throttleTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Throttled onChange callback
+  const throttledOnChange = useCallback((newValue: number) => {
+    if (!onChange) return;
+    
+    const now = Date.now();
+    const timeSinceLastCall = now - lastCallRef.current;
+    
+    // Store the pending value
+    pendingValueRef.current = newValue;
+    
+    if (timeSinceLastCall >= 16) { // ~60fps throttle
+      onChange(newValue);
+      lastCallRef.current = now;
+      pendingValueRef.current = null;
+    } else {
+      // Clear existing timeout
+      if (throttleTimeoutRef.current) {
+        clearTimeout(throttleTimeoutRef.current);
+      }
+      
+      // Set new timeout to ensure final value is sent
+      throttleTimeoutRef.current = setTimeout(() => {
+        if (pendingValueRef.current !== null && onChange) {
+          onChange(pendingValueRef.current);
+          lastCallRef.current = Date.now();
+          pendingValueRef.current = null;
+        }
+      }, 16 - timeSinceLastCall);
+    }
+  }, [onChange]);
 
   useMotionValueEvent(clientX, "change", (latest: number) => {
     if (sliderRef.current) {
@@ -88,9 +133,7 @@ const ElasticSlider: React.FC<ElasticSliderProps> = ({
       }
       newValue = Math.min(Math.max(newValue, startingValue), maxValue);
       setValue(newValue);
-      if (onChange) {
-        onChange(newValue);
-      }
+      throttledOnChange(newValue);
       clientX.jump(e.clientX);
     }
   };
@@ -107,6 +150,12 @@ const ElasticSlider: React.FC<ElasticSliderProps> = ({
       stiffness: 200,
       damping: 20
     });
+    
+    // Ensure final value is sent
+    if (pendingValueRef.current !== null && onChange) {
+      onChange(pendingValueRef.current);
+      pendingValueRef.current = null;
+    }
   };
 
   const getRangePercentage = (): number => {

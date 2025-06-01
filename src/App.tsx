@@ -1,12 +1,19 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { AddCustomBoulder } from './components/AddCustomBoulder'
-import { BoulderVisualizer } from './components/BoulderVisualizer'
+import { BoulderVisualizerSimple } from './components/BoulderVisualizerSimple'
 import { StatisticsView } from './components/StatisticsView'
 import { ControlPanel } from './components/ControlPanel'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { BoulderConfigProvider } from './context/BoulderConfigContext'
 import { useCSVData } from './hooks/useCSVData'
 import type { BoulderData } from './utils/csvLoader'
+import Silk from './components/ui/Silk'
+import { 
+  updateSelectedBoulder, 
+  updateProcessedMoves, 
+  detectAndProcessMoves,
+  updateVisualizerSettings
+} from './store/visualizationStore'
 import './utils/corsHelper' // Initialize CORS helper
 import './App.css'
 
@@ -21,19 +28,21 @@ function App() {
   const viewChangeTimeoutRef = useRef<NodeJS.Timeout>()
   
   const [visualizerSettings, setVisualizerSettings] = useState({
-    // Basics
-    dynamicsMultiplier: 3.3,
-    combinedSize: 1.6,
-    ringCount: 59.0,
-    ringSpacing: 0.020,
+    // Basics - Updated to match user's current settings
+    baseRadius: 0.85,
+    dynamicsMultiplier: 4.5,
+    combinedSize: 1.4,
+    ringCount: 59,
+    ringSpacing: 0.007,
     
-    // Visuals
-    opacity: 1.0,
-    centerFade: 0.75,
-    depthEffect: 1.2,
-    organicNoise: 0.12,
-    moveColor: '#22d3ee', // Default cyan for moves
-    cruxColor: '#f59e0b', // Default amber for crux
+    // Visuals - Updated to match user's current settings
+    opacity: 0.90,
+    lineWidth: 0.6,
+    centerFade: 0.90,
+    depthEffect: 1.8,
+    organicNoise: 1.69,
+    moveColor: '#8b5cf6', // Purple from user's selection
+    cruxColor: '#ef4444', // Red from user's selection
     
     // Dynamic Effects
     cruxEmphasis: 1.6,
@@ -46,19 +55,57 @@ function App() {
     
     // Advanced
     curveResolution: 240,
-    baseRadius: 1.0,
     liquidEffect: true,
     
     // Text Display
     centerTextSize: 1.0,
     
-    // Attempt Visualization - Updated defaults to match current values
+    // Attempt Visualization - Updated to match user's current settings
     showAttemptLines: true,
+    maxAttempts: 85.0,
+    attemptOpacity: 0.90,
+    attemptWaviness: 0.09,
+    attemptFadeStrength: 2.8,
+    attemptThickness: 0.6,
+    attemptIntensity: 0.5,
+    attemptRadius: 1.70,
+    attemptDotZOffsetMax: 1.15,
+    attemptDotZEffectStrength: 0.5,
+    
+    // Legacy attempt settings (for compatibility)
     attemptCount: 71.0,
     attemptZHeight: 1.5,
     attemptWaveEffect: 0.06,
     maxRadiusScale: 1.20
   })
+  
+  // Memoize the visualizer settings to prevent unnecessary re-renders
+  const memoizedVisualizerSettings = useMemo(() => visualizerSettings, [
+    visualizerSettings.dynamicsMultiplier,
+    visualizerSettings.combinedSize,
+    visualizerSettings.ringCount,
+    visualizerSettings.ringSpacing,
+    visualizerSettings.opacity,
+    visualizerSettings.centerFade,
+    visualizerSettings.depthEffect,
+    visualizerSettings.organicNoise,
+    visualizerSettings.moveColor,
+    visualizerSettings.cruxColor,
+    visualizerSettings.cruxEmphasis,
+    visualizerSettings.animationEnabled,
+    visualizerSettings.rotationSpeed,
+    visualizerSettings.liquidSpeed,
+    visualizerSettings.liquidSize,
+    visualizerSettings.curveResolution,
+    visualizerSettings.baseRadius,
+    visualizerSettings.liquidEffect,
+    visualizerSettings.centerTextSize,
+    visualizerSettings.showAttemptLines,
+    visualizerSettings.attemptCount,
+    visualizerSettings.attemptZHeight,
+    visualizerSettings.attemptWaveEffect,
+    visualizerSettings.maxRadiusScale
+  ])
   
   // Centralized boulder data management
   const { boulders, selectedBoulder, isLoading, error, selectBoulder, updateBoulderData, uploadFile, refreshBoulders } = useCSVData()
@@ -131,11 +178,28 @@ function App() {
   }, [])
 
   const handleSettingsChange = useCallback((settings: any) => {
-    setVisualizerSettings(prevSettings => ({
-      ...prevSettings,
-      ...settings
-    }))
-  }, [])
+    console.log('[App] Settings change received:', {
+      dynamicsMultiplier: settings.dynamicsMultiplier,
+      combinedSize: settings.combinedSize,
+      ringCount: settings.ringCount
+    });
+    
+    setVisualizerSettings(prevSettings => {
+      // Only update if settings actually changed
+      const hasChanges = Object.keys(settings).some(key => settings[key] !== prevSettings[key as keyof typeof prevSettings]);
+      
+      if (hasChanges) {
+        console.log('[App] Applying settings changes');
+        return {
+          ...prevSettings,
+          ...settings
+        };
+      } else {
+        console.log('[App] No actual changes in settings, skipping update');
+        return prevSettings;
+      }
+    });
+  }, []);
 
   const handleBoulderChange = useCallback((boulderId: number) => {
     console.log('[App] Boulder ID changing to:', boulderId)
@@ -165,6 +229,32 @@ function App() {
       handleBoulderChange(parseInt(value))
     }
   }, [handleBoulderChange])
+
+  // Update global store when settings change
+  useEffect(() => {
+    updateVisualizerSettings(memoizedVisualizerSettings)
+  }, [memoizedVisualizerSettings])
+  
+  // Update global store when boulder selection changes
+  useEffect(() => {
+    if (selectedBoulder) {
+      console.log('[App] Updating global store with selected boulder:', selectedBoulder.name)
+      updateSelectedBoulder(selectedBoulder)
+      
+      // Process moves if CSV data exists
+      if (selectedBoulder.csvData) {
+        const moves = detectAndProcessMoves(
+          selectedBoulder.csvData.time,
+          selectedBoulder.csvData.absoluteAcceleration,
+          12.0 // Default threshold, will be updated by ControlPanel
+        )
+        updateProcessedMoves(moves)
+      }
+    } else {
+      updateSelectedBoulder(null)
+      updateProcessedMoves(null)
+    }
+  }, [selectedBoulder])
 
   const renderView = () => {
     switch (currentView) {
@@ -202,17 +292,7 @@ function App() {
           
           return (
             <ErrorBoundary>
-              <BoulderVisualizer 
-                settings={visualizerSettings} 
-                boulderData={boulderDataToUse}
-                currentBoulderId={selectedBoulder?.id || 0}
-                boulders={boulders}
-                selectedBoulder={selectedBoulder}
-                isLoading={isLoading}
-                error={error}
-                selectBoulder={selectBoulder}
-                isControlPanelVisible={isControlPanelVisible}
-              />
+              <BoulderVisualizerSimple />
             </ErrorBoundary>
           )
         }
@@ -221,7 +301,16 @@ function App() {
 
   return (
     <BoulderConfigProvider>
-    <div className="min-h-screen bg-black relative">
+    <div className="min-h-screen relative">
+      {/* Silk Animated Background */}
+      <Silk
+        speed={7.0}
+        scale={0.3}
+        color="#052323"
+        noiseIntensity={0.2}
+        rotation={4.75}
+      />
+      
       <main className="h-screen relative">
         {renderView()}
         
@@ -232,6 +321,8 @@ function App() {
           visualizationMode={visualizationMode}
           onVisualizationModeChange={handleVisualizationModeChange}
           onSettingsChange={handleSettingsChange}
+          visualizerSettings={visualizerSettings}
+          setVisualizerSettings={setVisualizerSettings}
           onBoulderChange={handleBoulderChange}
           onBoulderDataUpdate={handleBoulderDataUpdate}
           onServerToggle={handleServerToggle}

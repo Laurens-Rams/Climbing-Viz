@@ -49,7 +49,7 @@ export function AddCustomBoulder({
 
   // Selection screen
   return (
-    <div className="h-full flex items-center justify-center p-8 bg-gradient-to-br from-gray-900 to-black" style={{ paddingTop: '10%' }}>
+    <div className="h-full flex items-center justify-center p-8" style={{ paddingTop: '10%' }}>
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-12">
