@@ -126,6 +126,7 @@ export function ControlPanel({
   const [selectedServer, setSelectedServer] = useState(0)
   const [serverUrl, setServerUrl] = useState('http://192.168.1.36')
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('disconnected')
+  const [fontLoaded, setFontLoaded] = useState(false)
   
   // Scroll position ref to maintain scroll position
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -142,6 +143,34 @@ export function ControlPanel({
   useEffect(() => {
     onVisibilityChange(isVisible)
   }, []) // Only run on mount
+  
+  // Check font loading status
+  useEffect(() => {
+    const checkFont = async () => {
+      if (document.fonts && document.fonts.check) {
+        try {
+          const loaded = document.fonts.check('bold 16px TT-Supermolot-Neue-Trial-Expanded-Bold')
+          if (loaded) {
+            setFontLoaded(true)
+          } else {
+            await document.fonts.load('bold 16px TT-Supermolot-Neue-Trial-Expanded-Bold')
+            setFontLoaded(true)
+          }
+        } catch (error) {
+          console.warn('Font loading check failed:', error)
+          setFontLoaded(false)
+        }
+      }
+    }
+    
+    checkFont()
+    
+    // Also listen for font load events
+    if (document.fonts) {
+      document.fonts.addEventListener('loadingdone', checkFont)
+      return () => document.fonts.removeEventListener('loadingdone', checkFont)
+    }
+  }, [])
   
   const servers: ServerOption[] = [
     { name: 'Server 1 (192.168.1.36)', url: 'http://192.168.1.36' },
@@ -322,6 +351,12 @@ export function ControlPanel({
       controls: []
     },
     {
+      id: 'presets',
+      name: '🎯 Presets',
+      icon: '🎯',
+      controls: []
+    },
+    {
       id: 'basics',
       name: '⚙️ Basics',
       icon: '⚙️',
@@ -382,6 +417,227 @@ export function ControlPanel({
       ]
     }
   ]
+
+  // Define preset configurations based on the screenshots
+  const presets = {
+    // Current settings saved as "Current" preset
+    current: {
+      name: 'Current Settings',
+      description: 'Your current configuration',
+      settings: {
+        // Basics
+        baseRadius: 0.65,
+        dynamicsMultiplier: 1.0,
+        combinedSize: 1.4,
+        ringCount: 35.0,
+        ringSpacing: 0.007,
+        
+        // Visuals
+        opacity: 1.00,
+        lineWidth: 0.3,
+        centerFade: 0.90,
+        depthEffect: 0.5,
+        organicNoise: 0.05,
+        moveColor: '#22d3ee',
+        cruxColor: '#8b5cf6',
+        
+        // Dynamic Effects
+        cruxEmphasis: 4.7,
+        
+        // Animation
+        rotationSpeed: 0.0,
+        liquidSpeed: 1.90,
+        liquidSize: 0.4,
+        
+        // Attempts
+        showAttemptLines: true,
+        maxAttempts: 60.0,
+        attemptOpacity: 0.45,
+        attemptWaviness: 0.04,
+        attemptThickness: 0.8,
+        attemptRadius: 1.45,
+        attemptDotZOffsetMax: 0.85,
+        attemptFadeStrength: 0.8
+      }
+    },
+    // Default settings from screenshots
+    default: {
+      name: 'Default',
+      description: 'Clean default visualization',
+      settings: {
+        // Basics
+        baseRadius: 0.65,
+        dynamicsMultiplier: 1.0,
+        combinedSize: 1.4,
+        ringCount: 35.0,
+        ringSpacing: 0.007,
+        
+        // Visuals
+        opacity: 1.00,
+        lineWidth: 0.3,
+        centerFade: 0.90,
+        depthEffect: 0.5,
+        organicNoise: 0.05,
+        moveColor: '#22d3ee',
+        cruxColor: '#8b5cf6',
+        
+        // Dynamic Effects
+        cruxEmphasis: 4.7,
+        
+        // Animation
+        rotationSpeed: 0.0,
+        liquidSpeed: 0.55,
+        liquidSize: 0.4,
+        
+        // Attempts
+        showAttemptLines: true,
+        maxAttempts: 60.0,
+        attemptOpacity: 0.45,
+        attemptWaviness: 0.04,
+        attemptThickness: 0.8,
+        attemptRadius: 1.45,
+        attemptDotZOffsetMax: 0.85,
+        attemptFadeStrength: 0.8
+      }
+    },
+    // Dramatic preset
+    dramatic: {
+      name: 'Dramatic',
+      description: 'High contrast and emphasis',
+      settings: {
+        // Basics
+        baseRadius: 0.4,
+        dynamicsMultiplier: 2.5,
+        combinedSize: 2.0,
+        ringCount: 50.0,
+        ringSpacing: 0.002,
+        
+        // Visuals
+        opacity: 0.95,
+        lineWidth: 0.8,
+        centerFade: 1.0,
+        depthEffect: 1.5,
+        organicNoise: 0.15,
+        moveColor: '#ef4444',
+        cruxColor: '#f59e0b',
+        
+        // Dynamic Effects
+        cruxEmphasis: 15.0,
+        
+        // Animation
+        rotationSpeed: 0.0,
+        liquidSpeed: 3.0,
+        liquidSize: 1.0,
+        
+        // Attempts
+        showAttemptLines: true,
+        maxAttempts: 40.0,
+        attemptOpacity: 0.8,
+        attemptWaviness: 0.1,
+        attemptThickness: 1.2,
+        attemptRadius: 2.0,
+        attemptDotZOffsetMax: 1.2,
+        attemptFadeStrength: 2.0
+      }
+    },
+    // Smooth preset
+    smooth: {
+      name: 'Smooth Flow',
+      description: 'Gentle and flowing visualization',
+      settings: {
+        // Basics
+        baseRadius: 1.0,
+        dynamicsMultiplier: 0.8,
+        combinedSize: 1.2,
+        ringCount: 25.0,
+        ringSpacing: 0.015,
+        
+        // Visuals
+        opacity: 0.7,
+        lineWidth: 0.2,
+        centerFade: 0.5,
+        depthEffect: 0.3,
+        organicNoise: 0.02,
+        moveColor: '#10b981',
+        cruxColor: '#06b6d4',
+        
+        // Dynamic Effects
+        cruxEmphasis: 2.0,
+        
+        // Animation
+        rotationSpeed: 0.5,
+        liquidSpeed: 1.0,
+        liquidSize: 0.8,
+        
+        // Attempts
+        showAttemptLines: true,
+        maxAttempts: 80.0,
+        attemptOpacity: 0.3,
+        attemptWaviness: 0.02,
+        attemptThickness: 0.4,
+        attemptRadius: 1.2,
+        attemptDotZOffsetMax: 0.5,
+        attemptFadeStrength: 0.5
+      }
+    },
+    // Minimal preset
+    minimal: {
+      name: 'Minimal',
+      description: 'Clean and simple',
+      settings: {
+        // Basics
+        baseRadius: 0.8,
+        dynamicsMultiplier: 0.5,
+        combinedSize: 1.0,
+        ringCount: 20.0,
+        ringSpacing: 0.01,
+        
+        // Visuals
+        opacity: 0.6,
+        lineWidth: 0.15,
+        centerFade: 0.3,
+        depthEffect: 0.1,
+        organicNoise: 0.0,
+        moveColor: '#6366f1',
+        cruxColor: '#8b5cf6',
+        
+        // Dynamic Effects
+        cruxEmphasis: 1.0,
+        
+        // Animation
+        rotationSpeed: 0.0,
+        liquidSpeed: 0.5,
+        liquidSize: 0.2,
+        
+        // Attempts
+        showAttemptLines: false,
+        maxAttempts: 30.0,
+        attemptOpacity: 0.2,
+        attemptWaviness: 0.01,
+        attemptThickness: 0.3,
+        attemptRadius: 1.0,
+        attemptDotZOffsetMax: 0.3,
+        attemptFadeStrength: 0.3
+      }
+    }
+  }
+
+  // Handle preset application
+  const applyPreset = useCallback((presetKey: keyof typeof presets) => {
+    const preset = presets[presetKey]
+    if (preset) {
+      console.log(`Applying preset: ${preset.name}`)
+      const newSettings = { ...visualizerSettings, ...preset.settings }
+      setVisualizerSettings(newSettings)
+      updateVisualizerSettings(newSettings)
+    }
+  }, [visualizerSettings, setVisualizerSettings])
+
+  // Save current settings as a preset (updates the current preset)
+  const saveCurrentAsPreset = useCallback(() => {
+    presets.current.settings = { ...visualizerSettings }
+    console.log('Current settings saved as preset')
+  }, [visualizerSettings])
 
   const ControlSlider = ({ control }: { control: any }) => {
     const currentValue = Number(visualizerSettings[control.key as keyof typeof visualizerSettings]);
@@ -509,7 +765,15 @@ export function ControlPanel({
         <div className="p-4 border-b border-cyan-400/20 bg-black/50">
           {/* Header row with title and refresh */}
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-cyan-400 font-bold text-xl">Control Center</h2>
+            <div className="flex items-center space-x-3">
+              <h2 className="text-cyan-400 font-bold text-xl">Control Center</h2>
+              {fontLoaded && (
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  <span className="text-xs text-green-400 font-medium">TT-Supermolot</span>
+                </div>
+              )}
+            </div>
             <button
               onClick={refreshBoulders}
               className="px-3 py-2 bg-cyan-400/20 hover:bg-cyan-400/30 text-cyan-400 rounded-lg transition-all text-sm font-medium"
@@ -692,6 +956,66 @@ export function ControlPanel({
                     />
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Presets Tab */}
+          {currentFolder === 'presets' && (
+            <div className="space-y-6">
+              {/* Save Current Settings */}
+              <div>
+                <h4 className="text-cyan-400 font-medium mb-4">Save Current Settings</h4>
+                <button
+                  onClick={saveCurrentAsPreset}
+                  className="w-full px-4 py-3 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-400/40 rounded-xl font-medium transition-all"
+                >
+                  💾 Save Current as Preset
+                </button>
+                <p className="text-xs text-gray-400 mt-2">
+                  This will update the "Current Settings" preset with your current configuration.
+                </p>
+              </div>
+
+              {/* Preset Buttons */}
+              <div>
+                <h4 className="text-cyan-400 font-medium mb-4">Apply Presets</h4>
+                <div className="space-y-3">
+                  {Object.entries(presets).map(([key, preset]) => (
+                    <div key={key} className="space-y-2">
+                      <button
+                        onClick={() => applyPreset(key as keyof typeof presets)}
+                        className="w-full px-4 py-3 bg-cyan-400/20 hover:bg-cyan-400/30 text-cyan-400 border border-cyan-400/40 rounded-xl font-medium transition-all text-left"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium">{preset.name}</div>
+                            <div className="text-xs text-gray-400">{preset.description}</div>
+                          </div>
+                          <div className="text-lg">
+                            {key === 'current' && '💾'}
+                            {key === 'default' && '⚙️'}
+                            {key === 'dramatic' && '🔥'}
+                            {key === 'smooth' && '🌊'}
+                            {key === 'minimal' && '✨'}
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Preset Info */}
+              <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-4">
+                <h5 className="text-cyan-400 font-medium mb-2">About Presets</h5>
+                <ul className="text-xs text-gray-400 space-y-1">
+                  <li>• <strong>Current Settings:</strong> Your saved configuration</li>
+                  <li>• <strong>Default:</strong> Clean default visualization</li>
+                  <li>• <strong>Dramatic:</strong> High contrast and emphasis</li>
+                  <li>• <strong>Smooth Flow:</strong> Gentle and flowing</li>
+                  <li>• <strong>Minimal:</strong> Clean and simple</li>
+                </ul>
               </div>
             </div>
           )}

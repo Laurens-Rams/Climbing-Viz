@@ -58,9 +58,11 @@ function VisualizationScene() {
       // Clear existing visualization
       clearSceneObjects()
       
-      // Create new visualization if we have data
+      // Create new visualization if we have data (async, non-blocking)
       if (vizState.selectedBoulder && vizState.processedMoves && vizState.processedMoves.length > 0) {
-        createVisualization(vizState)
+        createVisualization(vizState).catch(error => {
+          console.error('[BoulderVisualizerSimple] Error creating visualization:', error)
+        })
       }
     }
     
@@ -153,7 +155,26 @@ function VisualizationScene() {
     }
   }
   
-  const createVisualization = (vizState: VisualizationState) => {
+  // Font loading utility
+  const loadCustomFont = async () => {
+    if (document.fonts && document.fonts.check) {
+      try {
+        const fontLoaded = document.fonts.check('bold 16px TT-Supermolot-Neue-Trial-Expanded-Bold')
+        if (!fontLoaded) {
+          console.log('[BoulderVisualizerSimple] Loading TT-Supermolot font...')
+          await document.fonts.load('bold 16px TT-Supermolot-Neue-Trial-Expanded-Bold')
+          console.log('[BoulderVisualizerSimple] TT-Supermolot font loaded successfully')
+        }
+        return true
+      } catch (error) {
+        console.warn('[BoulderVisualizerSimple] Font loading failed:', error)
+        return false
+      }
+    }
+    return false
+  }
+  
+  const createVisualization = async (vizState: VisualizationState) => {
     if (!ringsRef.current || !attemptLinesRef.current || !vizState.processedMoves) return
     
     const settings = vizState.visualizerSettings
@@ -162,12 +183,53 @@ function VisualizationScene() {
     
     console.log(`[BoulderVisualizerSimple] Creating ${settings.ringCount} rings for ${moveCount} moves`)
     
-    // Create center text/sphere with proper size
-    const sphereRadius = 0.3 * settings.centerTextSize
-    const sphereGeo = new THREE.SphereGeometry(sphereRadius, 16, 16)
-    const sphereMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.8 })
-    centerTextRef.current = new THREE.Mesh(sphereGeo, sphereMat)
-    if (meshRef.current) {
+    // Ensure font is loaded
+    await loadCustomFont()
+    
+    // Create center text with custom font
+    const canvas = document.createElement('canvas')
+    const context = canvas.getContext('2d')
+    if (context) {
+      canvas.width = 512
+      canvas.height = 512
+      
+      // Make canvas background transparent
+      context.clearRect(0, 0, canvas.width, canvas.height)
+      
+      // Use TT-Supermolot font
+      const fontFamily = 'TT-Supermolot-Neue-Trial-Expanded-Bold, Arial, sans-serif'
+      context.font = `bold 220px ${fontFamily}`
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      context.fillStyle = '#ffffff'
+      
+      // Display move count centered in the middle, slightly down
+      const displayText = moveCount.toString()
+      context.fillText(displayText, canvas.width / 2, canvas.height / 2 + 15)
+      
+      // Create texture and mesh
+      const texture = new THREE.CanvasTexture(canvas)
+      texture.needsUpdate = true
+      
+      const textGeometry = new THREE.PlaneGeometry(2.5 * settings.centerTextSize, 2.5 * settings.centerTextSize)
+      const textMaterial = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0.95,
+        alphaTest: 0.1
+      })
+      
+      centerTextRef.current = new THREE.Mesh(textGeometry, textMaterial)
+      centerTextRef.current.position.z = 0.01
+    } else {
+      // Fallback to sphere if canvas context fails
+      const sphereRadius = 0.3 * settings.centerTextSize
+      const sphereGeo = new THREE.SphereGeometry(sphereRadius, 16, 16)
+      const sphereMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.8 })
+      centerTextRef.current = new THREE.Mesh(sphereGeo, sphereMat)
+    }
+    
+    if (meshRef.current && centerTextRef.current) {
       meshRef.current.add(centerTextRef.current)
       managedObjects.current.push(centerTextRef.current)
     }
@@ -519,11 +581,11 @@ function VisualizationScene() {
 // Main component
 export function BoulderVisualizerSimple() {
   return (
-    <div className="w-full h-full bg-black relative overflow-hidden">
+    <div className="w-full h-full relative overflow-hidden" style={{ background: 'transparent' }}>
       <Canvas
         camera={{ position: [0, 0, 20], fov: 50 }}
         style={{ background: 'transparent' }}
-        gl={{ alpha: true, antialias: true }}
+        gl={{ alpha: true, antialias: true, premultipliedAlpha: false }}
       >
         <Suspense fallback={null}>
           <ambientLight intensity={0.6} />

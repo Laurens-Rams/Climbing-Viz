@@ -225,7 +225,7 @@ export class BoulderVisualizer {
         console.log('BoulderVisualizer.createVisualization completed');
     }
     
-    createVisualization() {
+    async createVisualization() {
         // Clear existing visualization
         this.clearScene();
         
@@ -244,8 +244,8 @@ export class BoulderVisualizer {
         this.createMoveLines();
         console.log(`Created ${this.moveLines?.length || 0} move lines`);
         
-        // Create center grade display
-        this.createCenterGrade();
+        // Create center grade display (async for font loading)
+        await this.createCenterGrade();
         console.log('Created center grade display');
         
         // Create concentric rings with liquid effect
@@ -317,24 +317,24 @@ export class BoulderVisualizer {
         console.log(`[BoulderVisualizer] Scene cleared, remaining objects: ${this.scene.children.length}`);
     }
     
-    createCenterGrade() {
+    async createCenterGrade() {
         // Create a colored circle in the center with the CSV name or move count
         // Since we no longer have grades, we'll use a default color or base it on move count
         const moveCount = this.boulder.moves?.length || 0;
         const gradeColor = this.getColorForMoveCount(moveCount);
         
-        // Create center circle that fills the base radius completely
+        // Create center circle that fills the base radius completely - make it very transparent
         const centerGeometry = new THREE.CircleGeometry(this.settings.baseRadius * this.settings.radiusMultiplier, 64);
         const centerMaterial = new THREE.MeshBasicMaterial({ 
             color: gradeColor,
             transparent: true,
-            opacity: 0.8
+            opacity: 0.1 // Very low opacity to avoid dark square
         });
         this.centerCircle = new THREE.Mesh(centerGeometry, centerMaterial);
         this.scene.add(this.centerCircle);
         
         // Create text using move count or CSV name
-        this.createCenterText(moveCount, gradeColor);
+        await this.createCenterText(moveCount, gradeColor);
     }
     
     getColorForMoveCount(moveCount) {
@@ -346,39 +346,65 @@ export class BoulderVisualizer {
         return 0x9C27B0;                          // Purple - Extreme
     }
     
-    createCenterText(moveCount, gradeColor) {
+    async loadCustomFont() {
+        // Check if the font is already loaded
+        if (document.fonts && document.fonts.check) {
+            try {
+                // Check if TT-Supermolot font is loaded
+                const fontLoaded = document.fonts.check('bold 16px TT-Supermolot-Neue-Trial-Expanded-Bold');
+                if (!fontLoaded) {
+                    console.log('[BoulderVisualizer] Loading TT-Supermolot font...');
+                    await document.fonts.load('bold 16px TT-Supermolot-Neue-Trial-Expanded-Bold');
+                    console.log('[BoulderVisualizer] TT-Supermolot font loaded successfully');
+                }
+                return true;
+            } catch (error) {
+                console.warn('[BoulderVisualizer] Font loading failed:', error);
+                return false;
+            }
+        }
+        return false;
+    }
+
+    async createCenterText(moveCount, gradeColor) {
+        // Ensure font is loaded
+        await this.loadCustomFont();
+        
         // Create high-resolution canvas for text
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         canvas.width = 512;  // Higher resolution
         canvas.height = 512;
         
+        // Make canvas background transparent
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Load and use the TT-Supermolot font
+        const fontFamily = 'TT-Supermolot-Neue-Trial-Expanded-Bold, Arial, sans-serif';
+        
         // Set font and text properties with higher resolution
-        context.font = 'bold 280px Arial';
+        context.font = `bold 220px ${fontFamily}`; // Smaller font size (was 280px)
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         
         // Fill text with white color
         context.fillStyle = '#ffffff';
         
-        // Display move count in the center
+        // Display move count centered in the middle, slightly down
         const displayText = moveCount.toString();
-        context.fillText(displayText, canvas.width / 2, canvas.height / 2);
-        
-        // Add small label below the number
-        context.font = 'bold 80px Arial';
-        context.fillText('moves', canvas.width / 2, canvas.height / 2 + 120);
+        context.fillText(displayText, canvas.width / 2, canvas.height / 2 + 15); // Moved down by 15px (was 20px)
         
         // Create texture from canvas
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
         
         // Create plane geometry for the text
-        const textGeometry = new THREE.PlaneGeometry(3.2, 3.2);
+        const textGeometry = new THREE.PlaneGeometry(2.5 * this.settings.centerTextSize, 2.5 * this.settings.centerTextSize); // Smaller geometry (was 3.2)
         const textMaterial = new THREE.MeshBasicMaterial({
             map: texture,
             transparent: true,
-            opacity: 0.9
+            opacity: 0.95,
+            alphaTest: 0.1 // This helps remove dark edges
         });
         
         this.centerText = new THREE.Mesh(textGeometry, textMaterial);

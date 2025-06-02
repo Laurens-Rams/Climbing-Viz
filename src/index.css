@@ -1,6 +1,15 @@
 /* Import Glassy Theme */
 @import './styles/glassy-theme.css';
 
+/* Load TT-Supermolot Font */
+@font-face {
+  font-family: 'TT-Supermolot-Neue-Trial-Expanded-Bold';
+  src: url('./fonts/TT-Supermolot-Neue-Trial-Expanded-Bold-BF65fcfb4dc55fe.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
