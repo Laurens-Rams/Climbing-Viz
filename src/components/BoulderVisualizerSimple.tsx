@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, Suspense } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas, useFrame, extend } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { 
@@ -119,24 +119,97 @@ function VisualizationScene() {
   }
   
   const updateAttemptAnimation = (elapsedTime: number, settings: any) => {
-    // Update attempt line wave animations
+    // Update attempt line wave animations - animate the wavy pattern flowing along the lines
     if (!attemptLinesRef.current) return
     
+    // Store animated endpoints for dots
+    const animatedEndpoints = new Map<number, { x: number; y: number; z: number }>()
+    
     attemptLinesRef.current.children.forEach((child, index) => {
-      if (child instanceof THREE.Line && child.geometry) {
+      // Check for Mesh objects with TubeGeometry (attempt lines)
+      if (child instanceof THREE.Mesh && child.geometry && child.geometry.type === 'TubeGeometry') {
         const positions = child.geometry.attributes.position
-        if (positions) {
+        const attemptIndex = (child as any).attemptIndex
+        
+        if (positions && attemptIndex !== undefined) {
           const positionArray = positions.array as Float32Array
           
+          // Get original positions if not stored
+          if (!(child as any).originalPositions) {
+            (child as any).originalPositions = new Float32Array(positionArray)
+          }
+          const originalPositions = (child as any).originalPositions
+          
+          // Animate the wave pattern flowing along the line
+          const waveSpeed = settings.attemptWaveSpeed || 1.0
+          const waveDirection = settings.attemptWaveDirection || 1.0
+          const waveIntensity = settings.attemptWaveIntensity || 1.5
+          const animatedTime = elapsedTime * waveSpeed * waveDirection
+          
+          // TubeGeometry has radial segments (8) and tube segments
+          const radialSegments = 8
+          const tubeSegments = Math.floor(positionArray.length / 3 / radialSegments)
+          
+          // Store the final endpoint for dot animation
+          let finalEndpoint = { x: 0, y: 0, z: 0 }
+          
           for (let i = 0; i < positionArray.length; i += 3) {
-            const t = i / (positionArray.length - 3)
-            const waveOffset = Math.sin(elapsedTime * 2 + index * 0.1 + t * Math.PI * 4) * settings.attemptWaviness * t * 0.6
+            // Calculate which tube segment this vertex belongs to
+            const vertexIndex = i / 3
+            const tubeSegmentIndex = Math.floor(vertexIndex / radialSegments)
+            const t = tubeSegmentIndex / (tubeSegments - 1) // Position along the tube (0 to 1)
             
-            // Apply wave to Z position
-            positionArray[i + 2] += waveOffset
+            // Copy original position
+            positionArray[i] = originalPositions[i]     // X
+            positionArray[i + 1] = originalPositions[i + 1] // Y
+            positionArray[i + 2] = originalPositions[i + 2] // Z
+            
+            // Add animated wave offset to the existing wavy pattern
+            const baseWave = Math.sin(animatedTime + attemptIndex * 0.1 + t * Math.PI * 4) * settings.attemptWaviness * t * 0.6 * waveIntensity
+            const flowingWave = Math.sin(animatedTime * 2 + attemptIndex * 0.2 + t * Math.PI * 8) * settings.attemptWaviness * t * 0.3 * waveIntensity
+            const detailWave = Math.cos(animatedTime * 3 + attemptIndex * 0.15 + t * Math.PI * 12) * settings.attemptWaviness * t * 0.1 * waveIntensity
+            
+            const totalWaveOffset = baseWave + flowingWave + detailWave
+            
+            // Apply wave to the angle (creating flowing wavy motion)
+            const originalX = originalPositions[i]
+            const originalY = originalPositions[i + 1]
+            const radius = Math.sqrt(originalX * originalX + originalY * originalY)
+            
+            if (radius > 0) { // Avoid division by zero
+              const originalAngle = Math.atan2(originalY, originalX)
+              const waveAngle = originalAngle + totalWaveOffset
+              
+              // Update position with animated wave
+              positionArray[i] = Math.cos(waveAngle) * radius     // X with wave
+              positionArray[i + 1] = Math.sin(waveAngle) * radius // Y with wave
+              // Z stays the same (originalPositions[i + 2])
+              
+              // Store the endpoint position for the last tube segment
+              if (tubeSegmentIndex === tubeSegments - 1) {
+                finalEndpoint.x = positionArray[i]
+                finalEndpoint.y = positionArray[i + 1]
+                finalEndpoint.z = positionArray[i + 2]
+              }
+            }
           }
           
           positions.needsUpdate = true
+          
+          // Store the animated endpoint for this attempt
+          animatedEndpoints.set(attemptIndex, finalEndpoint)
+        }
+      }
+    })
+    
+    // Update dot positions based on animated endpoints
+    attemptLinesRef.current.children.forEach((child) => {
+      if (child instanceof THREE.Mesh && (child as any).isAttemptDot) {
+        const attemptIndex = (child as any).attemptIndex
+        const endpoint = animatedEndpoints.get(attemptIndex)
+        
+        if (endpoint) {
+          child.position.set(endpoint.x, endpoint.y, endpoint.z)
         }
       }
     })
@@ -372,9 +445,9 @@ function VisualizationScene() {
       tubeGeometry.setAttribute('alpha', new THREE.Float32BufferAttribute(alphas, 1))
       
       // Different colors for completed vs incomplete attempts
-      // White with 10% turquoise for completed attempts
-      const completedColor = new THREE.Color(0xffffff).lerp(new THREE.Color(0x40e0d0), 0.1) // White + 10% turquoise
-      const lineColor = isCompleted ? completedColor : new THREE.Color(0xffffff) // Turquoise-tinted white for completed, pure white for incomplete
+      // Black for completed attempts, white for incomplete
+      const completedColor = new THREE.Color(0xffffff) // Black for completed
+      const lineColor = isCompleted ? completedColor : new THREE.Color(0xDAF8F3) // Black for completed, white for incomplete
       
       // Use custom shader material for smooth opacity gradient
       const material = new THREE.ShaderMaterial({
@@ -401,23 +474,31 @@ function VisualizationScene() {
       })
       
       const line = new THREE.Mesh(tubeGeometry, material)
+      // Store reference to the corresponding dot for animation
+      ;(line as any).attemptIndex = i
       attemptLinesRef.current.add(line)
       managedObjects.current.push(line)
       
       // Add completion dot at the end - ALWAYS 100% WHITE with size adjustments
       const lastPoint = points[points.length - 1]
-      const baseDotSize = 0.015 + 0.03 * completionPercent
-      // Finished dots are 30% bigger, unfinished dots are 30% smaller
-      const dotSize = isCompleted ? baseDotSize * 1.3 : baseDotSize * 0.7
+      const baseDotSize = 0.1 * completionPercent
+      // Finished dots are BIGGER, unfinished dots are SMALLER (swapped logic)
+      const dotSize = isCompleted ? baseDotSize * 0.4 : baseDotSize * 0.2
       const dotGeometry = new THREE.SphereGeometry(dotSize, 10, 6)
+      // Custom opacity mapping: 0.35 attempt opacity = 100% dot opacity
+      const attemptOpacity = settings.attemptOpacity || 1.0
+      const dotOpacity = attemptOpacity <= 0.35 ? (attemptOpacity / 0.35) : 1.0
       const dotMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff, // ALWAYS 100% WHITE
-        transparent: false, // No transparency - always 100% opacity
-        opacity: 1.0 // Always 100% opacity
+        color: isCompleted ? 0xffffff : 0xDAF8F3, // White for completed, light turquoise for incomplete
+        transparent: true, // Enable transparency to use opacity
+        opacity: dotOpacity // Use custom mapped opacity
       })
       
       const dot = new THREE.Mesh(dotGeometry, dotMaterial)
       dot.position.set(lastPoint.x, lastPoint.y, lastPoint.z)
+      // Store reference to match with line
+      ;(dot as any).attemptIndex = i
+      ;(dot as any).isAttemptDot = true
       attemptLinesRef.current.add(dot)
       managedObjects.current.push(dot)
     }
@@ -441,7 +522,7 @@ function VisualizationScene() {
 
     for (let i = 0; i < detailLevel; i++) {
       const normalizedPosition = i / detailLevel
-      const angle = normalizedPosition * Math.PI * 2 + Math.PI / 2
+      const angle = -normalizedPosition * Math.PI * 2 + Math.PI / 2 // Negative for clockwise
       const movePosition = normalizedPosition * moveCount
       const moveIndex1 = Math.floor(movePosition) % moveCount
       const moveIndex2 = (moveIndex1 + 1) % moveCount
@@ -618,10 +699,10 @@ function VisualizationScene() {
     for (let i = 0; i < moveCount; i++) {
       const move = moves[i]
       
-      // Calculate angle for this move - start at 12 o'clock (top) by adding PI/2
+      // Calculate angle for this move - start at 12 o'clock (top) and go clockwise
       const anglePerMove = (Math.PI * 2) / moveCount
-      const rawAngle = i * anglePerMove + Math.PI / 2
-      const moveAngle = rawAngle % (Math.PI * 2) // Wrap angle to stay within 0-2π
+      const rawAngle = -i * anglePerMove + Math.PI / 2 // Negative to go clockwise
+      const moveAngle = ((rawAngle % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2) // Proper modulo for negative angles
       
       // Calculate line start and end positions
       const startX = Math.cos(moveAngle) * startRadius
@@ -768,11 +849,11 @@ function VisualizationScene() {
         // Determine label text and color
         const moveLabel = i.toString() // Use raw index: 0 for start, 1 for first real move, etc.
         if (isStartMove) {
-          context.fillStyle = '#00ff00' // Green for start move
+          context.fillStyle = '#ffffff' // Full white for start move
         } else if (isCrux) {
-          context.fillStyle = settings.cruxColor || '#ef4444' // Crux color
+          context.fillStyle = '#ffffff' // Full white for crux moves
         } else {
-          context.fillStyle = settings.moveColor || '#8b5cf6' // Normal move color
+          context.fillStyle = '#ffffff' // Full white for normal moves
         }
         
         // Draw text
@@ -848,7 +929,7 @@ export function BoulderVisualizerSimple() {
             grade: 'Live',
             type: 'csv' as const,
             description: `Live recording - ${Math.floor(duration)}s duration`,
-            csvFile: `live-recording-${liveRecordingId}.csv`,
+            csvFile: `live-recordings/live-recording-${liveRecordingId}.csv`, // Save in organized folder
             routeSetter: 'Live Recording',
             numberOfMoves: 0,
             moves: [],
@@ -860,7 +941,7 @@ export function BoulderVisualizerSimple() {
                 const z = accZArray[i] || 0
                 return Math.sqrt(x * x + y * y + z * z)
               }),
-              filename: `live-recording-${liveRecordingId}.csv`,
+              filename: `live-recordings/live-recording-${liveRecordingId}.csv`, // Organized path
               duration: duration,
               maxAcceleration: 0, // Will be calculated
               avgAcceleration: 0, // Will be calculated
@@ -968,8 +1049,49 @@ export function BoulderVisualizerSimple() {
     }
   }, [])
 
+  // Get current visualization state for post-processing
+  const vizState = getVisualizationState()
+  const settings = vizState.visualizerSettings
+  
+  // Build CSS filter string based on post-processing settings
+  const buildFilterString = () => {
+    const filters = []
+    
+    // Black & White filter
+    if (settings.postProcessingBW) {
+      const intensity = (settings.postProcessingBWIntensity || 50) / 100
+      filters.push(`grayscale(${intensity})`)
+    }
+    
+    // Contrast filter
+    if (settings.postProcessingContrast) {
+      const intensity = (settings.postProcessingContrastIntensity || 50) / 100
+      const contrastValue = 1 + intensity * 1.5 // 1.0 to 2.5 range
+      filters.push(`contrast(${contrastValue})`)
+    }
+    
+    // Bloom/Glow effect using drop-shadow and brightness
+    if (settings.postProcessingBloom) {
+      const intensity = (settings.postProcessingBloomIntensity || 50) / 100
+      const brightnessValue = 1 + intensity * 0.5 // 1.0 to 1.5 range
+      const glowSize = intensity * 10 // 0 to 10px
+      filters.push(`brightness(${brightnessValue})`)
+      filters.push(`drop-shadow(0 0 ${glowSize}px rgba(255, 255, 255, ${intensity * 0.8}))`)
+      filters.push(`drop-shadow(0 0 ${glowSize * 2}px rgba(255, 255, 255, ${intensity * 0.4}))`)
+    }
+    
+    return filters.length > 0 ? filters.join(' ') : 'none'
+  }
+
   return (
-    <div className="w-full h-full relative overflow-hidden" style={{ background: 'transparent' }}>
+    <div 
+      className="w-full h-full relative overflow-hidden" 
+      style={{ 
+        background: 'transparent',
+        filter: buildFilterString(),
+        transition: 'filter 0.3s ease-in-out'
+      }}
+    >
       <Canvas
         camera={{ position: [0, 0, 20], fov: 50 }}
         style={{ background: 'transparent' }}

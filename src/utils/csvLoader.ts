@@ -43,6 +43,7 @@ export interface BoulderData {
   }
   appliedThreshold?: number
   lastUpdated?: number
+  source?: 'csv' | 'csv-upload' | 'phyphox' | 'live' | 'generated'
 }
 
 // Parse Phyphox CSV format
@@ -65,9 +66,10 @@ export function parsePhyphoxCSV(csvText: string, filename: string): CSVData {
     if (header.includes('time') && header.includes('s')) {
       timeCol = i
     }
-    // Look for absolute acceleration column
+    // Look for absolute acceleration column - handle both m/s² and m/s^2 formats
     if (header.includes('absolute acceleration') || 
-        (header.includes('absolute') && header.includes('acceleration'))) {
+        (header.includes('absolute') && header.includes('acceleration')) ||
+        (header.includes('absolute') && (header.includes('m/s²') || header.includes('m/s^2')))) {
       absAccelCol = i
     }
   }
@@ -89,7 +91,7 @@ export function parsePhyphoxCSV(csvText: string, filename: string): CSVData {
   for (let i = 1; i < lines.length; i++) {
     const values = lines[i].split(',').map(v => {
       const trimmed = v.trim().replace(/"/g, '')
-      // Handle scientific notation properly
+      // Handle scientific notation properly and regular numbers
       const num = parseFloat(trimmed)
       return isNaN(num) ? 0 : num
     })
@@ -99,8 +101,8 @@ export function parsePhyphoxCSV(csvText: string, filename: string): CSVData {
     const timeVal = values[timeCol]
     const accelVal = values[absAccelCol]
 
-    // More lenient validation - allow zero acceleration values
-    if (!isNaN(timeVal) && !isNaN(accelVal) && accelVal >= 0) {
+    // More lenient validation - allow zero acceleration values and handle scientific notation
+    if (!isNaN(timeVal) && !isNaN(accelVal) && isFinite(timeVal) && isFinite(accelVal) && accelVal >= 0) {
       time.push(timeVal)
       absoluteAcceleration.push(accelVal)
       validRows++
@@ -167,31 +169,108 @@ export function convertCSVToBoulder(csvData: CSVData, id: number): BoulderData {
 export async function discoverCSVFiles(): Promise<string[]> {
   const csvFiles: string[] = []
   
-  // Try common CSV files in the public/data directory (served by Vite)
-  // Only include real Phyphox data files, excluding sample files
-  const commonPatterns = [
-    'Raw Data.csv',
-    'Raw Data1.csv',
-    'Raw Data2.csv', 
-    'Raw Data3.csv',
-    'Raw Data4.csv',
-    'Raw Data5.csv',
+  // Define organized folder structure
+  const folders = [
+    'routes',      // Main climbing routes
+    'samples',     // Sample/demo data  
+    'live-recordings' // Live Phyphox recordings
   ]
   
+  // Common CSV file patterns to try in each folder
+  const commonPatterns = [
+    'Sample1.csv',     // Add the specific file ART has
+    'Raw Data.csv',
+    'Raw Data2.csv', 
+    'Raw Data3.csv',
+    'rawdata.csv',
+    'rawdata2.csv', 
+    'rawdata3.csv',
+    'data.csv',
+    'climbing.csv',
+    'acceleration.csv'
+  ]
+  
+  // Search in organized folders
+  for (const folder of folders) {
+    console.log(`🔍 Searching for CSV files in /data/${folder}/`)
+    
+    // Try common patterns in this folder
+    for (const filename of commonPatterns) {
+      const filepath = `/data/${folder}/${filename}`
+      console.log(`🔍 Trying to fetch: ${filepath}`)
+      try {
+        const response = await fetch(filepath)
+        console.log(`📡 Response for ${filepath}: ${response.status} ${response.ok ? 'OK' : 'FAILED'}`)
+        if (response.ok) {
+          const text = await response.text()
+          console.log(`📄 File content preview for ${filepath}:`, text.substring(0, 200))
+          
+          // Validate that it's actually CSV content with Phyphox format
+          if (!text.trim().startsWith('<!DOCTYPE html>') && 
+              !text.trim().startsWith('<html') &&
+              text.includes(',') &&
+              (text.toLowerCase().includes('time') && text.toLowerCase().includes('acceleration'))) {
+            csvFiles.push(filepath)
+            console.log(`✅ Found CSV file: ${filepath}`)
+          } else {
+            console.log(`❌ File ${filepath} failed validation:`, {
+              isHTML: text.trim().startsWith('<!DOCTYPE html>') || text.trim().startsWith('<html'),
+              hasCommas: text.includes(','),
+              hasTime: text.toLowerCase().includes('time'),
+              hasAcceleration: text.toLowerCase().includes('acceleration')
+            })
+          }
+        }
+      } catch (error) {
+        console.log(`❌ Error fetching ${filepath}:`, error)
+        // File doesn't exist, continue
+      }
+    }
+    
+    // Also try to discover any CSV files by attempting common climbing route names
+    const routePatterns = [
+      'V0_Route.csv', 'V1_Route.csv', 'V2_Route.csv', 'V3_Route.csv', 'V4_Route.csv',
+      'V5_Route.csv', 'V6_Route.csv', 'V7_Route.csv', 'V8_Route.csv', 'V9_Route.csv',
+      'Sample_Route.csv', 'Demo_Route.csv', 'Test_Route.csv',
+      'Overhang_Problem.csv', 'Crimpy_Route.csv', 'Dynamic_Problem.csv',
+      'Slab_Route.csv', 'Roof_Problem.csv', 'Arete_Route.csv'
+    ]
+    
+    for (const filename of routePatterns) {
+      const filepath = `/data/${folder}/${filename}`
+      try {
+        const response = await fetch(filepath)
+        if (response.ok) {
+          const text = await response.text()
+          
+          if (!text.trim().startsWith('<!DOCTYPE html>') && 
+              !text.trim().startsWith('<html') &&
+              text.includes(',') &&
+              (text.toLowerCase().includes('time') && text.toLowerCase().includes('acceleration'))) {
+            csvFiles.push(filepath)
+            console.log(`✅ Found route CSV file: ${filepath}`)
+          }
+        }
+      } catch (error) {
+        // File doesn't exist, continue
+      }
+    }
+  }
+  
+  // Also check root data directory for backwards compatibility
   for (const filename of commonPatterns) {
-    const filepath = `/data/${filename}` // Files in public/data directory
+    const filepath = `/data/${filename}`
     try {
       const response = await fetch(filepath)
       if (response.ok) {
         const text = await response.text()
         
-        // Validate that it's actually CSV content with Phyphox format
         if (!text.trim().startsWith('<!DOCTYPE html>') && 
             !text.trim().startsWith('<html') &&
             text.includes(',') &&
             (text.toLowerCase().includes('time') && text.toLowerCase().includes('acceleration'))) {
           csvFiles.push(filepath)
-          console.log(`Found CSV file: ${filepath}`)
+          console.log(`✅ Found legacy CSV file: ${filepath}`)
         }
       }
     } catch (error) {
@@ -199,7 +278,7 @@ export async function discoverCSVFiles(): Promise<string[]> {
     }
   }
   
-  console.log(`Discovered ${csvFiles.length} CSV files:`, csvFiles)
+  console.log(`🧗‍♂️ Discovered ${csvFiles.length} total CSV files:`, csvFiles)
   return csvFiles
 }
 
@@ -264,7 +343,43 @@ export async function handleFileUpload(file: File): Promise<BoulderData> {
     const csvData = parsePhyphoxCSV(text, file.name)
     const boulder = convertCSVToBoulder(csvData, Date.now())
     
-    console.log('Successfully processed uploaded file:', file.name)
+    // Save to localStorage so it persists
+    const existingBoulders = JSON.parse(localStorage.getItem('climbing-boulders') || '[]')
+    
+    // Create a boulder data object compatible with localStorage format
+    const boulderForStorage = {
+      id: boulder.id,
+      name: file.name.replace('.csv', ''), // Use filename as name
+      grade: 'Unknown', // Default grade
+      gradeSystem: 'V-Scale',
+      routeSetter: 'Uploaded',
+      numberOfMoves: 0, // Will be calculated by move detection
+      date: new Date().toISOString().split('T')[0], // Today's date
+      recordedAt: new Date().toISOString(),
+      moves: [],
+      rawData: {
+        // Convert CSV data back to Phyphox-like format for compatibility
+        acc_time: { buffer: csvData.time },
+        accX: { buffer: csvData.time.map(() => 0) }, // Placeholder - we don't have individual axes
+        accY: { buffer: csvData.time.map(() => 0) }, // Placeholder
+        accZ: { buffer: csvData.absoluteAcceleration } // Store absolute acceleration as Z
+      },
+      source: 'csv-upload',
+      totalDataPoints: csvData.sampleCount,
+      uploadedFile: file.name,
+      csvData: csvData // Store original CSV data for compatibility
+    }
+    
+    existingBoulders.push(boulderForStorage)
+    localStorage.setItem('climbing-boulders', JSON.stringify(existingBoulders))
+    
+    console.log('Successfully saved uploaded CSV to localStorage:', file.name)
+    
+    // Dispatch event to notify other components
+    window.dispatchEvent(new CustomEvent('boulderSaved', { 
+      detail: { boulder: boulderForStorage } 
+    }))
+    
     return boulder
   } catch (error) {
     console.error('Error processing uploaded file:', error)

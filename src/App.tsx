@@ -8,6 +8,7 @@ import { BoulderConfigProvider, useBoulderConfig } from './context/BoulderConfig
 import { useCSVData } from './hooks/useCSVData'
 import type { BoulderData } from './utils/csvLoader'
 import { setBoulderThresholdGetter } from './utils/csvLoader'
+import { performStartupCleanup, manualClearAllData } from './utils/dataCleanup'
 import Silk from './components/ui/Silk'
 import { 
   updateSelectedBoulder, 
@@ -35,7 +36,7 @@ function ThresholdSetup() {
 function App() {
   const [currentView, setCurrentView] = useState<View>('visualizer')
   const [isControlPanelVisible, setIsControlPanelVisible] = useState(true)
-  const [visualizationMode, setVisualizationMode] = useState<VisualizationMode>('simple')
+  const [visualizationMode, setVisualizationMode] = useState<VisualizationMode>('3d')
   const [isServerConnected, setIsServerConnected] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const viewChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -43,20 +44,20 @@ function App() {
   
   const [visualizerSettings, setVisualizerSettings] = useState({
     // Basics - Updated to match user's current settings
-    baseRadius: 0.60,
-    dynamicsMultiplier: 2.0,
-    combinedSize: 2.1,
-    ringCount: 43.0,
-    ringSpacing: 0.003,
+    baseRadius: 0.50,
+    dynamicsMultiplier: 13.7,
+    combinedSize: 2.3,
+    ringCount: 26,
+    ringSpacing: 0.004,
     
     // Visuals - Updated to match user's current settings
-    opacity: 0.90,
-    lineWidth: 0.6,
-    centerFade: 0.65,
+    opacity: 1.00,
+    lineWidth: 0.4,
+    centerFade: 0.80,
     depthEffect: 0.5,
-    organicNoise: 1.60,
-    moveColor: '#8b5cf6', // Purple from user's selection
-    cruxColor: '#ef4444', // Red from user's selection
+    organicNoise: 1.52,
+    moveColor: '#10b981', // Green from user's selection
+    cruxColor: '#ec4899', // Pink from user's selection
     
     // Dynamic Effects
     cruxEmphasis: 0.5,
@@ -64,8 +65,13 @@ function App() {
     // Animation
     animationEnabled: true,
     rotationSpeed: 0.0,
-    liquidSpeed: 2.0,
-    liquidSize: 0.3,
+    liquidSpeed: 3.20,
+    liquidSize: 0.8,
+    
+    // Attempt Wave Animation - Updated to user's settings
+    attemptWaveSpeed: 0.7,
+    attemptWaveDirection: 1.1,
+    attemptWaveIntensity: 1.6,
     
     // Advanced
     curveResolution: 240,
@@ -74,29 +80,29 @@ function App() {
     // Text Display
     centerTextSize: 1.0,
     
-    // Move Detection Algorithm Parameters - ADDED TO FIX NaN
-    moveThreshold: 1.2,
+    // Move Detection Algorithm Parameters - Updated to user's settings
+    moveThreshold: 1.0,
     stillThreshold: 3.0,
-    minStillDuration: 0.5,
+    minStillDuration: 0.65,
     minMoveDuration: 0.5,
     maxMoveDuration: 4.7,
     maxMoveSequence: 2,
     
-    // Move Position Lines - ADDED TO FIX NaN
+    // Move Position Lines - Updated to user's settings
     showMovePositionLines: true,
-    moveLineLength: 3.0,
-    moveLineOpacity: 0.8,
+    moveLineLength: 3.2,
+    moveLineOpacity: 0.80,
     moveLineWidth: 2.0,
     
-    // Attempt Visualization - Updated to match user's current settings
+    // Attempt Visualization - Updated to user's settings
     showAttemptLines: true,
-    maxAttempts: 95.0,
-    attemptOpacity: 0.35,
-    attemptWaviness: 0.05,
-    attemptFadeStrength: 0.8,
+    maxAttempts: 120.0,
+    attemptOpacity: 0.45,
+    attemptWaviness: 0.030,
+    attemptFadeStrength: 0.7,
     attemptThickness: 0.5,
     attemptIntensity: 0.5,
-    attemptRadius: 1.30,
+    attemptRadius: 2.40,
     attemptDotZOffsetMax: 1.15,
     attemptDotZEffectStrength: 0.5,
     
@@ -104,7 +110,15 @@ function App() {
     attemptCount: 95.0,
     attemptZHeight: 1.5,
     attemptWaveEffect: 0.05,
-    maxRadiusScale: 1.30
+    maxRadiusScale: 1.30,
+    
+    // Post-Processing Effects
+    postProcessingBW: false,
+    postProcessingBWIntensity: 50,
+    postProcessingContrast: true,
+    postProcessingContrastIntensity: 59,
+    postProcessingBloom: true,
+    postProcessingBloomIntensity: 31
   })
   
   // Memoize the visualizer settings to prevent unnecessary re-renders
@@ -143,11 +157,27 @@ function App() {
     visualizerSettings.showMovePositionLines,
     visualizerSettings.moveLineLength,
     visualizerSettings.moveLineOpacity,
-    visualizerSettings.moveLineWidth
+    visualizerSettings.moveLineWidth,
+    // Add attempt wave animation parameters
+    visualizerSettings.attemptWaveSpeed,
+    visualizerSettings.attemptWaveDirection,
+    visualizerSettings.attemptWaveIntensity,
+    // Add post-processing parameters
+    visualizerSettings.postProcessingBW,
+    visualizerSettings.postProcessingBWIntensity,
+    visualizerSettings.postProcessingContrast,
+    visualizerSettings.postProcessingContrastIntensity,
+    visualizerSettings.postProcessingBloom,
+    visualizerSettings.postProcessingBloomIntensity
   ])
   
   // Centralized boulder data management
   const { boulders, selectedBoulder, isLoading, error, selectBoulder, uploadFile, refreshBoulders } = useCSVData()
+
+  // Perform startup cleanup once when app loads
+  useEffect(() => {
+    performStartupCleanup()
+  }, [])
 
   // Debug logging for boulder data changes - reduce frequency to prevent spam
   useEffect(() => {
@@ -489,19 +519,6 @@ function App() {
             </div>
           )}
         </main>
-        
-        {/* Debug info in development */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="fixed bottom-4 left-4 bg-black/80 text-white p-2 text-xs rounded border border-gray-600 z-50">
-            <div>View: {currentView}</div>
-            <div>Viz Mode: {visualizationMode}</div>
-            <div>Boulder ID: {selectedBoulder?.id || 'None'}</div>
-            <div>Current Data: {selectedBoulder?.name || 'None'}</div>
-            <div>Boulders Count: {boulders.length}</div>
-            <div>Server: {isServerConnected ? 'Connected' : 'Disconnected'}</div>
-            <div>Panel: {isControlPanelVisible ? 'Visible' : 'Hidden'}</div>
-          </div>
-        )}
       </div>
     </BoulderConfigProvider>
   )

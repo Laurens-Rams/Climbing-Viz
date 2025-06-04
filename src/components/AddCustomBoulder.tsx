@@ -49,15 +49,15 @@ export function AddCustomBoulder({
 
   // Selection screen
   return (
-    <div className="h-full flex items-center justify-center p-8" style={{ paddingTop: '10%' }}>
-      <div className="max-w-4xl mx-auto">
+    <div className={`h-full flex items-center justify-center p-8 transition-all duration-300 ${!isControlPanelEffectivelyVisible ? 'py-4' : ''}`} style={{ paddingTop: !isControlPanelEffectivelyVisible ? '5%' : '10%' }}>
+      <div className="max-w-4xl mx-auto w-full">
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-white tracking-light text-4xl font-bold leading-tight mb-4">
             Add Boulder Data
           </h1>
-          <p className="text-gray-400 text-lg">
-            Choose your creation method
+          <p className="text-gray-400 text-center max-w-2xl mx-auto">
+            Design custom boulder problems with move sequences, grades, and power levels.
           </p>
         </div>
 
@@ -67,7 +67,7 @@ export function AddCustomBoulder({
           <div 
             onClick={() => setMode('manual')}
             className="bg-black/70 border border-cyan-400/40 rounded-2xl p-8 cursor-pointer hover:border-cyan-400/60 hover:bg-black/80 transition-all duration-300 backdrop-blur-sm group"
-            style={{ minHeight: '400px' }}
+            style={{ minHeight: !isControlPanelEffectivelyVisible ? '450px' : '400px' }}
           >
             <div className="text-center h-full flex flex-col justify-between">
               <div>
@@ -76,7 +76,7 @@ export function AddCustomBoulder({
                 </div>
                 <h3 className="text-cyan-400 text-2xl font-bold mb-4">Create Manually</h3>
                 <p className="text-gray-300 text-base leading-relaxed mb-6">
-                  Design custom boulder problems with manual move sequences, difficulty grades, and power levels.
+                  Design custom boulder problems with move sequences, grades, and power levels.
                 </p>
                 <div className="space-y-2 text-sm text-gray-400">
                   <div className="flex items-center justify-center space-x-2">
@@ -103,7 +103,7 @@ export function AddCustomBoulder({
           <div 
             onClick={() => setMode('phyphox')}
             className="bg-black/70 border border-cyan-400/40 rounded-2xl p-8 cursor-pointer hover:border-cyan-400/60 hover:bg-black/80 transition-all duration-300 backdrop-blur-sm group"
-            style={{ minHeight: '400px' }}
+            style={{ minHeight: !isControlPanelEffectivelyVisible ? '450px' : '400px' }}
           >
             <div className="text-center h-full flex flex-col justify-between">
               <div>

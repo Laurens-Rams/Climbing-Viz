@@ -18,39 +18,68 @@ export function useCSVData(): UseCSVDataResult {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Load saved Phyphox boulders from localStorage
-  const loadSavedPhyphoxBoulders = useCallback((): BoulderData[] => {
+  // Load saved boulders from localStorage (both Phyphox recordings and uploaded CSV files)
+  const loadSavedBoulders = useCallback((): BoulderData[] => {
     try {
       const saved = localStorage.getItem('climbing-boulders')
       if (saved) {
         const savedBoulders = JSON.parse(saved)
-        console.log('[useCSVData] Loaded saved Phyphox boulders:', savedBoulders.length)
+        console.log('[useCSVData] Loaded saved boulders:', savedBoulders.length)
         
-        // Convert Phyphox data to BoulderData format
-        return savedBoulders.map((saved: any, index: number) => ({
-          id: saved.id || (1000 + index), // Use saved ID or generate unique one
+        // Convert saved data to BoulderData format
+        return savedBoulders.map((saved: any, index: number) => {
+          // Handle uploaded CSV files
+          if (saved.source === 'csv-upload' && saved.csvData) {
+            return {
+              id: saved.id || (1000 + index),
+              name: saved.name || saved.uploadedFile?.replace('.csv', '') || 'Uploaded CSV',
+              grade: saved.grade || 'Unknown',
+              type: 'csv',
+              description: `Uploaded CSV file: ${saved.uploadedFile || 'Unknown'}`,
+              csvFile: saved.uploadedFile || 'uploaded.csv',
+              routeSetter: saved.routeSetter || 'Uploaded',
+              moves: saved.moves || [],
+              csvData: saved.csvData,
+              stats: {
+                duration: saved.csvData?.duration?.toFixed(1) || '0',
+                maxAcceleration: saved.csvData?.maxAcceleration?.toFixed(2) || '0',
+                avgAcceleration: saved.csvData?.avgAcceleration?.toFixed(2) || '0',
+                moveCount: saved.numberOfMoves || 0,
+                sampleCount: saved.csvData?.sampleCount || 0
+              },
+              uploadedFile: saved.uploadedFile,
+              recordedAt: saved.recordedAt,
+              source: 'csv-upload'
+            }
+          }
+          
+          // Handle Phyphox recordings (existing logic)
+          return {
+            id: saved.id || (1000 + index),
           name: saved.name,
           grade: saved.grade,
           type: 'phyphox',
           description: `Recorded with Phyphox on ${new Date(saved.recordedAt).toLocaleDateString()}`,
+            csvFile: 'phyphox-recording.csv',
           routeSetter: saved.routeSetter,
           numberOfMoves: saved.numberOfMoves,
           moves: saved.moves || [],
           csvData: saved.rawData ? convertPhyphoxToCSV(saved.rawData) : null,
           stats: {
-            totalMoves: saved.numberOfMoves || 0,
             duration: saved.rawData ? calculateDuration(saved.rawData) : '0',
             maxAcceleration: saved.rawData ? calculateMaxAcceleration(saved.rawData) : 0,
             avgAcceleration: saved.rawData ? calculateAvgAcceleration(saved.rawData) : 0,
+              moveCount: saved.numberOfMoves || 0,
             sampleCount: saved.totalDataPoints || 0
           },
           phyphoxData: saved.rawData,
           recordedAt: saved.recordedAt,
           source: 'phyphox'
-        }))
+          }
+        })
       }
     } catch (error) {
-      console.error('[useCSVData] Error loading saved Phyphox boulders:', error)
+      console.error('[useCSVData] Error loading saved boulders:', error)
     }
     return []
   }, [])
@@ -123,15 +152,15 @@ export function useCSVData(): UseCSVDataResult {
       setIsLoading(true)
       setError(null)
       
-      // Load CSV boulders and saved Phyphox boulders
-      const [csvBoulders, phyphoxBoulders] = await Promise.all([
+      // Load CSV boulders and saved boulders (Phyphox + uploaded CSV)
+      const [csvBoulders, savedBoulders] = await Promise.all([
         loadAvailableBoulders(),
-        Promise.resolve(loadSavedPhyphoxBoulders())
+        Promise.resolve(loadSavedBoulders())
       ])
       
       // Merge both types of boulders
-      const allBoulders = [...csvBoulders, ...phyphoxBoulders]
-      console.log(`[useCSVData] Loaded ${allBoulders.length} total boulders (${csvBoulders.length} CSV + ${phyphoxBoulders.length} Phyphox)`)
+      const allBoulders = [...csvBoulders, ...savedBoulders]
+      console.log(`[useCSVData] Loaded ${allBoulders.length} total boulders (${csvBoulders.length} CSV + ${savedBoulders.length} saved)`)
       
       setBoulders(allBoulders)
       
@@ -145,7 +174,7 @@ export function useCSVData(): UseCSVDataResult {
     } finally {
       setIsLoading(false)
     }
-  }, [loadSavedPhyphoxBoulders, selectedBoulder])
+  }, [loadSavedBoulders, selectedBoulder])
 
   const selectBoulder = useCallback((id: number) => {
     const boulder = boulders.find(b => b.id === id)

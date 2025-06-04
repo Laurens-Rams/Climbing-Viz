@@ -35,6 +35,11 @@ export interface VisualizationState {
     liquidSpeed: number
     liquidSize: number
     
+    // Attempt Wave Animation - NEW
+    attemptWaveSpeed: number
+    attemptWaveDirection: number
+    attemptWaveIntensity: number
+    
     // Advanced
     curveResolution: number
     liquidEffect: boolean
@@ -76,6 +81,14 @@ export interface VisualizationState {
     attemptZHeight: number
     attemptWaveEffect: number
     maxRadiusScale: number
+    
+    // Post-Processing Effects
+    postProcessingBW: boolean
+    postProcessingBWIntensity: number
+    postProcessingContrast: boolean
+    postProcessingContrastIntensity: number
+    postProcessingBloom: boolean
+    postProcessingBloomIntensity: number
   }
   
   // State flags
@@ -102,62 +115,67 @@ let visualizationState: VisualizationState = {
   threshold: 12.0,
   visualizerSettings: {
     // Basics - Updated to match user's current settings
-    baseRadius: 0.85,
-    dynamicsMultiplier: 4.5,
-    combinedSize: 1.4,
-    ringCount: 59,
-    ringSpacing: 0.007,
+    baseRadius: 0.50,
+    dynamicsMultiplier: 13.7,
+    combinedSize: 2.3,
+    ringCount: 26,
+    ringSpacing: 0.004,
     
     // Visuals - Updated to match user's current settings
-    opacity: 0.90,
-    centerFade: 0.90,
-    depthEffect: 1.8,
-    organicNoise: 1.69,
-    moveColor: '#22d3ee',
-    cruxColor: '#f59e0b',
+    opacity: 1.00,
+    centerFade: 0.80,
+    depthEffect: 0.5,
+    organicNoise: 1.52,
+    moveColor: '#10b981', // Green from user's selection
+    cruxColor: '#ec4899', // Pink from user's selection
     
     // Dynamic Effects
-    cruxEmphasis: 1.6,
+    cruxEmphasis: 0.5,
     
     // Animation
     animationEnabled: true,
     rotationSpeed: 0.0,
-    liquidSpeed: 1.85,
-    liquidSize: 3.9,
+    liquidSpeed: 3.20,
+    liquidSize: 0.8,
+    
+    // Attempt Wave Animation - Updated to user's settings
+    attemptWaveSpeed: 0.7,
+    attemptWaveDirection: 1.1,
+    attemptWaveIntensity: 1.6,
     
     // Advanced
     curveResolution: 240,
     liquidEffect: true,
     
-    // Move Detection
+    // Move Detection - Updated to user's settings
     centerTextSize: 1.0,
     
-    // Move Detection Algorithm Parameters
-    moveThreshold: 1.2,
+    // Move Detection Algorithm Parameters - Updated to user's settings
+    moveThreshold: 1.0,
     stillThreshold: 3.0,
-    minStillDuration: 0.5,
+    minStillDuration: 0.65,
     minMoveDuration: 0.5,
     maxMoveDuration: 4.7,
     maxMoveSequence: 2,
     
-    // Line Thickness - Updated to match user's current settings
-    lineWidth: 0.6,
+    // Line Thickness - Updated to user's settings
+    lineWidth: 0.4,
     
-    // Move Position Lines - NEW SETTINGS
+    // Move Position Lines - Updated to user's settings
     showMovePositionLines: true,
-    moveLineLength: 3.0,
-    moveLineOpacity: 0.8,
+    moveLineLength: 3.2,
+    moveLineOpacity: 0.80,
     moveLineWidth: 2.0,
     
-    // Attempt Visualization (restored from original) - Updated to match user's current settings
+    // Attempt Visualization - Updated to user's settings
     showAttemptLines: true,
-    maxAttempts: 85.0,
-    attemptOpacity: 0.90,
-    attemptWaviness: 0.09,
-    attemptFadeStrength: 2.8,
-    attemptThickness: 0.6,
+    maxAttempts: 120.0,
+    attemptOpacity: 0.45,
+    attemptWaviness: 0.030,
+    attemptFadeStrength: 0.7,
+    attemptThickness: 0.5,
     attemptIntensity: 0.5,
-    attemptRadius: 1.70,
+    attemptRadius: 2.40,
     attemptDotZOffsetMax: 1.15,
     attemptDotZEffectStrength: 0.5,
     
@@ -165,7 +183,15 @@ let visualizationState: VisualizationState = {
     attemptCount: 71.0,
     attemptZHeight: 1.5,
     attemptWaveEffect: 0.06,
-    maxRadiusScale: 1.20
+    maxRadiusScale: 1.20,
+    
+    // Post-Processing Effects
+    postProcessingBW: false,
+    postProcessingBWIntensity: 50,
+    postProcessingContrast: true,
+    postProcessingContrastIntensity: 59,
+    postProcessingBloom: true,
+    postProcessingBloomIntensity: 31
   },
   needsUpdate: false,
   lastUpdateTime: Date.now(),

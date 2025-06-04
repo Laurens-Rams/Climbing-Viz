@@ -92,6 +92,7 @@ export function ControlPanel({
   const [serverUrl, setServerUrl] = useState('http://10.237.1.101')
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('disconnected')
   const [fontLoaded, setFontLoaded] = useState(false)
+  const [autoSaveBlinking, setAutoSaveBlinking] = useState(false)
   
   // Scroll position ref to maintain scroll position
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -220,8 +221,71 @@ export function ControlPanel({
       const savedThreshold = getThreshold(id)
       console.log(`🗂️ [ControlPanel] Syncing saved threshold ${savedThreshold} to global store`)
       updateThreshold(savedThreshold)
+      
+      // Load saved move detection settings for this boulder
+      const savedSettings = localStorage.getItem(`boulder-settings-${id}`)
+      if (savedSettings) {
+        try {
+          const settings = JSON.parse(savedSettings)
+          const moveDetectionUpdates: any = {}
+          
+          if (settings.moveThreshold !== undefined) moveDetectionUpdates.moveThreshold = settings.moveThreshold
+          if (settings.minStillDuration !== undefined) moveDetectionUpdates.minStillDuration = settings.minStillDuration
+          if (settings.minMoveDuration !== undefined) moveDetectionUpdates.minMoveDuration = settings.minMoveDuration
+          if (settings.maxMoveDuration !== undefined) moveDetectionUpdates.maxMoveDuration = settings.maxMoveDuration
+          if (settings.maxMoveSequence !== undefined) moveDetectionUpdates.maxMoveSequence = settings.maxMoveSequence
+          
+          if (Object.keys(moveDetectionUpdates).length > 0) {
+            console.log(`🔧 [ControlPanel] Loading saved move detection settings for boulder ${id}:`, moveDetectionUpdates)
+            updateVisualizerSettings(moveDetectionUpdates)
+          }
+        } catch (error) {
+          console.error('Error loading boulder settings:', error)
+        }
+      }
     }
   }, [selectBoulderFromHook, onBoulderChange, getThreshold])
+
+  // Auto-save move detection settings every 15 seconds when they change
+  useEffect(() => {
+    if (!selectedBoulder?.id) return
+    
+    const moveDetectionSettings = {
+      moveThreshold: state.visualizerSettings.moveThreshold,
+      minStillDuration: state.visualizerSettings.minStillDuration,
+      minMoveDuration: state.visualizerSettings.minMoveDuration,
+      maxMoveDuration: state.visualizerSettings.maxMoveDuration,
+      maxMoveSequence: state.visualizerSettings.maxMoveSequence
+    }
+    
+    const timeoutId = setTimeout(() => {
+      const settings = {
+        ...moveDetectionSettings,
+        savedAt: new Date().toISOString()
+      }
+      
+      localStorage.setItem(`boulder-settings-${selectedBoulder.id}`, JSON.stringify(settings))
+      console.log(`💾 [ControlPanel] Auto-saved move detection settings for boulder ${selectedBoulder.id}`)
+      
+      // Trigger blink animation
+      setAutoSaveBlinking(true)
+      setTimeout(() => setAutoSaveBlinking(false), 2000) // Blink for 2 seconds
+    }, 15000) // 15 second delay
+    
+    return () => clearTimeout(timeoutId)
+  }, [selectedBoulder?.id, state.visualizerSettings.moveThreshold, state.visualizerSettings.minStillDuration, state.visualizerSettings.minMoveDuration, state.visualizerSettings.maxMoveDuration, state.visualizerSettings.maxMoveSequence])
+
+  // Regular blink timer every 15 seconds to show auto-save is active
+  useEffect(() => {
+    if (!selectedBoulder?.id) return
+    
+    const intervalId = setInterval(() => {
+      setAutoSaveBlinking(true)
+      setTimeout(() => setAutoSaveBlinking(false), 1500) // Blink for 1.5 seconds
+    }, 15000) // Every 15 seconds
+    
+    return () => clearInterval(intervalId)
+  }, [selectedBoulder?.id])
 
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -368,7 +432,10 @@ export function ControlPanel({
       controls: [
         { key: 'rotationSpeed', name: 'Rotation Speed', min: 0.0, max: 2.0, step: 0.1 },
         { key: 'liquidSpeed', name: 'Animation Speed', min: 0.0, max: 10.0, step: 0.05 },
-        { key: 'liquidSize', name: 'Liquid Size', min: 0.1, max: 5.0, step: 0.1 }
+        { key: 'liquidSize', name: 'Liquid Size', min: 0.1, max: 5.0, step: 0.1 },
+        { key: 'attemptWaveSpeed', name: 'Attempt Wave Speed', min: 0.0, max: 5.0, step: 0.1 },
+        { key: 'attemptWaveDirection', name: 'Wave Direction', min: -2.0, max: 2.0, step: 0.1 },
+        { key: 'attemptWaveIntensity', name: 'Wave Animation Intensity', min: 0.0, max: 3.0, step: 0.1 }
       ]
     },
     {
@@ -391,7 +458,7 @@ export function ControlPanel({
       controls: [
         { key: 'maxAttempts', name: 'Number of Attempts', min: 10, max: 200, step: 5 },
         { key: 'attemptOpacity', name: 'Attempt Opacity', min: 0.0, max: 1.0, step: 0.05 },
-        { key: 'attemptWaviness', name: 'Line Waviness', min: 0.0, max: 1.0, step: 0.01 },
+        { key: 'attemptWaviness', name: 'Line Waviness', min: 0.0, max: 0.1, step: 0.001 },
         { key: 'attemptThickness', name: 'Line Thickness', min: 0.1, max: 2.0, step: 0.1 },
         { key: 'attemptRadius', name: 'Max Radius', min: 0.5, max: 3.0, step: 0.05 },
         { key: 'attemptDotZOffsetMax', name: 'Dot Z Offset', min: 0.0, max: 2.0, step: 0.05 },
@@ -400,7 +467,7 @@ export function ControlPanel({
     }
   ]
 
-  // Define preset configurations based on the screenshots
+  // Define preset configurations based on user's dialed-in defaults
   const presets = {
     // Current settings saved as "Current" preset
     current: {
@@ -408,198 +475,193 @@ export function ControlPanel({
       description: 'Your current configuration',
       settings: {
         // Basics
-        baseRadius: 0.65,
-        dynamicsMultiplier: 1.0,
-        combinedSize: 1.4,
-        ringCount: 35.0,
-        ringSpacing: 0.007,
+        baseRadius: 0.50,
+        dynamicsMultiplier: 13.7,
+        combinedSize: 2.3,
+        ringCount: 26,
+        ringSpacing: 0.004,
         
         // Visuals
         opacity: 1.00,
-        lineWidth: 0.3,
-        centerFade: 0.90,
+        lineWidth: 0.4,
+        centerFade: 0.80,
         depthEffect: 0.5,
-        organicNoise: 0.05,
-        moveColor: '#22d3ee',
-        cruxColor: '#8b5cf6',
-        
-        // Dynamic Effects
-        cruxEmphasis: 4.7,
-        
-        // Animation
-        rotationSpeed: 0.0,
-        liquidSpeed: 1.90,
-        liquidSize: 0.4,
-        
-        // Attempts
-        showAttemptLines: true,
-        maxAttempts: 60.0,
-        attemptOpacity: 0.45,
-        attemptWaviness: 0.04,
-        attemptThickness: 0.8,
-        attemptRadius: 1.45,
-        attemptDotZOffsetMax: 0.85,
-        attemptFadeStrength: 0.8
-      }
-    },
-    // Default settings from screenshots
-    default: {
-      name: 'Default',
-      description: 'Clean default visualization',
-      settings: {
-        // Basics
-        baseRadius: 0.65,
-        dynamicsMultiplier: 1.0,
-        combinedSize: 1.4,
-        ringCount: 35.0,
-        ringSpacing: 0.007,
-        
-        // Visuals
-        opacity: 1.00,
-        lineWidth: 0.3,
-        centerFade: 0.90,
-        depthEffect: 0.5,
-        organicNoise: 0.05,
-        moveColor: '#22d3ee',
-        cruxColor: '#8b5cf6',
-        
-        // Dynamic Effects
-        cruxEmphasis: 4.7,
-        
-        // Animation
-        rotationSpeed: 0.0,
-        liquidSpeed: 0.55,
-        liquidSize: 0.4,
-        
-        // Attempts
-        showAttemptLines: true,
-        maxAttempts: 60.0,
-        attemptOpacity: 0.45,
-        attemptWaviness: 0.04,
-        attemptThickness: 0.8,
-        attemptRadius: 1.45,
-        attemptDotZOffsetMax: 0.85,
-        attemptFadeStrength: 0.8
-      }
-    },
-    // Dramatic preset
-    dramatic: {
-      name: 'Dramatic',
-      description: 'High contrast and emphasis',
-      settings: {
-        // Basics
-        baseRadius: 0.4,
-        dynamicsMultiplier: 2.5,
-        combinedSize: 2.0,
-        ringCount: 50.0,
-        ringSpacing: 0.002,
-        
-        // Visuals
-        opacity: 0.95,
-        lineWidth: 0.8,
-        centerFade: 1.0,
-        depthEffect: 1.5,
-        organicNoise: 0.15,
-        moveColor: '#ef4444',
-        cruxColor: '#f59e0b',
-        
-        // Dynamic Effects
-        cruxEmphasis: 15.0,
-        
-        // Animation
-        rotationSpeed: 0.0,
-        liquidSpeed: 3.0,
-        liquidSize: 1.0,
-        
-        // Attempts
-        showAttemptLines: true,
-        maxAttempts: 40.0,
-        attemptOpacity: 0.8,
-        attemptWaviness: 0.1,
-        attemptThickness: 1.2,
-        attemptRadius: 2.0,
-        attemptDotZOffsetMax: 1.2,
-        attemptFadeStrength: 2.0
-      }
-    },
-    // Smooth preset
-    smooth: {
-      name: 'Smooth Flow',
-      description: 'Gentle and flowing visualization',
-      settings: {
-        // Basics
-        baseRadius: 1.0,
-        dynamicsMultiplier: 0.8,
-        combinedSize: 1.2,
-        ringCount: 25.0,
-        ringSpacing: 0.015,
-        
-        // Visuals
-        opacity: 0.7,
-        lineWidth: 0.2,
-        centerFade: 0.5,
-        depthEffect: 0.3,
-        organicNoise: 0.02,
+        organicNoise: 1.52,
         moveColor: '#10b981',
-        cruxColor: '#06b6d4',
+        cruxColor: '#ec4899',
         
         // Dynamic Effects
-        cruxEmphasis: 2.0,
+        cruxEmphasis: 0.5,
         
         // Animation
-        rotationSpeed: 0.5,
-        liquidSpeed: 1.0,
+        rotationSpeed: 0.0,
+        liquidSpeed: 3.20,
         liquidSize: 0.8,
         
+        // Attempt Wave Animation
+        attemptWaveSpeed: 0.7,
+        attemptWaveDirection: 1.1,
+        attemptWaveIntensity: 1.6,
+        
+        // Move Position Lines
+        showMovePositionLines: true,
+        moveLineLength: 3.2,
+        moveLineOpacity: 0.80,
+        moveLineWidth: 2.0,
+        
         // Attempts
         showAttemptLines: true,
-        maxAttempts: 80.0,
-        attemptOpacity: 0.3,
-        attemptWaviness: 0.02,
-        attemptThickness: 0.4,
-        attemptRadius: 1.2,
-        attemptDotZOffsetMax: 0.5,
-        attemptFadeStrength: 0.5
+        maxAttempts: 120.0,
+        attemptOpacity: 0.45,
+        attemptWaviness: 0.030,
+        attemptThickness: 0.5,
+        attemptRadius: 2.40,
+        attemptDotZOffsetMax: 1.15,
+        attemptFadeStrength: 0.7
       }
     },
-    // Minimal preset
-    minimal: {
-      name: 'Minimal',
+    
+    // 1. Default - Your base settings
+    default: {
+      name: 'Default',
+      description: 'Your perfect base configuration',
+      settings: {
+        baseRadius: 0.50, dynamicsMultiplier: 13.7, combinedSize: 2.3, ringCount: 26, ringSpacing: 0.004,
+        opacity: 1.00, lineWidth: 0.4, centerFade: 0.80, depthEffect: 0.5, organicNoise: 1.52,
+        moveColor: '#10b981', cruxColor: '#ec4899', cruxEmphasis: 0.5,
+        rotationSpeed: 0.0, liquidSpeed: 3.20, liquidSize: 0.8,
+        attemptWaveSpeed: 0.7, attemptWaveDirection: 1.1, attemptWaveIntensity: 1.6,
+        showMovePositionLines: true, moveLineLength: 3.2, moveLineOpacity: 0.80, moveLineWidth: 2.0,
+        showAttemptLines: true, maxAttempts: 120.0, attemptOpacity: 0.45, attemptWaviness: 0.030,
+        attemptThickness: 0.5, attemptRadius: 2.40, attemptDotZOffsetMax: 1.15, attemptFadeStrength: 0.7
+      }
+    },
+    
+    // 2. Neon Glow - Electric colors
+    neonGlow: {
+      name: 'Neon Glow',
+      description: 'Electric neon vibes',
+      settings: {
+        baseRadius: 0.50, dynamicsMultiplier: 13.7, combinedSize: 2.3, ringCount: 26, ringSpacing: 0.004,
+        opacity: 1.00, lineWidth: 0.6, centerFade: 0.60, depthEffect: 0.8, organicNoise: 1.52,
+        moveColor: '#00ffff', cruxColor: '#ff00ff', cruxEmphasis: 0.8,
+        rotationSpeed: 0.0, liquidSpeed: 4.0, liquidSize: 1.0,
+        attemptWaveSpeed: 1.2, attemptWaveDirection: 1.5, attemptWaveIntensity: 2.0,
+        showMovePositionLines: true, moveLineLength: 3.2, moveLineOpacity: 0.90, moveLineWidth: 2.5,
+        showAttemptLines: true, maxAttempts: 120.0, attemptOpacity: 0.60, attemptWaviness: 0.040,
+        attemptThickness: 0.7, attemptRadius: 2.40, attemptDotZOffsetMax: 1.15, attemptFadeStrength: 0.9
+      }
+    },
+    
+    // 3. Minimal Clean - Reduced everything
+    minimalClean: {
+      name: 'Minimal Clean',
       description: 'Clean and simple',
       settings: {
-        // Basics
-        baseRadius: 0.8,
-        dynamicsMultiplier: 0.5,
-        combinedSize: 1.0,
-        ringCount: 20.0,
-        ringSpacing: 0.01,
-        
-        // Visuals
-        opacity: 0.6,
-        lineWidth: 0.15,
-        centerFade: 0.3,
-        depthEffect: 0.1,
-        organicNoise: 0.0,
-        moveColor: '#6366f1',
-        cruxColor: '#8b5cf6',
-        
-        // Dynamic Effects
-        cruxEmphasis: 1.0,
-        
-        // Animation
-        rotationSpeed: 0.0,
-        liquidSpeed: 0.5,
-        liquidSize: 0.2,
-        
-        // Attempts
-        showAttemptLines: false,
-        maxAttempts: 30.0,
-        attemptOpacity: 0.2,
-        attemptWaviness: 0.01,
-        attemptThickness: 0.3,
-        attemptRadius: 1.0,
-        attemptDotZOffsetMax: 0.3,
-        attemptFadeStrength: 0.3
+        baseRadius: 0.60, dynamicsMultiplier: 10.0, combinedSize: 1.8, ringCount: 20, ringSpacing: 0.006,
+        opacity: 0.80, lineWidth: 0.3, centerFade: 0.90, depthEffect: 0.2, organicNoise: 0.5,
+        moveColor: '#10b981', cruxColor: '#ec4899', cruxEmphasis: 0.3,
+        rotationSpeed: 0.0, liquidSpeed: 2.0, liquidSize: 0.4,
+        attemptWaveSpeed: 0.3, attemptWaveDirection: 0.8, attemptWaveIntensity: 0.8,
+        showMovePositionLines: true, moveLineLength: 2.5, moveLineOpacity: 0.60, moveLineWidth: 1.5,
+        showAttemptLines: true, maxAttempts: 80.0, attemptOpacity: 0.30, attemptWaviness: 0.015,
+        attemptThickness: 0.3, attemptRadius: 2.00, attemptDotZOffsetMax: 0.8, attemptFadeStrength: 0.5
+      }
+    },
+    
+    // 4. Dramatic High - Everything cranked
+    dramaticHigh: {
+      name: 'Dramatic High',
+      description: 'Maximum intensity',
+      settings: {
+        baseRadius: 0.40, dynamicsMultiplier: 18.0, combinedSize: 2.8, ringCount: 35, ringSpacing: 0.003,
+        opacity: 1.00, lineWidth: 0.6, centerFade: 0.60, depthEffect: 1.0, organicNoise: 2.5,
+        moveColor: '#ff4444', cruxColor: '#ffaa00', cruxEmphasis: 1.2,
+        rotationSpeed: 0.0, liquidSpeed: 5.0, liquidSize: 1.2,
+        attemptWaveSpeed: 1.5, attemptWaveDirection: 2.0, attemptWaveIntensity: 2.5,
+        showMovePositionLines: true, moveLineLength: 4.0, moveLineOpacity: 1.00, moveLineWidth: 3.0,
+        showAttemptLines: true, maxAttempts: 150.0, attemptOpacity: 0.70, attemptWaviness: 0.050,
+        attemptThickness: 0.8, attemptRadius: 3.00, attemptDotZOffsetMax: 1.5, attemptFadeStrength: 1.0
+      }
+    },
+    
+    // 5. Ocean Waves - Blue theme
+    oceanWaves: {
+      name: 'Ocean Waves',
+      description: 'Deep blue ocean vibes',
+      settings: {
+        baseRadius: 0.50, dynamicsMultiplier: 13.7, combinedSize: 2.3, ringCount: 26, ringSpacing: 0.004,
+        opacity: 0.90, lineWidth: 0.4, centerFade: 0.70, depthEffect: 0.8, organicNoise: 2.0,
+        moveColor: '#0ea5e9', cruxColor: '#06b6d4', cruxEmphasis: 0.6,
+        rotationSpeed: 0.0, liquidSpeed: 2.5, liquidSize: 1.5,
+        attemptWaveSpeed: 0.5, attemptWaveDirection: 0.8, attemptWaveIntensity: 1.2,
+        showMovePositionLines: true, moveLineLength: 3.2, moveLineOpacity: 0.70, moveLineWidth: 2.0,
+        showAttemptLines: true, maxAttempts: 120.0, attemptOpacity: 0.40, attemptWaviness: 0.025,
+        attemptThickness: 0.4, attemptRadius: 2.40, attemptDotZOffsetMax: 1.15, attemptFadeStrength: 0.6
+      }
+    },
+    
+    // 6. Fire Storm - Red/orange theme
+    fireStorm: {
+      name: 'Fire Storm',
+      description: 'Blazing red intensity',
+      settings: {
+        baseRadius: 0.45, dynamicsMultiplier: 15.0, combinedSize: 2.5, ringCount: 30, ringSpacing: 0.003,
+        opacity: 1.00, lineWidth: 0.5, centerFade: 0.50, depthEffect: 0.7, organicNoise: 1.8,
+        moveColor: '#f97316', cruxColor: '#ef4444', cruxEmphasis: 0.9,
+        rotationSpeed: 0.0, liquidSpeed: 4.5, liquidSize: 0.9,
+        attemptWaveSpeed: 1.0, attemptWaveDirection: 1.3, attemptWaveIntensity: 1.8,
+        showMovePositionLines: true, moveLineLength: 3.5, moveLineOpacity: 0.85, moveLineWidth: 2.2,
+        showAttemptLines: true, maxAttempts: 130.0, attemptOpacity: 0.50, attemptWaviness: 0.035,
+        attemptThickness: 0.6, attemptRadius: 2.60, attemptDotZOffsetMax: 1.2, attemptFadeStrength: 0.8
+      }
+    },
+    
+    // 7. Forest Deep - Dark greens
+    forestDeep: {
+      name: 'Forest Deep',
+      description: 'Deep forest greens',
+      settings: {
+        baseRadius: 0.50, dynamicsMultiplier: 13.7, combinedSize: 2.3, ringCount: 26, ringSpacing: 0.004,
+        opacity: 0.85, lineWidth: 0.5, centerFade: 0.85, depthEffect: 0.8, organicNoise: 2.2,
+        moveColor: '#059669', cruxColor: '#065f46', cruxEmphasis: 0.6,
+        rotationSpeed: 0.0, liquidSpeed: 2.2, liquidSize: 1.1,
+        attemptWaveSpeed: 0.6, attemptWaveDirection: 0.9, attemptWaveIntensity: 1.3,
+        showMovePositionLines: true, moveLineLength: 3.2, moveLineOpacity: 0.75, moveLineWidth: 2.0,
+        showAttemptLines: true, maxAttempts: 120.0, attemptOpacity: 0.40, attemptWaviness: 0.035,
+        attemptThickness: 0.6, attemptRadius: 2.40, attemptDotZOffsetMax: 1.15, attemptFadeStrength: 0.7
+      }
+    },
+    
+    // 8. Lava Flow - Molten theme
+    lavaFlow: {
+      name: 'Lava Flow',
+      description: 'Molten lava patterns',
+      settings: {
+        baseRadius: 0.48, dynamicsMultiplier: 14.5, combinedSize: 2.4, ringCount: 28, ringSpacing: 0.004,
+        opacity: 0.95, lineWidth: 0.5, centerFade: 0.60, depthEffect: 0.8, organicNoise: 2.0,
+        moveColor: '#dc2626', cruxColor: '#991b1b', cruxEmphasis: 0.8,
+        rotationSpeed: 0.0, liquidSpeed: 3.5, liquidSize: 1.0,
+        attemptWaveSpeed: 0.8, attemptWaveDirection: 1.2, attemptWaveIntensity: 1.5,
+        showMovePositionLines: true, moveLineLength: 3.3, moveLineOpacity: 0.85, moveLineWidth: 2.1,
+        showAttemptLines: true, maxAttempts: 125.0, attemptOpacity: 0.50, attemptWaviness: 0.038,
+        attemptThickness: 0.6, attemptRadius: 2.50, attemptDotZOffsetMax: 1.2, attemptFadeStrength: 0.8
+      }
+    },
+    
+    // 9. Crystal Matrix - Geometric
+    crystalMatrix: {
+      name: 'Crystal Matrix',
+      description: 'Geometric crystal patterns',
+      settings: {
+        baseRadius: 0.50, dynamicsMultiplier: 13.7, combinedSize: 2.3, ringCount: 32, ringSpacing: 0.003,
+        opacity: 1.00, lineWidth: 0.3, centerFade: 0.90, depthEffect: 0.4, organicNoise: 0.3,
+        moveColor: '#06b6d4', cruxColor: '#0891b2', cruxEmphasis: 0.5,
+        rotationSpeed: 0.0, liquidSpeed: 3.0, liquidSize: 0.5,
+        attemptWaveSpeed: 0.9, attemptWaveDirection: 1.0, attemptWaveIntensity: 1.2,
+        showMovePositionLines: true, moveLineLength: 3.2, moveLineOpacity: 0.90, moveLineWidth: 1.8,
+        showAttemptLines: true, maxAttempts: 120.0, attemptOpacity: 0.45, attemptWaviness: 0.015,
+        attemptThickness: 0.4, attemptRadius: 2.40, attemptDotZOffsetMax: 1.15, attemptFadeStrength: 0.7
       }
     }
   }
@@ -622,12 +684,13 @@ export function ControlPanel({
   }, [visualizerSettings])
 
   const ControlSlider = ({ control }: { control: any }) => {
-    const currentValue = Number(visualizerSettings[control.key as keyof typeof visualizerSettings]);
+    // Read current value directly from global store instead of local state
+    const currentValue = Number(state.visualizerSettings[control.key as keyof typeof state.visualizerSettings]);
     
     // Local state for immediate UI feedback
     const [localValue, setLocalValue] = useState(currentValue);
     
-    // Sync local value with settings when settings change
+    // Sync local value with global store when settings change
     useEffect(() => {
       setLocalValue(currentValue);
     }, [currentValue]);
@@ -646,6 +709,7 @@ export function ControlPanel({
           </span>
         </div>
         <ElasticSlider
+          key={`${control.key}-${currentValue}`}
           defaultValue={currentValue}
           startingValue={control.min}
           maxValue={control.max}
@@ -769,20 +833,20 @@ export function ControlPanel({
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-3">
               <h2 className="text-cyan-400 font-bold text-xl">Control Center</h2>
-              {fontLoaded && (
-                <div className="flex items-center space-x-1">
-                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                  <span className="text-xs text-green-400 font-medium">TT-Supermolot</span>
-                </div>
-              )}
             </div>
-            <button
-              onClick={refreshBoulders}
-              className="px-3 py-2 bg-cyan-400/20 hover:bg-cyan-400/30 text-cyan-400 rounded-lg transition-all text-sm font-medium"
-              disabled={isLoading}
-            >
-              <RefreshCwIcon size={16} className={isLoading ? 'animate-spin' : ''} />
-            </button>
+            <div className="flex items-center space-x-2">
+              {/* Auto-save indicator */}
+              <div className={`transition-all duration-500 ${autoSaveBlinking ? 'animate-pulse scale-125 text-green-300' : 'opacity-30 text-green-500'}`}>
+                <div className="text-base">💾</div>
+              </div>
+              <button
+                onClick={refreshBoulders}
+                className="px-3 py-2 bg-cyan-400/20 hover:bg-cyan-400/30 text-cyan-400 rounded-lg transition-all text-sm font-medium"
+                disabled={isLoading}
+              >
+                <RefreshCwIcon size={16} className={isLoading ? 'animate-spin' : ''} />
+              </button>
+            </div>
           </div>
           
           {/* View Switcher */}
@@ -790,8 +854,8 @@ export function ControlPanel({
             <button
               onClick={() => {
                 if (currentView === 'visualizer') {
-                  // Toggle visualization mode if already in visualizer
-                  onVisualizationModeChange(visualizationMode === '3d' ? 'statistics' : visualizationMode === 'statistics' ? 'simple' : '3d')
+                  // Skip 'simple' mode - go directly from 3d to statistics
+                  onVisualizationModeChange(visualizationMode === '3d' ? 'statistics' : '3d')
                 } else {
                   // Switch to visualizer view
                   onViewChange('visualizer')
@@ -804,12 +868,17 @@ export function ControlPanel({
               }`}
             >
               {currentView === 'visualizer' 
-                ? (visualizationMode === '3d' ? '🧗 3D View' : visualizationMode === 'statistics' ? '📊 Statistics' : '🌊 Simple')
+                ? (visualizationMode === '3d' ? '🧗 3D View' : '📊 Statistics')
                 : '🧗 Visualizer'
               }
             </button>
             <button
-              onClick={() => onViewChange('add-boulder')}
+              onClick={() => {
+                onViewChange('add-boulder')
+                // Collapse the control panel when switching to add boulder view
+                setIsVisible(false)
+                onVisibilityChange(false)
+              }}
               className={`px-4 py-2 rounded-lg transition-all text-sm font-medium ${
                 currentView === 'add-boulder'
                   ? 'bg-cyan-400/20 text-cyan-400 border border-cyan-400/40'
@@ -847,7 +916,16 @@ export function ControlPanel({
 
         {/* Folder tabs */}
         <div className="flex border-b border-cyan-400/20 bg-black/50">
-          {folders.map((folder) => (
+          {folders
+            .filter(folder => {
+              // In statistics view, only show selection and moveDetection tabs
+              if (visualizationMode === 'statistics') {
+                return folder.id === 'selection' || folder.id === 'moveDetection'
+              }
+              // In other views, show all tabs
+              return true
+            })
+            .map((folder) => (
             <button
               key={folder.id}
               onClick={() => setCurrentFolder(currentFolder === folder.id ? null : folder.id)}
@@ -978,9 +1056,14 @@ export function ControlPanel({
                           <div className="text-lg">
                             {key === 'current' && '💾'}
                             {key === 'default' && '⚙️'}
-                            {key === 'dramatic' && '🔥'}
-                            {key === 'smooth' && '🌊'}
-                            {key === 'minimal' && '✨'}
+                            {key === 'neonGlow' && '⚡'}
+                            {key === 'minimalClean' && '✨'}
+                            {key === 'dramaticHigh' && '🔥'}
+                            {key === 'oceanWaves' && '🌊'}
+                            {key === 'fireStorm' && '🌋'}
+                            {key === 'forestDeep' && '🌲'}
+                            {key === 'lavaFlow' && '🌋'}
+                            {key === 'crystalMatrix' && '💎'}
                           </div>
                         </div>
                       </button>
@@ -989,16 +1072,145 @@ export function ControlPanel({
                 </div>
               </div>
 
+              {/* Post-Processing Effects */}
+              <div>
+                <h4 className="text-cyan-400 font-medium mb-4">🎨 Post-Processing</h4>
+                <div className="space-y-4">
+                  {/* Black & White Filter */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-cyan-400">Black & White</label>
+                      <button
+                        onClick={() => {
+                          const newValue = !visualizerSettings.postProcessingBW
+                          handleSettingChange('postProcessingBW', newValue)
+                        }}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          visualizerSettings.postProcessingBW ? 'bg-cyan-400' : 'bg-gray-600'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            visualizerSettings.postProcessingBW ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {visualizerSettings.postProcessingBW && (
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-xs text-gray-400">Intensity</span>
+                          <span className="text-xs text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded-lg border border-cyan-400/40">
+                            {(visualizerSettings.postProcessingBWIntensity || 50)}%
+                          </span>
+                        </div>
+                        <ElasticSlider
+                          defaultValue={visualizerSettings.postProcessingBWIntensity || 50}
+                          startingValue={0}
+                          maxValue={100}
+                          isStepped={true}
+                          stepSize={1}
+                          className="w-full"
+                          onChange={(value) => handleSettingChange('postProcessingBWIntensity', value)}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Contrast Filter */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-cyan-400">High Contrast</label>
+                      <button
+                        onClick={() => {
+                          const newValue = !visualizerSettings.postProcessingContrast
+                          handleSettingChange('postProcessingContrast', newValue)
+                        }}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          visualizerSettings.postProcessingContrast ? 'bg-cyan-400' : 'bg-gray-600'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            visualizerSettings.postProcessingContrast ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {visualizerSettings.postProcessingContrast && (
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-xs text-gray-400">Intensity</span>
+                          <span className="text-xs text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded-lg border border-cyan-400/40">
+                            {(visualizerSettings.postProcessingContrastIntensity || 50)}%
+                          </span>
+                        </div>
+                        <ElasticSlider
+                          defaultValue={visualizerSettings.postProcessingContrastIntensity || 50}
+                          startingValue={0}
+                          maxValue={100}
+                          isStepped={true}
+                          stepSize={1}
+                          className="w-full"
+                          onChange={(value) => handleSettingChange('postProcessingContrastIntensity', value)}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bloom/Glow Effect */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-cyan-400">Bloom Glow</label>
+                      <button
+                        onClick={() => {
+                          const newValue = !visualizerSettings.postProcessingBloom
+                          handleSettingChange('postProcessingBloom', newValue)
+                        }}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          visualizerSettings.postProcessingBloom ? 'bg-cyan-400' : 'bg-gray-600'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            visualizerSettings.postProcessingBloom ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {visualizerSettings.postProcessingBloom && (
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-xs text-gray-400">Intensity</span>
+                          <span className="text-xs text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded-lg border border-cyan-400/40">
+                            {(visualizerSettings.postProcessingBloomIntensity || 50)}%
+                          </span>
+                        </div>
+                        <ElasticSlider
+                          defaultValue={visualizerSettings.postProcessingBloomIntensity || 50}
+                          startingValue={0}
+                          maxValue={100}
+                          isStepped={true}
+                          stepSize={1}
+                          className="w-full"
+                          onChange={(value) => handleSettingChange('postProcessingBloomIntensity', value)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Preset Info */}
               <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-4">
-                <h5 className="text-cyan-400 font-medium mb-2">About Presets</h5>
-                <ul className="text-xs text-gray-400 space-y-1">
-                  <li>• <strong>Current Settings:</strong> Your saved configuration</li>
-                  <li>• <strong>Default:</strong> Clean default visualization</li>
-                  <li>• <strong>Dramatic:</strong> High contrast and emphasis</li>
-                  <li>• <strong>Smooth Flow:</strong> Gentle and flowing</li>
-                  <li>• <strong>Minimal:</strong> Clean and simple</li>
-                </ul>
+                <h5 className="text-cyan-400 font-medium mb-2">About Presets (10 Total)</h5>
+                <div className="text-xs text-gray-400 space-y-1">
+                  <div><strong>🎯 Core:</strong> Default, Current Settings</div>
+                  <div><strong>🎨 Colors:</strong> Neon Glow, Ocean Waves, Fire Storm, Forest Deep</div>
+                  <div><strong>⚡ Energy:</strong> Dramatic High</div>
+                  <div><strong>🔮 Themes:</strong> Lava Flow, Crystal Matrix</div>
+                  <div><strong>✨ Clean:</strong> Minimal Clean</div>
+                </div>
               </div>
             </div>
           )}
@@ -1085,6 +1297,60 @@ export function ControlPanel({
           {/* Move Detection Settings */}
           {currentFolder === 'moveDetection' && (
             <div className="space-y-6">
+              {/* Data Cropping Controls */}
+              <div className="bg-orange-400/10 border border-orange-400/40 rounded-lg p-4">
+                <h5 className="text-orange-400 font-medium mb-3">✂️ Data Cropping</h5>
+                <div className="space-y-3">
+                  <div className="flex items-end gap-3">
+                    {/* Start and End Time inputs */}
+                    <div className="flex gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Start (s)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          placeholder="0.0"
+                          className="w-20 px-2 py-1 bg-black/50 border border-orange-400/40 rounded text-orange-400 text-xs focus:border-orange-400 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">End (s)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          placeholder="10.0"
+                          className="w-20 px-2 py-1 bg-black/50 border border-orange-400/40 rounded text-orange-400 text-xs focus:border-orange-400 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Preview and Apply buttons */}
+                    <div className="flex gap-2">
+                      <button
+                        className="px-2 py-1 bg-orange-400/20 border border-orange-400/40 text-orange-400 rounded font-medium transition-all hover:bg-orange-400/30 text-xs"
+                      >
+                        👁️ Preview
+                      </button>
+                      <button
+                        className="px-2 py-1 bg-red-400/20 border border-red-400/40 text-red-400 rounded font-medium transition-all hover:bg-red-400/30 text-xs"
+                      >
+                        ✂️ Apply
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <p className="text-xs text-gray-200">
+                    💡 Drag on graph to select range. Heavy smoothing auto-applied.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                {folders.find(f => f.id === 'moveDetection')?.controls.map((control) => (
+                  <ControlSlider key={control.key} control={control} />
+                ))}
+              </div>
+              
               <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-4">
                 <h5 className="text-cyan-400 font-medium mb-2">Move Detection Algorithm</h5>
                 <ul className="text-xs text-gray-400 space-y-1">
@@ -1095,20 +1361,6 @@ export function ControlPanel({
                   <li>• <strong>Max Move Duration:</strong> Longer movements get split into multiple moves</li>
                   <li>• <strong>Max Move Sequence:</strong> Max consecutive moves without rest</li>
                 </ul>
-              </div>
-              
-              <div className="space-y-4">
-                {folders.find(f => f.id === 'moveDetection')?.controls.map((control) => (
-                  <ControlSlider key={control.key} control={control} />
-                ))}
-              </div>
-              
-              <div className="bg-green-400/10 border border-green-400/40 rounded-lg p-4">
-                <h5 className="text-green-400 font-medium mb-2">✅ How It Works</h5>
-                <p className="text-xs text-gray-400">
-                  The algorithm detects transitions: Rest → Movement → Rest = 1 Move. 
-                  Green shaded areas show detected moves. Everything else is stillness/rest.
-                </p>
               </div>
             </div>
           )}

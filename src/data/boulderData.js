@@ -3,17 +3,23 @@ let csvFileCache = new Map();
 let lastCacheUpdate = 0;
 const CACHE_DURATION = 30000; // 30 seconds
 
-// Dynamically discover CSV files in the data directory
+// Dynamically discover CSV files in the organized data directory structure
 async function discoverCSVFiles() {
     const csvFiles = [];
     
-    // Common CSV file patterns to try
+    // Define organized folder structure
+    const folders = [
+        'routes',           // Main climbing routes
+        'samples',          // Sample/demo data  
+        'live-recordings'   // Live Phyphox recordings
+    ];
+    
+    // Common CSV file patterns to try in each folder
     const commonPatterns = [
+        'Sample1.csv',     // Add the specific file ART has
         'Raw Data.csv',
         'Raw Data2.csv', 
         'Raw Data3.csv',
-        'Raw Data4.csv',
-        'Raw Data5.csv',
         'rawdata.csv',
         'rawdata2.csv',
         'rawdata3.csv',
@@ -22,28 +28,106 @@ async function discoverCSVFiles() {
         'acceleration.csv'
     ];
     
+    // Search in organized folders
+    for (const folder of folders) {
+        console.log(`🔍 [boulderData] Searching for CSV files in /data/${folder}/`);
+        
+        // Try common patterns in this folder
+        for (const filename of commonPatterns) {
+            const filepath = `/data/${folder}/${filename}`;
+            console.log(`🔍 [boulderData] Trying to fetch: ${filepath}`);
+            try {
+                const response = await fetch(filepath);
+                console.log(`📡 [boulderData] Response for ${filepath}: ${response.status} ${response.ok ? 'OK' : 'FAILED'}`);
+                if (response.ok) {
+                    const text = await response.text();
+                    console.log(`📄 [boulderData] File content preview for ${filepath}:`, text.substring(0, 200));
+                    if (text.trim().startsWith('<!DOCTYPE html>') || 
+                        text.trim().startsWith('<html') ||
+                        text.includes('<title>404</title>') ||
+                        text.includes('Not Found')) {
+                        console.log(`❌ [boulderData] File ${filepath} is HTML error page`);
+                        continue;
+                    }
+                    
+                    // Basic CSV validation
+                    const firstLine = text.split('\n')[0];
+                    if (firstLine && firstLine.includes(',') && 
+                        (firstLine.toLowerCase().includes('time') || 
+                         firstLine.toLowerCase().includes('acceleration'))) {
+                        csvFiles.push(filepath);
+                        console.log(`✅ [boulderData] Found CSV file: ${filepath}`);
+                    } else {
+                        console.log(`❌ [boulderData] File ${filepath} failed CSV validation:`, {
+                            hasCommas: firstLine?.includes(','),
+                            hasTime: firstLine?.toLowerCase().includes('time'),
+                            hasAcceleration: firstLine?.toLowerCase().includes('acceleration'),
+                            firstLine: firstLine?.substring(0, 100)
+                        });
+                    }
+                }
+            } catch (error) {
+                console.log(`❌ [boulderData] Error fetching ${filepath}:`, error);
+                // File doesn't exist, continue
+            }
+        }
+        
+        // Also try common climbing route names
+        const routePatterns = [
+            'V0_Route.csv', 'V1_Route.csv', 'V2_Route.csv', 'V3_Route.csv', 'V4_Route.csv',
+            'V5_Route.csv', 'V6_Route.csv', 'V7_Route.csv', 'V8_Route.csv', 'V9_Route.csv',
+            'Sample_Route.csv', 'Demo_Route.csv', 'Test_Route.csv',
+            'Overhang_Problem.csv', 'Crimpy_Route.csv', 'Dynamic_Problem.csv',
+            'Slab_Route.csv', 'Roof_Problem.csv', 'Arete_Route.csv'
+        ];
+        
+        for (const filename of routePatterns) {
+            const filepath = `/data/${folder}/${filename}`;
+            try {
+                const response = await fetch(filepath);
+                if (response.ok) {
+                    const text = await response.text();
+                    if (text.trim().startsWith('<!DOCTYPE html>') || 
+                        text.trim().startsWith('<html') ||
+                        text.includes('<title>404</title>') ||
+                        text.includes('Not Found')) {
+                        continue;
+                    }
+                    
+                    const firstLine = text.split('\n')[0];
+                    if (firstLine && firstLine.includes(',') && 
+                        (firstLine.toLowerCase().includes('time') || 
+                         firstLine.toLowerCase().includes('acceleration'))) {
+                        csvFiles.push(filepath);
+                        console.log(`✅ Found route CSV file: ${filepath}`);
+                    }
+                }
+            } catch (error) {
+                // File doesn't exist, continue
+            }
+        }
+    }
+    
+    // Also check root data directory for backwards compatibility
     for (const filename of commonPatterns) {
-        const filepath = `src/data/${filename}`;
+        const filepath = `/data/${filename}`;
         try {
             const response = await fetch(filepath);
             if (response.ok) {
-                // Validate that the response contains actual CSV data, not HTML
                 const text = await response.text();
                 if (text.trim().startsWith('<!DOCTYPE html>') || 
                     text.trim().startsWith('<html') ||
                     text.includes('<title>404</title>') ||
                     text.includes('Not Found')) {
-                    // This is an HTML error page, not a CSV file
                     continue;
                 }
                 
-                // Basic CSV validation - should have comma-separated headers
                 const firstLine = text.split('\n')[0];
                 if (firstLine && firstLine.includes(',') && 
                     (firstLine.toLowerCase().includes('time') || 
                      firstLine.toLowerCase().includes('acceleration'))) {
                     csvFiles.push(filepath);
-                    console.log(`Found CSV file: ${filepath}`);
+                    console.log(`✅ Found legacy CSV file: ${filepath}`);
                 }
             }
         } catch (error) {
@@ -51,7 +135,7 @@ async function discoverCSVFiles() {
         }
     }
     
-    console.log(`Discovered ${csvFiles.length} CSV files:`, csvFiles);
+    console.log(`🧗‍♂️ Discovered ${csvFiles.length} total CSV files:`, csvFiles);
     return csvFiles;
 }
 
@@ -75,7 +159,9 @@ function parsePhyphoxCSV(csvText, filename) {
         const header = headers[i].toLowerCase();
         if (header.includes('time') && header.includes('s')) {
             timeCol = i;
-        } else if (header.includes('absolute acceleration')) {
+        } else if (header.includes('absolute acceleration') || 
+                   (header.includes('absolute') && header.includes('acceleration')) ||
+                   (header.includes('absolute') && (header.includes('m/s²') || header.includes('m/s^2')))) {
             absAccelCol = i;
         }
     }
@@ -97,7 +183,7 @@ function parsePhyphoxCSV(csvText, filename) {
     for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',').map(v => {
             const trimmed = v.trim().replace(/"/g, '');
-            // Handle scientific notation
+            // Handle scientific notation properly and regular numbers
             const num = parseFloat(trimmed);
             return isNaN(num) ? 0 : num;
         });
@@ -107,7 +193,8 @@ function parsePhyphoxCSV(csvText, filename) {
         const timeVal = values[timeCol];
         const accelVal = values[absAccelCol];
 
-        if (!isNaN(timeVal) && !isNaN(accelVal) && accelVal > 0) {
+        // More lenient validation - allow zero acceleration values and handle scientific notation
+        if (!isNaN(timeVal) && !isNaN(accelVal) && isFinite(timeVal) && isFinite(accelVal) && accelVal >= 0) {
             time.push(timeVal);
             absoluteAcceleration.push(accelVal);
             validRows++;
