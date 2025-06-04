@@ -318,11 +318,11 @@ export function ControlPanel({
       name: '🔍 Move Detection',
       icon: '🔍',
       controls: [
-        { key: 'moveThreshold', name: 'Move Threshold', min: 0.0, max: 50.0, step: 0.5 },
-        { key: 'minStillDuration', name: 'Min Still Duration', min: 0.2, max: 3.0, step: 0.1 },
-        { key: 'minMoveDuration', name: 'Min Move Duration', min: 0.1, max: 2.0, step: 0.1 },
-        { key: 'maxMoveDuration', name: 'Max Move Duration', min: 2.0, max: 10.0, step: 0.5 },
-        { key: 'maxMoveSequence', name: 'Max Move Sequence', min: 1, max: 5, step: 1 }
+        { key: 'moveThreshold', name: 'Move Threshold', min: 0.5, max: 3.0, step: 0.1 },
+        { key: 'minStillDuration', name: 'Min Still Duration', min: 0.2, max: 1.0, step: 0.05 },
+        { key: 'minMoveDuration', name: 'Min Move Duration', min: 0.2, max: 1.0, step: 0.05 },
+        { key: 'maxMoveDuration', name: 'Max Move Duration', min: 0.5, max: 2.0, step: 0.1 },
+        { key: 'maxMoveSequence', name: 'Max Move Sequence', min: 1, max: 4, step: 1 }
       ]
     },
     {
