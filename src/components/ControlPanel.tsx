@@ -1182,6 +1182,24 @@ export function ControlPanel({
                       placeholder="192.168.1.36 or http://192.168.1.36"
                       className="w-full px-4 py-3 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none text-sm backdrop-blur-sm transition-all"
                     />
+                    
+                    {/* HTTPS Warning */}
+                    {window.location.protocol === 'https:' && (
+                      <div className="mt-3 bg-yellow-400/10 border border-yellow-400/40 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                          <div className="text-yellow-400 text-lg">⚠️</div>
+                          <div>
+                            <h6 className="text-yellow-400 font-medium text-xs mb-1">HTTPS Site Limitation</h6>
+                            <p className="text-xs text-gray-300 mb-2">
+                              Live mode doesn't work on HTTPS sites due to mixed content security restrictions.
+                            </p>
+                            <p className="text-xs text-cyan-400">
+                              💡 Use local development server: <code className="bg-black/50 px-1 rounded">npm run dev</code>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
