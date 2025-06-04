@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Stepper, Step } from './Stepper'
-import { ChevronRight, ChevronLeft, Play, Square, Trash2, Upload, ArrowLeft } from 'lucide-react'
+import { ChevronRight, ChevronLeft, Play, Square, Trash2, Upload, ArrowLeft, Smartphone, Globe, Link, Film, Clipboard, CheckCircle, X, BarChart3, Save, Check } from 'lucide-react'
 import ElasticSlider from './ui/ElasticSlider'
 
 interface PhyphoxTutorialProps {
@@ -44,6 +44,10 @@ export function PhyphoxTutorial({
   const [gradeSystem, setGradeSystem] = useState<'V' | 'Font' | 'YDS'>('V') // V-scale, Font (French), YDS (Yosemite)
   const [numberOfMoves, setNumberOfMoves] = useState('')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+
+  // Save confirmation state
+  const [showSaveConfirmation, setShowSaveConfirmation] = useState(false)
+  const [savedBoulderData, setSavedBoulderData] = useState<any>(null)
 
   // Grade systems data with conversion mappings
   const gradeSystems = {
@@ -269,13 +273,15 @@ export function PhyphoxTutorial({
         
         console.log('Boulder saved successfully:', boulderData)
         
+        // Store boulder data for confirmation popup
+        setSavedBoulderData(boulderData)
+        setShowSaveConfirmation(true)
+        
         // Dispatch event to notify other components
         window.dispatchEvent(new CustomEvent('boulderSaved', { 
           detail: { boulder: boulderData } 
         }))
         
-        // Navigate back to visualizer
-        onBack()
       } else {
         throw new Error('Failed to fetch final recording data')
       }
@@ -302,7 +308,15 @@ export function PhyphoxTutorial({
       localStorage.setItem('climbing-boulders', JSON.stringify(existingBoulders))
       
       console.log('Boulder saved without raw data:', boulderData)
-      onBack()
+      
+      // Store boulder data for confirmation popup
+      setSavedBoulderData(boulderData)
+      setShowSaveConfirmation(true)
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('boulderSaved', { 
+        detail: { boulder: boulderData } 
+      }))
     }
   }
 
@@ -319,7 +333,10 @@ export function PhyphoxTutorial({
     if (liveData.length < 2) {
       return (
         <div className="bg-black/50 border border-cyan-400/40 rounded-lg p-4">
-          <h4 className="text-cyan-400 font-medium mb-2">📊 Live Progress</h4>
+          <h4 className="text-cyan-400 font-medium mb-2 flex items-center gap-2">
+            <BarChart3 size={16} className="text-cyan-400" />
+            Live Progress
+          </h4>
           <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
             {isRecording ? 'Waiting for data...' : 'No data recorded'}
           </div>
@@ -340,7 +357,10 @@ export function PhyphoxTutorial({
     return (
       <div className="bg-black/50 border border-cyan-400/40 rounded-lg p-4">
         <div className="flex items-center justify-between mb-2">
-          <h4 className="text-cyan-400 font-medium">📊 Live Progress</h4>
+          <h4 className="text-cyan-400 font-medium mb-2 flex items-center gap-2">
+            <BarChart3 size={16} className="text-cyan-400" />
+            Live Progress
+          </h4>
           <div className="text-xs text-gray-400">
             {liveData.length} points • {timeRange.toFixed(1)}s
           </div>
@@ -558,7 +578,9 @@ export function PhyphoxTutorial({
                 
                 {/* Step 1: Download & Open */}
                 <div className="bg-black/30 rounded-xl p-6 text-center">
-                  <div className="text-4xl mb-4">📱</div>
+                  <div className="mb-4 flex justify-center">
+                    <Smartphone size={48} className="text-cyan-400" strokeWidth={1.5} />
+                  </div>
                   <h4 className="text-lg font-semibold text-cyan-400 mb-3">1. Download App</h4>
                   <p className="text-cyan-400/80 text-sm mb-4">
                     Download Phyphox from your app store and open the "Acceleration (without g)" experiment.
@@ -567,7 +589,9 @@ export function PhyphoxTutorial({
 
                 {/* Step 2: Enable Remote Access */}
                 <div className="bg-black/30 rounded-xl p-6 text-center">
-                  <div className="text-4xl mb-4">🌐</div>
+                  <div className="mb-4 flex justify-center">
+                    <Globe size={48} className="text-green-400" strokeWidth={1.5} />
+                  </div>
                   <h4 className="text-lg font-semibold text-cyan-400 mb-3">2. Enable Remote Access</h4>
                   <p className="text-cyan-400/80 text-sm mb-4">
                     In the app, tap the three dots menu → "Allow remote access" to enable network control.
@@ -576,7 +600,9 @@ export function PhyphoxTutorial({
 
                 {/* Step 3: Note IP Address */}
                 <div className="bg-black/30 rounded-xl p-6 text-center">
-                  <div className="text-4xl mb-4">🔗</div>
+                  <div className="mb-4 flex justify-center">
+                    <Link size={48} className="text-purple-400" strokeWidth={1.5} />
+                  </div>
                   <h4 className="text-lg font-semibold text-cyan-400 mb-3">3. Get IP Address</h4>
                   <p className="text-cyan-400/80 text-sm mb-4">
                     The app will show an IP address (e.g., 192.168.1.36). Enter this below to connect.
@@ -591,7 +617,10 @@ export function PhyphoxTutorial({
               {/* Server Connection Section (2/3 width) */}
               <div className="lg:col-span-2 space-y-6">
                 <div className="h-full">
-                  <h4 className="text-xl font-semibold text-cyan-400 mb-6">🔗 Connect to Server</h4>
+                  <div className="flex items-center gap-2 mb-6">
+                    <Link size={24} className="text-cyan-400" />
+                    <h4 className="text-xl font-semibold text-cyan-400">Connect to Server</h4>
+                  </div>
                   
                   <div className="space-y-4">
                     <div>
@@ -615,12 +644,22 @@ export function PhyphoxTutorial({
                     </button>
                     
                     {connectionAttempted && (
-                      <div className={`text-sm p-3 rounded-lg ${
+                      <div className={`text-sm p-3 rounded-lg flex items-center gap-2 ${
                         isServerConnected 
                           ? 'text-green-400 bg-green-400/10' 
                           : 'text-red-400 bg-red-400/10'
                       }`}>
-                        {isServerConnected ? '✅ Connected successfully!' : '❌ Connection failed'}
+                        {isServerConnected ? (
+                          <>
+                            <CheckCircle size={16} className="text-green-400" />
+                            Connected successfully!
+                          </>
+                        ) : (
+                          <>
+                            <X size={16} className="text-red-400" />
+                            Connection failed
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -673,7 +712,10 @@ export function PhyphoxTutorial({
               />
             </div>
 
-            <h3 className="text-xl font-semibold text-cyan-400 mb-6">🎬 Recording Controls</h3>
+            <div className="flex items-center gap-2 mb-6">
+              <Film size={24} className="text-cyan-400" />
+              <h3 className="text-xl font-semibold text-cyan-400">Recording Controls</h3>
+            </div>
             
             <div className="space-y-4">
               {/* Full-width improved playback buttons */}
@@ -726,7 +768,10 @@ export function PhyphoxTutorial({
 
               {/* Instructions */}
               <div className="bg-cyan-400/10 rounded-lg p-4">
-                <h4 className="font-semibold text-cyan-400 mb-2">📋 Recording Instructions:</h4>
+                <div className="flex items-center gap-2 mb-2">
+                  <Clipboard size={20} className="text-cyan-400" />
+                  <h4 className="font-semibold text-cyan-400">Recording Instructions:</h4>
+                </div>
                 <ul className="text-sm space-y-1 text-cyan-400/80">
                   <li>• Attach your phone securely to your body or climbing harness</li>
                   <li>• Start recording before beginning your climb</li>
@@ -737,7 +782,10 @@ export function PhyphoxTutorial({
 
               {recordingSuccess && (
                 <div className="bg-green-400/10 rounded-lg p-4">
-                  <p className="text-green-400 font-semibold">🎉 Recording completed successfully!</p>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={20} className="text-green-400" />
+                    <p className="text-green-400 font-semibold">Recording completed successfully!</p>
+                  </div>
                   <p className="text-green-400/80 text-sm mt-1">Your climbing data has been captured. Click Next to save boulder details.</p>
                 </div>
               )}
@@ -765,7 +813,10 @@ export function PhyphoxTutorial({
               />
             </div>
 
-            <h3 className="text-xl font-semibold text-cyan-400 mb-6">💾 Boulder Information</h3>
+            <h3 className="text-xl font-semibold text-cyan-400 mb-6 flex items-center gap-2">
+              <Save size={20} className="text-cyan-400" />
+              Boulder Information
+            </h3>
             
             <div className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
@@ -871,7 +922,53 @@ export function PhyphoxTutorial({
   }
 
   return (
-    <div className="h-full">
+    <div className="h-screen relative">
+      {/* Save Confirmation Popup */}
+      {showSaveConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-black/90 border border-green-400/40 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
+            <div className="text-center">
+              <div className="mb-6">
+                <div className="w-16 h-16 bg-green-400/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Check size={32} className="text-green-400" />
+                </div>
+                <h3 className="text-2xl font-bold text-green-400 mb-2">Boulder Saved!</h3>
+                <p className="text-gray-300">
+                  "{savedBoulderData?.name}" has been successfully saved to your library.
+                </p>
+              </div>
+              
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    setShowSaveConfirmation(false)
+                    // Navigate to visualizer -> statistics view for analysis
+                    window.dispatchEvent(new CustomEvent('navigateToStatistics', {
+                      detail: { boulderId: savedBoulderData?.id }
+                    }))
+                    onBack()
+                  }}
+                  className="w-full px-6 py-3 bg-cyan-400/20 border border-cyan-400/40 text-cyan-400 rounded-xl font-medium transition-all hover:bg-cyan-400/30 hover:border-cyan-400/60 flex items-center justify-center gap-2"
+                >
+                  <BarChart3 size={20} />
+                  Analyze & Crop Data
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setShowSaveConfirmation(false)
+                    onBack()
+                  }}
+                  className="w-full px-6 py-3 bg-gray-500/20 border border-gray-500/40 text-gray-300 rounded-xl font-medium transition-all hover:bg-gray-500/30"
+                >
+                  Back to Home
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={`h-full flex items-center justify-center transition-all duration-300 ${
         isControlPanelVisible ? 'pr-[25rem]' : 'pr-0'
       }`}>

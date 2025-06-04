@@ -6,10 +6,12 @@ import { ControlPanel } from './components/ControlPanel'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { BoulderConfigProvider, useBoulderConfig } from './context/BoulderConfigContext'
 import { useCSVData } from './hooks/useCSVData'
+import SplitText from './components/SplitText'
 import type { BoulderData } from './utils/csvLoader'
 import { setBoulderThresholdGetter } from './utils/csvLoader'
 import { performStartupCleanup, manualClearAllData } from './utils/dataCleanup'
 import Silk from './components/ui/Silk'
+import { Play, Square, RotateCcw } from 'lucide-react'
 import { 
   updateSelectedBoulder, 
   updateVisualizerSettings
@@ -34,43 +36,53 @@ function ThresholdSetup() {
 }
 
 function App() {
-  const [currentView, setCurrentView] = useState<View>('visualizer')
-  const [isControlPanelVisible, setIsControlPanelVisible] = useState(true)
+  const [currentView, setCurrentView] = useState<View>('add-boulder')
+  const [isControlPanelVisible, setIsControlPanelVisible] = useState(false)
   const [visualizationMode, setVisualizationMode] = useState<VisualizationMode>('3d')
   const [isServerConnected, setIsServerConnected] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const viewChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const liveDataUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null)
   
+  // Loading screen effect - show for 3 seconds
+  useEffect(() => {
+    const loadingTimer = setTimeout(() => {
+      setIsLoading(false)
+    }, 3000) // 3 seconds
+    
+    return () => clearTimeout(loadingTimer)
+  }, [])
+  
   const [visualizerSettings, setVisualizerSettings] = useState({
     // Basics - Updated to match user's current settings
-    baseRadius: 0.50,
-    dynamicsMultiplier: 13.7,
-    combinedSize: 2.3,
-    ringCount: 26,
-    ringSpacing: 0.004,
+    baseRadius: 0.55,
+    dynamicsMultiplier: 12.6,
+    combinedSize: 2.0,
+    ringCount: 29,
+    ringSpacing: 0.002,
     
     // Visuals - Updated to match user's current settings
     opacity: 1.00,
-    lineWidth: 0.4,
-    centerFade: 0.80,
-    depthEffect: 0.5,
-    organicNoise: 1.52,
-    moveColor: '#10b981', // Green from user's selection
-    cruxColor: '#ec4899', // Pink from user's selection
+    lineWidth: 0.8,
+    centerFade: 0.55,
+    depthEffect: 1.6,
+    organicNoise: 1.27,
+    moveColor: '#252cf4', // Blue from user's RGB (37, 44, 244)
+    cruxColor: '#8b5cf6', // Purple from user's RGB (139, 92, 246)
     
     // Dynamic Effects
-    cruxEmphasis: 0.5,
+    cruxEmphasis: 3.7,
     
     // Animation
     animationEnabled: true,
     rotationSpeed: 0.0,
-    liquidSpeed: 3.20,
-    liquidSize: 0.8,
+    liquidSpeed: 2.70,
+    liquidSize: 1.2,
     
     // Attempt Wave Animation - Updated to user's settings
-    attemptWaveSpeed: 0.7,
-    attemptWaveDirection: 1.1,
+    attemptWaveSpeed: 0.8,
+    attemptWaveDirection: 0.7,
     attemptWaveIntensity: 1.6,
     
     // Advanced
@@ -79,6 +91,11 @@ function App() {
     
     // Text Display
     centerTextSize: 1.0,
+    
+    // CircularText Settings
+    showCircularText: true,
+    circularTextSize: 1.0,
+    circularTextSpeed: 60,
     
     // Move Detection Algorithm Parameters - Updated to user's settings
     moveThreshold: 1.0,
@@ -90,20 +107,20 @@ function App() {
     
     // Move Position Lines - Updated to user's settings
     showMovePositionLines: true,
-    moveLineLength: 3.2,
-    moveLineOpacity: 0.80,
-    moveLineWidth: 2.0,
+    moveLineLength: 3.3,
+    moveLineOpacity: 0.85,
+    moveLineWidth: 3.2,
     
     // Attempt Visualization - Updated to user's settings
     showAttemptLines: true,
-    maxAttempts: 120.0,
-    attemptOpacity: 0.45,
-    attemptWaviness: 0.030,
+    maxAttempts: 55.0,
+    attemptOpacity: 0.35,
+    attemptWaviness: 0.014,
     attemptFadeStrength: 0.7,
     attemptThickness: 0.5,
     attemptIntensity: 0.5,
     attemptRadius: 2.40,
-    attemptDotZOffsetMax: 1.15,
+    attemptDotZOffsetMax: 0.55,
     attemptDotZEffectStrength: 0.5,
     
     // Legacy attempt settings (for compatibility)
@@ -117,7 +134,7 @@ function App() {
     postProcessingBWIntensity: 50,
     postProcessingContrast: true,
     postProcessingContrastIntensity: 59,
-    postProcessingBloom: true,
+    postProcessingBloom: false,
     postProcessingBloomIntensity: 31
   })
   
@@ -168,11 +185,15 @@ function App() {
     visualizerSettings.postProcessingContrast,
     visualizerSettings.postProcessingContrastIntensity,
     visualizerSettings.postProcessingBloom,
-    visualizerSettings.postProcessingBloomIntensity
+    visualizerSettings.postProcessingBloomIntensity,
+    // Add CircularText parameters
+    visualizerSettings.showCircularText,
+    visualizerSettings.circularTextSize,
+    visualizerSettings.circularTextSpeed
   ])
   
   // Centralized boulder data management
-  const { boulders, selectedBoulder, isLoading, error, selectBoulder, uploadFile, refreshBoulders } = useCSVData()
+  const { boulders, selectedBoulder, isLoading: csvDataLoading, error, selectBoulder, uploadFile, refreshBoulders } = useCSVData()
 
   // Perform startup cleanup once when app loads
   useEffect(() => {
@@ -371,14 +392,27 @@ function App() {
     }))
   }, [selectBoulder])
 
-  const handleBoulderDataUpdate = useCallback((boulder: BoulderData) => {
+  const handleBoulderDataUpdate = useCallback(async (boulder: BoulderData) => {
     if (process.env.NODE_ENV === 'development') {
       console.log('[App] Boulder data updated from component:', boulder.name, 'ID:', boulder.id)
     }
-    // Refresh the boulder list to include any newly saved boulders
-    refreshBoulders()
-    // Select the updated boulder
-    selectBoulder(boulder.id)
+    
+    try {
+      // First, update the global store immediately with the new boulder data
+      console.log('[App] Updating global store with updated boulder data')
+      updateSelectedBoulder(boulder)
+      
+      // Then refresh the boulder list to include any newly saved boulders
+      console.log('[App] Refreshing boulder list after data update')
+      await refreshBoulders()
+      
+      // Finally, ensure the updated boulder is selected
+      console.log('[App] Re-selecting updated boulder:', boulder.id)
+      selectBoulder(boulder.id)
+      
+    } catch (error) {
+      console.error('[App] Error updating boulder data:', error)
+    }
   }, [refreshBoulders, selectBoulder])
 
   const handleControlPanelVisibilityChange = useCallback((visible: boolean) => {
@@ -406,6 +440,103 @@ function App() {
     }
   }, [selectedBoulder])
 
+  const handleAnimationComplete = () => {
+    console.log('🧗‍♂️ Loading animation complete!')
+  }
+
+  // Loading Screen Component with custom font
+  const LoadingScreen = () => {
+    const [fontsReady, setFontsReady] = useState(false)
+    
+    useEffect(() => {
+      const loadFonts = async () => {
+        try {
+          // Check if fonts API is available
+          if (document.fonts && document.fonts.ready) {
+            await document.fonts.ready
+            
+            // Check specifically for our custom font
+            const customFontLoaded = document.fonts.check('bold 72px TT-Supermolot-Neue-Trial-Expanded-Bold')
+            
+            if (customFontLoaded) {
+              console.log('🔤 [LoadingScreen] Custom font TT-Supermolot loaded successfully')
+            } else {
+              console.log('🔤 [LoadingScreen] Custom font not loaded, using fallback')
+            }
+            
+            setFontsReady(true)
+          } else {
+            // Fallback for browsers without fonts API
+            setTimeout(() => {
+              setFontsReady(true)
+            }, 1000)
+          }
+        } catch (error) {
+          console.warn('🔤 [LoadingScreen] Font loading error:', error)
+          setFontsReady(true) // Continue with fallback
+        }
+      }
+      
+      loadFonts()
+    }, [])
+    
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">
+        <div className="text-center w-full max-w-4xl px-8">
+          {/* Logo */}
+          <div className="mb-8 flex justify-center">
+            <img 
+              src="/assets/logoTENDOR.png" 
+              alt="TENDOR Logo" 
+              className="h-16 w-auto opacity-80"
+            />
+          </div>
+          
+          {fontsReady && (
+            <SplitText
+              text="Time to move"
+              className="text-5xl font-bold text-white custom-headline-font"
+              delay={80}
+              duration={1.7}
+              ease="elastic.out(1, 0.3)"
+              splitType="chars"
+              from={{ opacity: 0, y: 40 }}
+              to={{ opacity: 1, y: 0 }}
+              threshold={0.2}
+              rootMargin="-100px"
+              textAlign="center"
+              onLetterAnimationComplete={handleAnimationComplete}
+            />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Listen for navigation events from boulder save confirmation
+  useEffect(() => {
+    const handleNavigateToStatistics = (event: CustomEvent) => {
+      const { boulderId } = event.detail
+      console.log('[App] Navigating to statistics view for boulder:', boulderId)
+      
+      // Switch to visualizer view and statistics mode
+      setCurrentView('visualizer')
+      setVisualizationMode('statistics')
+      setIsControlPanelVisible(true)
+      
+      // Select the boulder if ID is provided
+      if (boulderId) {
+        // Small delay to ensure the boulder list is refreshed
+        setTimeout(() => {
+          selectBoulder(boulderId)
+        }, 500)
+      }
+    }
+    
+    window.addEventListener('navigateToStatistics', handleNavigateToStatistics as EventListener)
+    return () => window.removeEventListener('navigateToStatistics', handleNavigateToStatistics as EventListener)
+  }, [selectBoulder])
+
   const renderView = () => {
     switch (currentView) {
       case 'add-boulder':
@@ -418,6 +549,7 @@ function App() {
               isServerConnected={isServerConnected}
               currentView={currentView}
               isControlPanelVisible={isControlPanelVisible}
+              onViewChange={handleViewChange}
             />
           </div>
         )
@@ -463,32 +595,34 @@ function App() {
         />
         
         <main className="h-screen relative">
-          {renderView()}
+          {isLoading ? <LoadingScreen /> : renderView()}
           
-          {/* Control Panel - now includes view switching and server controls */}
-          <ControlPanel 
-            currentView={currentView}
-            onViewChange={handleViewChange}
-            visualizationMode={visualizationMode}
-            onVisualizationModeChange={handleVisualizationModeChange}
-            onSettingsChange={handleSettingsChange}
-            visualizerSettings={visualizerSettings}
-            setVisualizerSettings={setVisualizerSettings}
-            onBoulderChange={handleBoulderChange}
-            onBoulderDataUpdate={handleBoulderDataUpdate}
-            onServerToggle={handleServerToggle}
-            onServerCommand={handleServerCommand}
-            currentBoulderId={selectedBoulder?.id || 0}
-            boulders={boulders}
-            selectedBoulder={selectedBoulder}
-            isLoading={isLoading}
-            error={error}
-            selectBoulder={selectBoulder}
-            uploadFile={uploadFile}
-            refreshBoulders={refreshBoulders}
-            isServerConnected={isServerConnected}
-            onVisibilityChange={handleControlPanelVisibilityChange}
-          />
+          {/* Control Panel - hide during loading screen */}
+          {!isLoading && (
+            <ControlPanel 
+              currentView={currentView}
+              onViewChange={handleViewChange}
+              visualizationMode={visualizationMode}
+              onVisualizationModeChange={handleVisualizationModeChange}
+              onSettingsChange={handleSettingsChange}
+              visualizerSettings={visualizerSettings}
+              setVisualizerSettings={setVisualizerSettings}
+              onBoulderChange={handleBoulderChange}
+              onBoulderDataUpdate={handleBoulderDataUpdate}
+              onServerToggle={handleServerToggle}
+              onServerCommand={handleServerCommand}
+              currentBoulderId={selectedBoulder?.id || 0}
+              boulders={boulders}
+              selectedBoulder={selectedBoulder}
+              isLoading={csvDataLoading}
+              error={error}
+              selectBoulder={selectBoulder}
+              uploadFile={uploadFile}
+              refreshBoulders={refreshBoulders}
+              isServerConnected={isServerConnected}
+              onVisibilityChange={handleControlPanelVisibilityChange}
+            />
+          )}
           
           {/* Floating Playback Controls - only show when server is connected and not in add-boulder view */}
           {isServerConnected && currentView !== 'add-boulder' && (
@@ -496,24 +630,24 @@ function App() {
               <div className="bg-black/70 border border-cyan-400/40 rounded-2xl p-4 backdrop-blur-sm flex items-center space-x-4">
                 <button
                   onClick={() => handleServerCommand('start')}
-                  className="px-4 py-2 bg-green-500/80 hover:bg-green-500 text-white rounded-lg transition-all"
+                  className="px-4 py-2 bg-green-500/80 hover:bg-green-500 text-white rounded-lg transition-all flex items-center justify-center"
                   title="Start Recording"
                 >
-                  ▶️
+                  <Play size={20} className="text-green-100" fill="currentColor" />
                 </button>
                 <button
                   onClick={() => handleServerCommand('stop')}
-                  className="px-4 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-all"
+                  className="px-4 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-all flex items-center justify-center"
                   title="Stop Recording"
                 >
-                  ⏹️
+                  <Square size={20} className="text-red-100" fill="currentColor" />
                 </button>
                 <button
                   onClick={() => handleServerCommand('clear')}
-                  className="px-4 py-2 bg-gray-500/80 hover:bg-gray-500 text-white rounded-lg transition-all"
+                  className="px-4 py-2 bg-gray-500/80 hover:bg-gray-500 text-white rounded-lg transition-all flex items-center justify-center"
                   title="Clear Data"
                 >
-                  🔄
+                  <RotateCcw size={20} className="text-gray-100" />
                 </button>
               </div>
             </div>

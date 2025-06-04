@@ -16,6 +16,7 @@ function VisualizationScene() {
   const meshRef = useRef<THREE.Group>(null)
   const ringsRef = useRef<THREE.Group>(null)
   const centerTextRef = useRef<THREE.Mesh | null>(null)
+  const circularTextRef = useRef<THREE.Group>(null) // Add ref for circular text group
   const attemptLinesRef = useRef<THREE.Group>(null)
   const moveLinesRef = useRef<THREE.Group>(null) // Add move lines ref
   const managedObjects = useRef<THREE.Object3D[]>([])
@@ -84,6 +85,15 @@ function VisualizationScene() {
       // Rotation animation
       if (vizState.visualizerSettings.rotationSpeed > 0) {
         meshRef.current.rotation.z = state.clock.elapsedTime * vizState.visualizerSettings.rotationSpeed * 0.5
+      }
+      
+      // Circular text rotation animation with smooth hover speed transitions
+      if (circularTextRef.current && vizState.visualizerSettings.showCircularText) {
+        // Convert spin duration to rotation speed (duration is in seconds for full rotation)
+        const baseRotationSpeed = (Math.PI * 2) / vizState.visualizerSettings.circularTextSpeed
+        // Use smooth interpolated speed instead of instant changes
+        const rotationSpeed = baseRotationSpeed * 1.0 // Fixed speed
+        circularTextRef.current.rotation.z = state.clock.elapsedTime * rotationSpeed
       }
       
       // Update liquid effects by modifying existing ring positions
@@ -232,6 +242,7 @@ function VisualizationScene() {
     if (ringsRef.current) ringsRef.current.clear()
     if (attemptLinesRef.current) attemptLinesRef.current.clear()
     if (moveLinesRef.current) moveLinesRef.current.clear() // Clear move lines
+    if (circularTextRef.current) circularTextRef.current.clear() // Clear circular text
     if (centerTextRef.current) {
       if (centerTextRef.current.parent) centerTextRef.current.parent.remove(centerTextRef.current)
       if (centerTextRef.current.geometry) centerTextRef.current.geometry.dispose()
@@ -288,7 +299,7 @@ function VisualizationScene() {
       context.font = `bold 220px ${fontFamily}`
       context.textAlign = 'center'
       context.textBaseline = 'middle'
-      context.fillStyle = '#ffffff'
+      context.fillStyle = '#cccccc' // Changed from #ffffff to a more subtle gray
       
       // Display move count centered in the middle, slightly down
       const displayText = moveCount.toString()
@@ -302,7 +313,7 @@ function VisualizationScene() {
       const textMaterial = new THREE.MeshBasicMaterial({
         map: texture,
         transparent: true,
-        opacity: 0.95,
+        opacity: 0.75, // Reduced from 0.95 to 0.75 for more subtlety
         alphaTest: 0.1
       })
       
@@ -319,6 +330,11 @@ function VisualizationScene() {
     if (meshRef.current && centerTextRef.current) {
       meshRef.current.add(centerTextRef.current)
       managedObjects.current.push(centerTextRef.current)
+    }
+    
+    // Create circular text if enabled
+    if (settings.showCircularText && circularTextRef.current) {
+      createCircularText(settings)
     }
     
     // Create rings
@@ -881,11 +897,89 @@ function VisualizationScene() {
     }
   }
   
+  // Create circular text as Three.js meshes
+  const createCircularText = (settings: any) => {
+    if (!circularTextRef.current) return
+    
+    const text = "LAURENS ART RAMSENTHALER"
+    const characters = text.split('')
+    // Increase radius to be between previous values (0.6 and 0.8)
+    const smallestRingRadius = settings.baseRadius * settings.combinedSize
+    const radius = smallestRingRadius * (0.7 + settings.circularTextSize * 0.2) // Between previous values
+    const angleStep = (Math.PI * 2) / characters.length
+    
+    characters.forEach((char, index) => {
+      if (char === '*') return // Skip asterisks
+      
+      const angle = index * angleStep
+      const x = Math.cos(angle) * radius
+      const y = Math.sin(angle) * radius
+      
+      // Create canvas for each character
+      const canvas = document.createElement('canvas')
+      const context = canvas.getContext('2d')
+      if (context) {
+        canvas.width = 128
+        canvas.height = 128
+        
+        // Clear canvas
+        context.clearRect(0, 0, canvas.width, canvas.height)
+        
+        // Set font and style - smaller font size
+        const fontFamily = 'TT-Supermolot-Neue-Trial-Expanded-Bold, Arial, sans-serif'
+        const fontSize = Math.floor(28 + settings.circularTextSize * 20) // 28-48px range (smaller)
+        context.font = `bold ${fontSize}px ${fontFamily}`
+        context.textAlign = 'center'
+        context.textBaseline = 'middle'
+        context.fillStyle = 'rgba(34, 211, 238, 1.0)' // Full opacity in canvas
+        
+        // Draw character
+        context.fillText(char, canvas.width / 2, canvas.height / 2)
+        
+        // Create texture and material
+        const texture = new THREE.CanvasTexture(canvas)
+        texture.needsUpdate = true
+        
+        // Smaller character geometry
+        const charSize = 0.2 + settings.circularTextSize * 0.15 // 0.2-0.35 range (smaller)
+        const charGeometry = new THREE.PlaneGeometry(charSize, charSize)
+        
+        // More visible opacity range from 0.7 to 1.0 based on character position
+        const opacityVariation = (Math.sin(index * 0.8) + 1) * 0.15 // 0 to 0.3 range
+        const finalOpacity = 0.7 + opacityVariation // 0.7 to 1.0 range (more visible)
+        
+        const charMaterial = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          opacity: finalOpacity,
+          alphaTest: 0.1
+        })
+        
+        // Create character mesh
+        const charMesh = new THREE.Mesh(charGeometry, charMaterial)
+        charMesh.position.set(x, y, 0.05)
+        
+        // Make letters face the viewer but rotate so bottom points toward center
+        // Calculate angle from center to this character position
+        const angleToCenter = Math.atan2(y, x)
+        // Rotate the character so its bottom points toward center (removed the +Math.PI flip)
+        charMesh.rotation.z = angleToCenter + Math.PI / 2
+        
+        // Store reference for identification
+        ;(charMesh as any).isCircularTextChar = true
+        
+        circularTextRef.current!.add(charMesh)
+        managedObjects.current.push(charMesh)
+      }
+    })
+  }
+  
   return (
     <group ref={meshRef}>
       <group ref={ringsRef} />
       <group ref={attemptLinesRef} />
       <group ref={moveLinesRef} />
+      <group ref={circularTextRef} />
     </group>
   )
 }
@@ -955,7 +1049,7 @@ export function BoulderVisualizerSimple() {
               sampleCount: timeArray.length
             },
             recordedAt: new Date().toISOString(),
-            source: 'live'
+            source: 'live' as const
           }
           
           // Calculate acceleration statistics
@@ -1070,14 +1164,45 @@ export function BoulderVisualizerSimple() {
       filters.push(`contrast(${contrastValue})`)
     }
     
-    // Bloom/Glow effect using drop-shadow and brightness
+    // Bloom/Glow effect using drop-shadow and brightness with actual visualization colors
     if (settings.postProcessingBloom) {
       const intensity = (settings.postProcessingBloomIntensity || 50) / 100
       const brightnessValue = 1 + intensity * 0.5 // 1.0 to 1.5 range
-      const glowSize = intensity * 10 // 0 to 10px
+      const glowSize = intensity * 4 // Reduced from 10 to 4 for smaller radius
+      
+      // Use the actual visualization colors from settings (dynamic)
+      const moveColorHex = settings.moveColor || '#252cf4'
+      const cruxColorHex = settings.cruxColor || '#8b5cf6'
+      
+      // Convert hex to RGB for CSS
+      const hexToRgb = (hex: string) => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+        return result ? {
+          r: parseInt(result[1], 16),
+          g: parseInt(result[2], 16),
+          b: parseInt(result[3], 16)
+        } : { r: 37, g: 44, b: 244 } // fallback to blue
+      }
+      
+      const moveRgb = hexToRgb(moveColorHex)
+      const cruxRgb = hexToRgb(cruxColorHex)
+      const moveColor = `${moveRgb.r}, ${moveRgb.g}, ${moveRgb.b}`
+      const cruxColor = `${cruxRgb.r}, ${cruxRgb.g}, ${cruxRgb.b}`
+      
       filters.push(`brightness(${brightnessValue})`)
-      filters.push(`drop-shadow(0 0 ${glowSize}px rgba(255, 255, 255, ${intensity * 0.8}))`)
-      filters.push(`drop-shadow(0 0 ${glowSize * 2}px rgba(255, 255, 255, ${intensity * 0.4}))`)
+      
+      // Multi-layered bloom with tighter radius and dynamic colors
+      // Primary move color glow - smaller radius
+      filters.push(`drop-shadow(0 0 ${glowSize}px rgba(${moveColor}, ${intensity * 0.8}))`)
+      filters.push(`drop-shadow(0 0 ${glowSize * 1.5}px rgba(${moveColor}, ${intensity * 0.3}))`) // Reduced from 2x to 1.5x
+      
+      // Secondary crux color glow - smaller radius
+      filters.push(`drop-shadow(0 0 ${glowSize * 0.7}px rgba(${cruxColor}, ${intensity * 0.6}))`) // Reduced from 0.8x
+      filters.push(`drop-shadow(0 0 ${glowSize * 1.2}px rgba(${cruxColor}, ${intensity * 0.25}))`) // Reduced from 1.5x
+      
+      // Subtle accent glow for depth - much smaller
+      const accentColor = `147, 51, 234` // Keep this as accent
+      filters.push(`drop-shadow(0 0 ${glowSize * 0.3}px rgba(${accentColor}, ${intensity * 0.3}))`) // Reduced from 0.5x
     }
     
     return filters.length > 0 ? filters.join(' ') : 'none'
@@ -1093,7 +1218,7 @@ export function BoulderVisualizerSimple() {
       }}
     >
       <Canvas
-        camera={{ position: [0, 0, 20], fov: 50 }}
+        camera={{ position: [0, 0, 15], fov: 50 }}
         style={{ background: 'transparent' }}
         gl={{ alpha: true, antialias: true, premultipliedAlpha: false }}
       >
@@ -1108,7 +1233,7 @@ export function BoulderVisualizerSimple() {
             zoomSpeed={0.6}
             panSpeed={0.8}
             rotateSpeed={0.4}
-            minDistance={5}
+            minDistance={3}
             maxDistance={50}
             target={[0, 0, 0]}
           />

@@ -8,7 +8,7 @@ interface UseCSVDataResult {
   isLoading: boolean
   error: string | null
   selectBoulder: (id: number) => void
-  refreshBoulders: () => void
+  refreshBoulders: () => Promise<void>
   uploadFile: (file: File) => Promise<void>
 }
 
@@ -164,9 +164,15 @@ export function useCSVData(): UseCSVDataResult {
       
       setBoulders(allBoulders)
       
-      // Set first boulder as selected if none selected
-      if (!selectedBoulder && allBoulders.length > 0) {
-        setSelectedBoulder(allBoulders[0])
+      // Set first boulder as selected if none selected and we have boulders
+      if (allBoulders.length > 0) {
+        setSelectedBoulder(prevSelected => {
+          if (!prevSelected) {
+            console.log('[useCSVData] Auto-selecting first boulder:', allBoulders[0].name)
+            return allBoulders[0]
+          }
+          return prevSelected
+        })
       }
     } catch (err) {
       console.error('[useCSVData] Error loading boulders:', err)
@@ -174,7 +180,7 @@ export function useCSVData(): UseCSVDataResult {
     } finally {
       setIsLoading(false)
     }
-  }, [loadSavedBoulders, selectedBoulder])
+  }, [loadSavedBoulders])
 
   const selectBoulder = useCallback((id: number) => {
     const boulder = boulders.find(b => b.id === id)
@@ -184,9 +190,9 @@ export function useCSVData(): UseCSVDataResult {
     }
   }, [boulders])
 
-  const refreshBoulders = useCallback(() => {
+  const refreshBoulders = useCallback(async () => {
     console.log('[useCSVData] Refreshing boulder list')
-    loadBoulders()
+    await loadBoulders()
   }, [loadBoulders])
 
   const uploadFile = useCallback(async (file: File) => {
@@ -219,8 +225,18 @@ export function useCSVData(): UseCSVDataResult {
       refreshBoulders()
     }
     
+    const handleRefreshBoulders = () => {
+      console.log('[useCSVData] Refresh boulders event received')
+      refreshBoulders()
+    }
+    
     window.addEventListener('boulderSaved', handleBoulderSaved)
-    return () => window.removeEventListener('boulderSaved', handleBoulderSaved)
+    window.addEventListener('refreshBoulders', handleRefreshBoulders)
+    
+    return () => {
+      window.removeEventListener('boulderSaved', handleBoulderSaved)
+      window.removeEventListener('refreshBoulders', handleRefreshBoulders)
+    }
   }, [refreshBoulders])
 
   return {

@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { RefreshCwIcon, SettingsIcon, WifiIcon, WifiOffIcon } from 'lucide-react'
+import { RefreshCwIcon, SettingsIcon, WifiIcon, WifiOffIcon, RotateCw, MapPin, Target, Database, Zap, Search, Cog, Palette, Waves, BarChart3, Mountain, Plus, Save } from 'lucide-react'
 import type { BoulderData } from '../utils/csvLoader'
 import { useBoulderConfig } from '../context/BoulderConfigContext'
 import ElasticSlider from "./ui/ElasticSlider"
-import { useCSVData } from '../hooks/useCSVData'
 import { debounce } from '../utils/debounce'
 import { 
   updateThreshold, 
@@ -84,15 +83,23 @@ export function ControlPanel({
   setVisualizerSettings
 }: ControlPanelProps) {
   const { getThreshold, setThreshold } = useBoulderConfig()
-  const { selectBoulder: selectBoulderFromHook } = useCSVData()
-  const [isVisible, setIsVisible] = useState(true)
-  const [currentFolder, setCurrentFolder] = useState<string | null>('selection')
+  const [isVisible, setIsVisible] = useState(false)
+  const [currentFolder, setCurrentFolder] = useState<string>('selection')
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [serverUrl, setServerUrl] = useState('')
+  const [customServerUrl, setCustomServerUrl] = useState('')
+  const [showCustomServer, setShowCustomServer] = useState(false)
   const [isLiveModeActive, setIsLiveModeActive] = useState(false)
   const [selectedServer, setSelectedServer] = useState(0)
-  const [serverUrl, setServerUrl] = useState('http://10.237.1.101')
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('disconnected')
   const [fontLoaded, setFontLoaded] = useState(false)
   const [autoSaveBlinking, setAutoSaveBlinking] = useState(false)
+  
+  // Data cropping state
+  const [cropStartTime, setCropStartTime] = useState('')
+  const [cropEndTime, setCropEndTime] = useState('')
+  const [showCropPreview, setShowCropPreview] = useState(false)
+  const [showSaveConfirmation, setShowSaveConfirmation] = useState(false)
   
   // Scroll position ref to maintain scroll position
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -111,6 +118,15 @@ export function ControlPanel({
   useEffect(() => {
     onVisibilityChange(isVisible)
   }, []) // Only run on mount
+  
+  // Load saved server URL on mount
+  useEffect(() => {
+    const savedServerUrl = localStorage.getItem('phyphox-server-url')
+    if (savedServerUrl) {
+      setServerUrl(savedServerUrl)
+      console.log('[ControlPanel] Loaded saved server URL:', savedServerUrl)
+    }
+  }, [])
   
   // Check font loading status
   useEffect(() => {
@@ -214,7 +230,7 @@ export function ControlPanel({
     if (boulderId) {
       const id = parseInt(boulderId)
       console.log(`🗂️ [ControlPanel] BOULDER SELECTED: ID ${id}`)
-      selectBoulderFromHook(id)
+      selectBoulder(id)
       onBoulderChange(id)
       
       // Sync the saved threshold to the global store
@@ -244,7 +260,7 @@ export function ControlPanel({
         }
       }
     }
-  }, [selectBoulderFromHook, onBoulderChange, getThreshold])
+  }, [selectBoulder, onBoulderChange, getThreshold])
 
   // Auto-save move detection settings every 15 seconds when they change
   useEffect(() => {
@@ -307,14 +323,20 @@ export function ControlPanel({
   // Server connection logic
   const testConnection = useCallback(async (serverUrl: string) => {
     try {
-      const response = await fetch(`${serverUrl}/get?acc_time`, {
+      // Ensure URL has proper protocol
+      let formattedUrl = serverUrl.trim()
+      if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+        formattedUrl = 'http://' + formattedUrl
+      }
+      
+      const response = await fetch(`${formattedUrl}/get?acc_time`, {
         method: 'GET',
         mode: 'cors',
         signal: AbortSignal.timeout(5000)
       })
       
       if (response.ok) {
-        return true
+        return formattedUrl // Return the properly formatted URL
       } else {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
@@ -337,16 +359,17 @@ export function ControlPanel({
       setConnectionStatus('checking')
       
       try {
-        await testConnection(serverUrl)
+        // Test connection and get properly formatted URL
+        const formattedUrl = await testConnection(serverUrl)
         
-        // Store server URL for later use
-        localStorage.setItem('phyphox-server-url', serverUrl)
+        // Store properly formatted server URL for later use
+        localStorage.setItem('phyphox-server-url', formattedUrl)
         
         setIsLiveModeActive(true)
         setConnectionStatus('connected')
         onServerToggle(true)
         
-        console.log('[ControlPanel] Live mode activated with server:', serverUrl)
+        console.log('[ControlPanel] Live mode activated with server:', formattedUrl)
         console.log('[ControlPanel] Live recording will be auto-created and selected')
         
       } catch (error) {
@@ -364,25 +387,74 @@ export function ControlPanel({
     }
   }, [isLiveModeActive, serverUrl, testConnection, onServerToggle])
 
+  // Live data polling functions
+  const liveDataIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  
+  const startLiveDataPolling = useCallback((serverUrl: string) => {
+    if (liveDataIntervalRef.current) return // Already polling
+
+    console.log('[ControlPanel] Starting live data polling for visualization')
+    
+    liveDataIntervalRef.current = setInterval(async () => {
+      try {
+        const response = await fetch(`${serverUrl}/get?acc_time=full&accX=full&accY=full&accZ=full`, {
+          method: 'GET',
+          mode: 'cors',
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          
+          // Dispatch event to update visualizations
+          window.dispatchEvent(new CustomEvent('liveDataUpdate', {
+            detail: { 
+              data: data.buffer,
+              isRecording: isLiveModeActive,
+              timestamp: Date.now(),
+              serverUrl: serverUrl
+            }
+          }))
+        }
+      } catch (error) {
+        console.warn('[ControlPanel] Live data polling error:', error)
+      }
+    }, 500) // Poll every 500ms for responsive updates
+  }, [isLiveModeActive])
+
+  const stopLiveDataPolling = useCallback(() => {
+    if (liveDataIntervalRef.current) {
+      clearInterval(liveDataIntervalRef.current)
+      liveDataIntervalRef.current = null
+      console.log('[ControlPanel] Stopped live data polling')
+    }
+  }, [])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopLiveDataPolling()
+    }
+  }, [stopLiveDataPolling])
+
   const folders = [
     {
       id: 'selection',
-      name: '🧗 Data & Live',
-      icon: '🧗',
+      name: 'Data & Live',
+      icon: <Database size={16} className="text-cyan-400" />,
       controls: []
     },
     {
       id: 'presets',
-      name: '🎯 Presets',
-      icon: '🎯',
+      name: 'Presets',
+      icon: <Zap size={16} className="text-yellow-400" />,
       controls: []
     },
     {
       id: 'moveDetection',
-      name: '🔍 Move Detection',
-      icon: '🔍',
+      name: 'Move Detection',
+      icon: <Search size={16} className="text-green-400" />,
       controls: [
-        { key: 'moveThreshold', name: 'Move Threshold', min: 0.5, max: 3.0, step: 0.1 },
+        { key: 'moveThreshold', name: 'Move Threshold', min: 0.5, max: 5.0, step: 0.1 },
         { key: 'minStillDuration', name: 'Min Still Duration', min: 0.2, max: 3.0, step: 0.05 },
         { key: 'minMoveDuration', name: 'Min Move Duration', min: 0.2, max: 3.0, step: 0.1 },
         { key: 'maxMoveDuration', name: 'Max Move Duration', min: 1.0, max: 8.0, step: 0.1 },
@@ -391,8 +463,8 @@ export function ControlPanel({
     },
     {
       id: 'basics',
-      name: '⚙️ Basics',
-      icon: '⚙️',
+      name: 'Basics',
+      icon: <Cog size={16} className="text-gray-400" />,
       controls: [
         { key: 'baseRadius', name: 'Overall Radius', min: 0.1, max: 2.0, step: 0.05 },
         { key: 'dynamicsMultiplier', name: 'Dynamics Effect', min: 0.5, max: 15.0, step: 0.1 },
@@ -403,32 +475,37 @@ export function ControlPanel({
     },
     {
       id: 'visuals',
-      name: '🎨 Visuals',
-      icon: '🎨',
+      name: 'Visuals',
+      icon: <Palette size={16} className="text-purple-400" />,
       controls: [
         { key: 'opacity', name: 'Line Opacity', min: 0.1, max: 1.0, step: 0.05 },
         { key: 'lineWidth', name: 'Line Thickness', min: 0.1, max: 3.0, step: 0.1 },
         { key: 'centerFade', name: 'Center Fade', min: 0.0, max: 1.0, step: 0.05 },
         { key: 'depthEffect', name: '3D Depth Effect', min: 0.0, max: 8.0, step: 0.1 },
-        { key: 'organicNoise', name: 'Organic Noise', min: 0.0, max: 2.0, step: 0.01 }
+        { key: 'organicNoise', name: 'Organic Noise', min: 0.0, max: 2.0, step: 0.01 },
+        { key: 'circularTextSize', name: 'Circular Text Size', min: 0.5, max: 3.0, step: 0.1 },
+        { key: 'circularTextSpeed', name: 'Text Spin Speed', min: 5, max: 80, step: 5 }
       ],
       colorControls: [
         { key: 'moveColor', name: 'Move Color' },
         { key: 'cruxColor', name: 'Crux Color' }
+      ],
+      toggleControls: [
+        { key: 'showCircularText', name: 'Show Circular Text' }
       ]
     },
     {
       id: 'effects',
-      name: '🌊 Dynamic Effects',
-      icon: '🌊',
+      name: 'Dynamic Effects',
+      icon: <Waves size={16} className="text-blue-400" />,
       controls: [
         { key: 'cruxEmphasis', name: 'Crux Emphasis', min: 0.5, max: 50.0, step: 0.1 }
       ]
     },
     {
       id: 'animation',
-      name: '🔄 Animation',
-      icon: '🔄',
+      name: 'Animation',
+      icon: <RotateCw size={16} className="text-cyan-400" />,
       controls: [
         { key: 'rotationSpeed', name: 'Rotation Speed', min: 0.0, max: 2.0, step: 0.1 },
         { key: 'liquidSpeed', name: 'Animation Speed', min: 0.0, max: 10.0, step: 0.05 },
@@ -440,8 +517,8 @@ export function ControlPanel({
     },
     {
       id: 'moveLines',
-      name: '📍 Move Lines',
-      icon: '📍',
+      name: 'Move Lines',
+      icon: <MapPin size={16} className="text-green-400" />,
       controls: [
         { key: 'moveLineLength', name: 'Line Length', min: 0.5, max: 10.0, step: 0.1 },
         { key: 'moveLineOpacity', name: 'Line Opacity', min: 0.0, max: 1.0, step: 0.05 },
@@ -453,8 +530,8 @@ export function ControlPanel({
     },
     {
       id: 'attempts',
-      name: '🎯 Attempts',
-      icon: '🎯',
+      name: 'Attempts',
+      icon: <Target size={16} className="text-purple-400" />,
       controls: [
         { key: 'maxAttempts', name: 'Number of Attempts', min: 10, max: 200, step: 5 },
         { key: 'attemptOpacity', name: 'Attempt Opacity', min: 0.0, max: 1.0, step: 0.05 },
@@ -487,8 +564,8 @@ export function ControlPanel({
         centerFade: 0.80,
         depthEffect: 0.5,
         organicNoise: 1.52,
-        moveColor: '#10b981',
-        cruxColor: '#ec4899',
+        moveColor: '#252cf4',
+        cruxColor: '#8b5cf6',
         
         // Dynamic Effects
         cruxEmphasis: 0.5,
@@ -526,18 +603,34 @@ export function ControlPanel({
       name: 'Default',
       description: 'Your perfect base configuration',
       settings: {
-        baseRadius: 0.50, dynamicsMultiplier: 13.7, combinedSize: 2.3, ringCount: 26, ringSpacing: 0.004,
-        opacity: 1.00, lineWidth: 0.4, centerFade: 0.80, depthEffect: 0.5, organicNoise: 1.52,
-        moveColor: '#10b981', cruxColor: '#ec4899', cruxEmphasis: 0.5,
-        rotationSpeed: 0.0, liquidSpeed: 3.20, liquidSize: 0.8,
-        attemptWaveSpeed: 0.7, attemptWaveDirection: 1.1, attemptWaveIntensity: 1.6,
-        showMovePositionLines: true, moveLineLength: 3.2, moveLineOpacity: 0.80, moveLineWidth: 2.0,
-        showAttemptLines: true, maxAttempts: 120.0, attemptOpacity: 0.45, attemptWaviness: 0.030,
-        attemptThickness: 0.5, attemptRadius: 2.40, attemptDotZOffsetMax: 1.15, attemptFadeStrength: 0.7
+        baseRadius: 0.55, dynamicsMultiplier: 12.6, combinedSize: 2.0, ringCount: 29, ringSpacing: 0.002,
+        opacity: 1.00, lineWidth: 0.8, centerFade: 0.55, depthEffect: 1.6, organicNoise: 1.27,
+        moveColor: '#252cf4', cruxColor: '#8b5cf6', cruxEmphasis: 3.7,
+        rotationSpeed: 0.0, liquidSpeed: 2.70, liquidSize: 1.2,
+        attemptWaveSpeed: 0.8, attemptWaveDirection: 0.7, attemptWaveIntensity: 1.6,
+        showMovePositionLines: true, moveLineLength: 3.3, moveLineOpacity: 0.85, moveLineWidth: 3.2,
+        showAttemptLines: true, maxAttempts: 55.0, attemptOpacity: 0.35, attemptWaviness: 0.014,
+        attemptThickness: 0.5, attemptRadius: 2.40, attemptDotZOffsetMax: 0.55, attemptFadeStrength: 0.7
       }
     },
     
-    // 2. Neon Glow - Electric colors
+    // 2. App Visual - Based on user's image settings
+    appVisual: {
+      name: 'App Visual',
+      description: 'Perfect settings from your app screenshot',
+      settings: {
+        baseRadius: 0.45, dynamicsMultiplier: 4.4, combinedSize: 1.7, ringCount: 10.0, ringSpacing: 0.002,
+        opacity: 1.00, lineWidth: 0.8, centerFade: 0.55, depthEffect: 1.6, organicNoise: 1.27,
+        moveColor: '#252cf4', cruxColor: '#8b5cf6', cruxEmphasis: 3.7,
+        rotationSpeed: 0.0, liquidSpeed: 2.70, liquidSize: 1.2,
+        attemptWaveSpeed: 0.8, attemptWaveDirection: 0.7, attemptWaveIntensity: 1.6,
+        showMovePositionLines: true, moveLineLength: 1.7, moveLineOpacity: 0.85, moveLineWidth: 3.2,
+        showAttemptLines: false, maxAttempts: 55.0, attemptOpacity: 0.35, attemptWaviness: 0.014,
+        attemptThickness: 0.5, attemptRadius: 2.40, attemptDotZOffsetMax: 0.55, attemptFadeStrength: 0.7
+      }
+    },
+    
+    // 3. Neon Glow - Electric colors
     neonGlow: {
       name: 'Neon Glow',
       description: 'Electric neon vibes',
@@ -553,7 +646,7 @@ export function ControlPanel({
       }
     },
     
-    // 3. Minimal Clean - Reduced everything
+    // 4. Minimal Clean - Reduced everything
     minimalClean: {
       name: 'Minimal Clean',
       description: 'Clean and simple',
@@ -569,7 +662,7 @@ export function ControlPanel({
       }
     },
     
-    // 4. Dramatic High - Everything cranked
+    // 5. Dramatic High - Everything cranked
     dramaticHigh: {
       name: 'Dramatic High',
       description: 'Maximum intensity',
@@ -585,7 +678,7 @@ export function ControlPanel({
       }
     },
     
-    // 5. Ocean Waves - Blue theme
+    // 6. Ocean Waves - Blue theme
     oceanWaves: {
       name: 'Ocean Waves',
       description: 'Deep blue ocean vibes',
@@ -601,7 +694,7 @@ export function ControlPanel({
       }
     },
     
-    // 6. Fire Storm - Red/orange theme
+    // 7. Fire Storm - Red/orange theme
     fireStorm: {
       name: 'Fire Storm',
       description: 'Blazing red intensity',
@@ -617,7 +710,7 @@ export function ControlPanel({
       }
     },
     
-    // 7. Forest Deep - Dark greens
+    // 8. Forest Deep - Dark greens
     forestDeep: {
       name: 'Forest Deep',
       description: 'Deep forest greens',
@@ -633,7 +726,7 @@ export function ControlPanel({
       }
     },
     
-    // 8. Lava Flow - Molten theme
+    // 9. Lava Flow - Molten theme
     lavaFlow: {
       name: 'Lava Flow',
       description: 'Molten lava patterns',
@@ -649,7 +742,7 @@ export function ControlPanel({
       }
     },
     
-    // 9. Crystal Matrix - Geometric
+    // 10. Crystal Matrix - Geometric
     crystalMatrix: {
       name: 'Crystal Matrix',
       description: 'Geometric crystal patterns',
@@ -766,9 +859,9 @@ export function ControlPanel({
         
         {/* Predefined Colors */}
         <div className="grid grid-cols-6 gap-2">
-          {predefinedColors.map((color) => (
+          {predefinedColors.map((color, index) => (
             <button
-              key={color}
+              key={`${color}-${index}`}
               onClick={() => handleColorChange(color)}
               className={`w-8 h-8 rounded border-2 transition-all ${
                 currentColor === color 
@@ -804,6 +897,73 @@ export function ControlPanel({
     return () => window.removeEventListener('boulderSaved', handleBoulderSaved as EventListener)
   }, [refreshBoulders, selectBoulder, onBoulderChange])
 
+  // Data cropping handlers
+  const handleCropPreview = useCallback(() => {
+    if (!selectedBoulder?.csvData || !cropStartTime || !cropEndTime) {
+      alert('Please enter valid start and end times')
+      return
+    }
+    
+    const startTime = parseFloat(cropStartTime)
+    const endTime = parseFloat(cropEndTime)
+    
+    if (startTime >= endTime) {
+      alert('End time must be greater than start time!')
+      return
+    }
+    
+    setShowCropPreview(true)
+    console.log(`Previewing crop: ${startTime}s - ${endTime}s`)
+    
+    // Dispatch event to StatisticsView to show preview
+    window.dispatchEvent(new CustomEvent('cropPreview', {
+      detail: { startTime, endTime, preview: true }
+    }))
+  }, [selectedBoulder, cropStartTime, cropEndTime])
+
+  const handleCropApply = useCallback(async () => {
+    if (!selectedBoulder?.csvData || !cropStartTime || !cropEndTime) {
+      alert('Please enter valid start and end times')
+      return
+    }
+    
+    const startTime = parseFloat(cropStartTime)
+    const endTime = parseFloat(cropEndTime)
+    
+    if (startTime >= endTime) {
+      alert('End time must be greater than start time!')
+      return
+    }
+    
+    // Dispatch event to StatisticsView to apply crop
+    window.dispatchEvent(new CustomEvent('cropApply', {
+      detail: { startTime, endTime }
+    }))
+    
+    // Reset crop state
+    setCropStartTime('')
+    setCropEndTime('')
+    setShowCropPreview(false)
+    
+    // Show save confirmation
+    setShowSaveConfirmation(true)
+    
+    // Auto-hide confirmation after 10 seconds
+    setTimeout(() => {
+      setShowSaveConfirmation(false)
+    }, 10000)
+    
+    console.log(`Applied crop: ${startTime}s - ${endTime}s`)
+  }, [selectedBoulder, cropStartTime, cropEndTime])
+
+  // Reset crop preview when boulder changes
+  useEffect(() => {
+    setShowCropPreview(false)
+    setCropStartTime('')
+    setCropEndTime('')
+    setShowSaveConfirmation(false)
+  }, [selectedBoulder?.id])
+
   return (
     <div className={`fixed top-20 right-6 bottom-6 z-50 transition-all duration-300 ${!isVisible ? 'translate-x-full' : ''}`}>
       {/* Toggle button */}
@@ -832,12 +992,12 @@ export function ControlPanel({
           {/* Header row with title and refresh */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-3">
-              <h2 className="text-cyan-400 font-bold text-xl">Control Center</h2>
+              <h2 className="text-cyan-400 font-bold text-xl control-center-title">Control Center</h2>
             </div>
             <div className="flex items-center space-x-2">
               {/* Auto-save indicator */}
               <div className={`transition-all duration-500 ${autoSaveBlinking ? 'animate-pulse scale-125 text-green-300' : 'opacity-30 text-green-500'}`}>
-                <div className="text-base">💾</div>
+                <SettingsIcon size={16} />
               </div>
               <button
                 onClick={refreshBoulders}
@@ -867,10 +1027,14 @@ export function ControlPanel({
                   : 'text-gray-300 hover:text-cyan-400 hover:bg-cyan-400/10'
               }`}
             >
-              {currentView === 'visualizer' 
-                ? (visualizationMode === '3d' ? '🧗 3D View' : '📊 Statistics')
-                : '🧗 Visualizer'
-              }
+              <div className="flex items-center gap-2">
+                {currentView === 'visualizer' 
+                  ? (visualizationMode === '3d' ? 
+                      <><Mountain size={16} /> 3D View</> : 
+                      <><BarChart3 size={16} /> Statistics</>)
+                  : <><Mountain size={16} /> Visualizer</>
+                }
+              </div>
             </button>
             <button
               onClick={() => {
@@ -885,7 +1049,10 @@ export function ControlPanel({
                   : 'text-gray-300 hover:text-cyan-400 hover:bg-cyan-400/10'
               }`}
             >
-              ➕ Add Boulder
+              <div className="flex items-center gap-2">
+                <Plus size={16} className="text-white" />
+                Add Boulder
+              </div>
             </button>
           </div>
           
@@ -928,7 +1095,7 @@ export function ControlPanel({
             .map((folder) => (
             <button
               key={folder.id}
-              onClick={() => setCurrentFolder(currentFolder === folder.id ? null : folder.id)}
+              onClick={() => setCurrentFolder(currentFolder === folder.id ? 'selection' : folder.id)}
               className={`flex-1 px-3 py-4 text-sm font-medium transition-all border-r border-cyan-400/20 last:border-r-0 ${
                 currentFolder === folder.id
                   ? 'bg-cyan-400/20 text-cyan-400'
@@ -936,7 +1103,7 @@ export function ControlPanel({
               }`}
             >
               <div className="text-center">
-                <div className="text-base mb-1">{folder.icon}</div>
+                <div className="mb-1 flex justify-center">{folder.icon}</div>
                 <div className="hidden sm:block text-xs">{folder.name.replace(/^.+ /, '')}</div>
               </div>
             </button>
@@ -1012,7 +1179,7 @@ export function ControlPanel({
                       type="text"
                       value={serverUrl}
                       onChange={(e) => setServerUrl(e.target.value)}
-                      placeholder="http://10.237.1.101"
+                      placeholder="192.168.1.36 or http://192.168.1.36"
                       className="w-full px-4 py-3 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none text-sm backdrop-blur-sm transition-all"
                     />
                   </div>
@@ -1029,9 +1196,10 @@ export function ControlPanel({
                 <h4 className="text-cyan-400 font-medium mb-4">Save Current Settings</h4>
                 <button
                   onClick={saveCurrentAsPreset}
-                  className="w-full px-4 py-3 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-400/40 rounded-xl font-medium transition-all"
+                  className="w-full px-4 py-3 bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-400/40 rounded-xl font-medium transition-all flex items-center justify-center gap-2"
                 >
-                  💾 Save Current as Preset
+                  <SettingsIcon size={16} />
+                  Save Current as Preset
                 </button>
                 <p className="text-xs text-gray-400 mt-2">
                   This will update the "Current Settings" preset with your current configuration.
@@ -1054,16 +1222,17 @@ export function ControlPanel({
                             <div className="text-xs text-gray-400">{preset.description}</div>
                           </div>
                           <div className="text-lg">
-                            {key === 'current' && '💾'}
-                            {key === 'default' && '⚙️'}
-                            {key === 'neonGlow' && '⚡'}
-                            {key === 'minimalClean' && '✨'}
-                            {key === 'dramaticHigh' && '🔥'}
-                            {key === 'oceanWaves' && '🌊'}
-                            {key === 'fireStorm' && '🌋'}
-                            {key === 'forestDeep' && '🌲'}
-                            {key === 'lavaFlow' && '🌋'}
-                            {key === 'crystalMatrix' && '💎'}
+                            {key === 'current' && <SettingsIcon size={20} className="text-cyan-400" />}
+                            {key === 'default' && <Cog size={20} className="text-gray-400" />}
+                            {key === 'appVisual' && <Mountain size={20} className="text-cyan-400" />}
+                            {key === 'neonGlow' && <Zap size={20} className="text-yellow-400" />}
+                            {key === 'minimalClean' && <Target size={20} className="text-green-400" />}
+                            {key === 'dramaticHigh' && <Mountain size={20} className="text-red-400" />}
+                            {key === 'oceanWaves' && <Waves size={20} className="text-blue-400" />}
+                            {key === 'fireStorm' && <Mountain size={20} className="text-orange-400" />}
+                            {key === 'forestDeep' && <Mountain size={20} className="text-green-600" />}
+                            {key === 'lavaFlow' && <Mountain size={20} className="text-red-600" />}
+                            {key === 'crystalMatrix' && <Target size={20} className="text-purple-400" />}
                           </div>
                         </div>
                       </button>
@@ -1074,7 +1243,10 @@ export function ControlPanel({
 
               {/* Post-Processing Effects */}
               <div>
-                <h4 className="text-cyan-400 font-medium mb-4">🎨 Post-Processing</h4>
+                <h4 className="text-cyan-400 font-medium mb-4 flex items-center gap-2">
+                  <Palette size={20} className="text-purple-400" />
+                  Post-Processing
+                </h4>
                 <div className="space-y-4">
                   {/* Black & White Filter */}
                   <div>
@@ -1203,13 +1375,13 @@ export function ControlPanel({
 
               {/* Preset Info */}
               <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-4">
-                <h5 className="text-cyan-400 font-medium mb-2">About Presets (10 Total)</h5>
+                <h5 className="text-cyan-400 font-medium mb-2">About Presets (11 Total)</h5>
                 <div className="text-xs text-gray-400 space-y-1">
-                  <div><strong>🎯 Core:</strong> Default, Current Settings</div>
-                  <div><strong>🎨 Colors:</strong> Neon Glow, Ocean Waves, Fire Storm, Forest Deep</div>
-                  <div><strong>⚡ Energy:</strong> Dramatic High</div>
-                  <div><strong>🔮 Themes:</strong> Lava Flow, Crystal Matrix</div>
-                  <div><strong>✨ Clean:</strong> Minimal Clean</div>
+                  <div><strong>Core:</strong> Default, Current Settings, App Visual</div>
+                  <div><strong>Colors:</strong> Neon Glow, Ocean Waves, Fire Storm, Forest Deep</div>
+                  <div><strong>Energy:</strong> Dramatic High</div>
+                  <div><strong>Themes:</strong> Lava Flow, Crystal Matrix</div>
+                  <div><strong>Clean:</strong> Minimal Clean</div>
                 </div>
               </div>
             </div>
@@ -1299,7 +1471,10 @@ export function ControlPanel({
             <div className="space-y-6">
               {/* Data Cropping Controls */}
               <div className="bg-orange-400/10 border border-orange-400/40 rounded-lg p-4">
-                <h5 className="text-orange-400 font-medium mb-3">✂️ Data Cropping</h5>
+                <h5 className="text-orange-400 font-medium mb-3 flex items-center gap-2">
+                  <Target size={16} className="text-orange-400" />
+                  Data Cropping
+                </h5>
                 <div className="space-y-3">
                   <div className="flex items-end gap-3">
                     {/* Start and End Time inputs */}
@@ -1309,8 +1484,10 @@ export function ControlPanel({
                         <input
                           type="number"
                           step="0.1"
-                          placeholder="0.0"
-                          className="w-20 px-2 py-1 bg-black/50 border border-orange-400/40 rounded text-orange-400 text-xs focus:border-orange-400 focus:outline-none"
+                          placeholder="0"
+                          value={cropStartTime}
+                          onChange={(e) => setCropStartTime(e.target.value)}
+                          className="w-14 px-2 py-1 bg-black/50 border border-orange-400/40 rounded text-orange-400 text-xs focus:border-orange-400 focus:outline-none"
                         />
                       </div>
                       <div>
@@ -1318,8 +1495,10 @@ export function ControlPanel({
                         <input
                           type="number"
                           step="0.1"
-                          placeholder="10.0"
-                          className="w-20 px-2 py-1 bg-black/50 border border-orange-400/40 rounded text-orange-400 text-xs focus:border-orange-400 focus:outline-none"
+                          placeholder="2.1"
+                          value={cropEndTime}
+                          onChange={(e) => setCropEndTime(e.target.value)}
+                          className="w-14 px-2 py-1 bg-black/50 border border-orange-400/40 rounded text-orange-400 text-xs focus:border-orange-400 focus:outline-none"
                         />
                       </div>
                     </div>
@@ -1327,23 +1506,62 @@ export function ControlPanel({
                     {/* Preview and Apply buttons */}
                     <div className="flex gap-2">
                       <button
-                        className="px-2 py-1 bg-orange-400/20 border border-orange-400/40 text-orange-400 rounded font-medium transition-all hover:bg-orange-400/30 text-xs"
+                        onClick={handleCropPreview}
+                        disabled={!cropStartTime || !cropEndTime}
+                        className="px-2 py-1 bg-orange-400/20 border border-orange-400/40 text-orange-400 rounded font-medium transition-all hover:bg-orange-400/30 text-xs flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        👁️ Preview
+                        <Search size={12} />
+                        Preview
                       </button>
                       <button
-                        className="px-2 py-1 bg-red-400/20 border border-red-400/40 text-red-400 rounded font-medium transition-all hover:bg-red-400/30 text-xs"
+                        onClick={handleCropApply}
+                        disabled={!cropStartTime || !cropEndTime || !showCropPreview}
+                        className="px-2 py-1 bg-red-400/20 border border-red-400/40 text-red-400 rounded font-medium transition-all hover:bg-red-400/30 text-xs flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        ✂️ Apply
+                        <Target size={12} />
+                        Apply
                       </button>
                     </div>
                   </div>
                   
-                  <p className="text-xs text-gray-200">
-                    💡 Drag on graph to select range. Heavy smoothing auto-applied.
+                  <p className="text-xs text-gray-200 flex items-center gap-1">
+                    <Search size={12} className="text-cyan-400" />
+                    Drag on graph to select range. Heavy smoothing auto-applied.
                   </p>
                 </div>
               </div>
+              
+              {/* Save Confirmation Message */}
+              {showSaveConfirmation && (
+                <div className="bg-green-400/10 border border-green-400/40 rounded-lg p-4 animate-pulse">
+                  <div className="flex items-center justify-between mb-3">
+                    <h5 className="text-green-400 font-medium flex items-center gap-2">
+                      <Save size={16} className="text-green-400" />
+                      Data Saved Successfully!
+                    </h5>
+                    <button
+                      onClick={() => setShowSaveConfirmation(false)}
+                      className="text-gray-400 hover:text-white text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-300 mb-3">
+                    Your cropped data has been saved and is ready for analysis.
+                  </p>
+                  <button
+                    onClick={() => {
+                      onViewChange('visualizer')
+                      onVisualizationModeChange('statistics')
+                      setShowSaveConfirmation(false)
+                    }}
+                    className="w-full px-3 py-2 bg-green-400/20 border border-green-400/40 text-green-400 rounded-lg font-medium transition-all hover:bg-green-400/30 text-sm flex items-center justify-center gap-2"
+                  >
+                    <BarChart3 size={16} />
+                    View Statistics
+                  </button>
+                </div>
+              )}
               
               <div className="space-y-4">
                 {folders.find(f => f.id === 'moveDetection')?.controls.map((control) => (
@@ -1355,7 +1573,7 @@ export function ControlPanel({
                 <h5 className="text-cyan-400 font-medium mb-2">Move Detection Algorithm</h5>
                 <ul className="text-xs text-gray-400 space-y-1">
                   <li>• <strong>Move Threshold:</strong> Acceleration above this = potential move</li>
-                  <li>• <strong>Everything is either:</strong> 🟢 Move or ⬜ Stillness (rest)</li>
+                  <li>• <strong>Everything is either:</strong> <span className="text-green-400">Move</span> or <span className="text-gray-300">Stillness</span> (rest)</li>
                   <li>• <strong>Min Still Duration:</strong> Must hold still this long before/after moves</li>
                   <li>• <strong>Min Move Duration:</strong> Movement must last this long to count</li>
                   <li>• <strong>Max Move Duration:</strong> Longer movements get split into multiple moves</li>
@@ -1377,6 +1595,30 @@ export function ControlPanel({
               {currentFolder === 'visuals' && 
                 folders.find(f => f.id === 'visuals')?.colorControls?.map((control) => (
                   <ColorPicker key={control.key} control={control} />
+                ))
+              }
+              
+              {/* Toggle Controls (only for visuals tab) */}
+              {currentFolder === 'visuals' && 
+                folders.find(f => f.id === 'visuals')?.toggleControls?.map((control) => (
+                  <div key={control.key} className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-cyan-400">{control.name}</label>
+                    <button
+                      onClick={() => {
+                        const newValue = !visualizerSettings[control.key]
+                        handleSettingChange(control.key, newValue)
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        visualizerSettings[control.key] ? 'bg-cyan-400' : 'bg-gray-600'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          visualizerSettings[control.key] ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 ))
               }
             </div>

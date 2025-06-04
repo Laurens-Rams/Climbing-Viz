@@ -320,7 +320,7 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
 
           {/* Main Content */}
           <div
-            className={`bg-black/70 rounded-2xl backdrop-blur-sm flex flex-col min-h-0 transition-all duration-500 ${boulderInfoOpen ? 'flex-1' : 'h-[60vh]'} overflow-hidden`}
+            className={`bg-black/70 rounded-2xl backdrop-blur-sm flex flex-col min-h-0 transition-all duration-500 ${boulderInfoOpen ? 'flex-1' : 'h-[70vh]'} overflow-hidden`}
           >
             <div className="flex-1 p-6 flex flex-col min-h-0">
               {/* Moves Section */}
@@ -350,7 +350,7 @@ export function ManualBoulderCreator({ onBack, isControlPanelVisible = true }: M
             <div ref={buttonRowRef} className="flex flex-row gap-4 w-full px-8 pb-6 pt-2 bg-black/70 rounded-b-2xl">
               <button
                 onClick={addMove}
-                className="flex-1 px-4 py-4 bg-cyan-400/20 border border-cyan-400/40 text-cyan-400 rounded-xl font-bold text-lg shadow-lg transition-all hover:bg-cyan-400/30 hover:border-cyan-400/60 backdrop-blur-md"
+                className="flex-1 px-4 py-3 bg-cyan-400/20 border border-cyan-400/40 text-cyan-400 rounded-xl font-medium text-base shadow-lg transition-all hover:bg-cyan-400/30 hover:border-cyan-400/60 backdrop-blur-md"
               >
                 + Add New Move
               </button>

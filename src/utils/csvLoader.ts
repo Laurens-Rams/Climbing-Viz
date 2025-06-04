@@ -165,121 +165,70 @@ export function convertCSVToBoulder(csvData: CSVData, id: number): BoulderData {
   }
 }
 
+// Cache for CSV discovery to prevent repeated requests
+let csvDiscoveryCache: { files: string[], timestamp: number } | null = null
+const CACHE_DURATION = 30000 // 30 seconds
+
 // Discover available CSV files
 export async function discoverCSVFiles(): Promise<string[]> {
+  // Check cache first
+  if (csvDiscoveryCache && (Date.now() - csvDiscoveryCache.timestamp) < CACHE_DURATION) {
+    console.log('🔍 Using cached CSV discovery results')
+    return csvDiscoveryCache.files
+  }
+  
+  console.log('🔍 Starting CSV file discovery...')
+  
+  // No CSV files in project - user prefers local storage
   const csvFiles: string[] = []
   
-  // Define organized folder structure
-  const folders = [
-    'routes',      // Main climbing routes
-    'samples',     // Sample/demo data  
-    'live-recordings' // Live Phyphox recordings
-  ]
+  console.log('🔍 No CSV files configured - using local storage only')
   
-  // Common CSV file patterns to try in each folder
-  const commonPatterns = [
-    'Sample1.csv',     // Add the specific file ART has
-    'Raw Data.csv',
-    'Raw Data2.csv', 
-    'Raw Data3.csv',
-    'rawdata.csv',
-    'rawdata2.csv', 
-    'rawdata3.csv',
-    'data.csv',
-    'climbing.csv',
-    'acceleration.csv'
-  ]
-  
-  // Search in organized folders
-  for (const folder of folders) {
-    console.log(`🔍 Searching for CSV files in /data/${folder}/`)
-    
-    // Try common patterns in this folder
-    for (const filename of commonPatterns) {
-      const filepath = `/data/${folder}/${filename}`
-      console.log(`🔍 Trying to fetch: ${filepath}`)
-      try {
-        const response = await fetch(filepath)
-        console.log(`📡 Response for ${filepath}: ${response.status} ${response.ok ? 'OK' : 'FAILED'}`)
-        if (response.ok) {
-          const text = await response.text()
-          console.log(`📄 File content preview for ${filepath}:`, text.substring(0, 200))
-          
-          // Validate that it's actually CSV content with Phyphox format
-          if (!text.trim().startsWith('<!DOCTYPE html>') && 
-              !text.trim().startsWith('<html') &&
-              text.includes(',') &&
-              (text.toLowerCase().includes('time') && text.toLowerCase().includes('acceleration'))) {
-            csvFiles.push(filepath)
-            console.log(`✅ Found CSV file: ${filepath}`)
-          } else {
-            console.log(`❌ File ${filepath} failed validation:`, {
-              isHTML: text.trim().startsWith('<!DOCTYPE html>') || text.trim().startsWith('<html'),
-              hasCommas: text.includes(','),
-              hasTime: text.toLowerCase().includes('time'),
-              hasAcceleration: text.toLowerCase().includes('acceleration')
-            })
-          }
-        }
-      } catch (error) {
-        console.log(`❌ Error fetching ${filepath}:`, error)
-        // File doesn't exist, continue
-      }
-    }
-    
-    // Also try to discover any CSV files by attempting common climbing route names
-    const routePatterns = [
-      'V0_Route.csv', 'V1_Route.csv', 'V2_Route.csv', 'V3_Route.csv', 'V4_Route.csv',
-      'V5_Route.csv', 'V6_Route.csv', 'V7_Route.csv', 'V8_Route.csv', 'V9_Route.csv',
-      'Sample_Route.csv', 'Demo_Route.csv', 'Test_Route.csv',
-      'Overhang_Problem.csv', 'Crimpy_Route.csv', 'Dynamic_Problem.csv',
-      'Slab_Route.csv', 'Roof_Problem.csv', 'Arete_Route.csv'
-    ]
-    
-    for (const filename of routePatterns) {
-      const filepath = `/data/${folder}/${filename}`
-      try {
-        const response = await fetch(filepath)
-        if (response.ok) {
-          const text = await response.text()
-          
-          if (!text.trim().startsWith('<!DOCTYPE html>') && 
-              !text.trim().startsWith('<html') &&
-              text.includes(',') &&
-              (text.toLowerCase().includes('time') && text.toLowerCase().includes('acceleration'))) {
-            csvFiles.push(filepath)
-            console.log(`✅ Found route CSV file: ${filepath}`)
-          }
-        }
-      } catch (error) {
-        // File doesn't exist, continue
-      }
-    }
+  // Cache the results
+  csvDiscoveryCache = {
+    files: csvFiles,
+    timestamp: Date.now()
   }
   
-  // Also check root data directory for backwards compatibility
-  for (const filename of commonPatterns) {
-    const filepath = `/data/${filename}`
-    try {
-      const response = await fetch(filepath)
-      if (response.ok) {
-        const text = await response.text()
-        
-        if (!text.trim().startsWith('<!DOCTYPE html>') && 
-            !text.trim().startsWith('<html') &&
-            text.includes(',') &&
-            (text.toLowerCase().includes('time') && text.toLowerCase().includes('acceleration'))) {
-          csvFiles.push(filepath)
-          console.log(`✅ Found legacy CSV file: ${filepath}`)
-        }
-      }
-    } catch (error) {
-      // File doesn't exist, continue
-    }
-  }
-  
-  console.log(`🧗‍♂️ Discovered ${csvFiles.length} total CSV files:`, csvFiles)
+  console.log(`🧗‍♂️ Discovered ${csvFiles.length} CSV files (using local storage)`)
   return csvFiles
+}
+
+// Helper function to validate CSV content
+function isValidCSVContent(text: string, filepath: string): boolean {
+  // Check if it's HTML (common for 404 pages)
+  if (text.trim().startsWith('<!DOCTYPE html>') || 
+      text.trim().startsWith('<html') ||
+      text.includes('<title>') ||
+      text.includes('window.$RefreshReg$')) {
+    console.log(`❌ File ${filepath} is HTML, not CSV`)
+    return false
+  }
+  
+  // Check if it has CSV characteristics
+  const lines = text.trim().split('\n')
+  if (lines.length < 2) {
+    console.log(`❌ File ${filepath} too short to be valid CSV`)
+    return false
+  }
+  
+  const firstLine = lines[0]
+  const hasCommas = firstLine.includes(',')
+  const hasTime = firstLine.toLowerCase().includes('time')
+  const hasAcceleration = firstLine.toLowerCase().includes('acceleration')
+  
+  const isValid = hasCommas && (hasTime || hasAcceleration)
+  
+  if (!isValid) {
+    console.log(`❌ File ${filepath} failed validation:`, {
+      hasCommas,
+      hasTime,
+      hasAcceleration,
+      preview: firstLine.substring(0, 100)
+    })
+  }
+  
+  return isValid
 }
 
 // Load CSV file from URL

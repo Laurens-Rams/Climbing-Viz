@@ -89,6 +89,11 @@ export interface VisualizationState {
     postProcessingContrastIntensity: number
     postProcessingBloom: boolean
     postProcessingBloomIntensity: number
+    
+    // CircularText Settings
+    showCircularText: boolean
+    circularTextSize: number
+    circularTextSpeed: number
   }
   
   // State flags
@@ -115,32 +120,33 @@ let visualizationState: VisualizationState = {
   threshold: 12.0,
   visualizerSettings: {
     // Basics - Updated to match user's current settings
-    baseRadius: 0.50,
-    dynamicsMultiplier: 13.7,
-    combinedSize: 2.3,
-    ringCount: 26,
-    ringSpacing: 0.004,
+    baseRadius: 0.55,
+    dynamicsMultiplier: 12.6,
+    combinedSize: 2.0,
+    ringCount: 29,
+    ringSpacing: 0.002,
     
     // Visuals - Updated to match user's current settings
     opacity: 1.00,
-    centerFade: 0.80,
-    depthEffect: 0.5,
-    organicNoise: 1.52,
-    moveColor: '#10b981', // Green from user's selection
-    cruxColor: '#ec4899', // Pink from user's selection
+    lineWidth: 0.8,
+    centerFade: 0.55,
+    depthEffect: 1.6,
+    organicNoise: 1.27,
+    moveColor: '#252cf4', // Blue from user's RGB (37, 44, 244)
+    cruxColor: '#8b5cf6', // Purple from user's RGB (139, 92, 246)
     
     // Dynamic Effects
-    cruxEmphasis: 0.5,
+    cruxEmphasis: 3.7,
     
     // Animation
     animationEnabled: true,
     rotationSpeed: 0.0,
-    liquidSpeed: 3.20,
-    liquidSize: 0.8,
+    liquidSpeed: 2.70,
+    liquidSize: 1.2,
     
     // Attempt Wave Animation - Updated to user's settings
-    attemptWaveSpeed: 0.7,
-    attemptWaveDirection: 1.1,
+    attemptWaveSpeed: 0.8,
+    attemptWaveDirection: 0.7,
     attemptWaveIntensity: 1.6,
     
     // Advanced
@@ -158,25 +164,22 @@ let visualizationState: VisualizationState = {
     maxMoveDuration: 4.7,
     maxMoveSequence: 2,
     
-    // Line Thickness - Updated to user's settings
-    lineWidth: 0.4,
-    
     // Move Position Lines - Updated to user's settings
     showMovePositionLines: true,
-    moveLineLength: 3.2,
-    moveLineOpacity: 0.80,
-    moveLineWidth: 2.0,
+    moveLineLength: 3.3,
+    moveLineOpacity: 0.85,
+    moveLineWidth: 3.2,
     
     // Attempt Visualization - Updated to user's settings
     showAttemptLines: true,
-    maxAttempts: 120.0,
-    attemptOpacity: 0.45,
-    attemptWaviness: 0.030,
+    maxAttempts: 55.0,
+    attemptOpacity: 0.35,
+    attemptWaviness: 0.014,
     attemptFadeStrength: 0.7,
     attemptThickness: 0.5,
     attemptIntensity: 0.5,
     attemptRadius: 2.40,
-    attemptDotZOffsetMax: 1.15,
+    attemptDotZOffsetMax: 0.55,
     attemptDotZEffectStrength: 0.5,
     
     // Legacy attempt settings (for compatibility)
@@ -190,8 +193,13 @@ let visualizationState: VisualizationState = {
     postProcessingBWIntensity: 50,
     postProcessingContrast: true,
     postProcessingContrastIntensity: 59,
-    postProcessingBloom: true,
-    postProcessingBloomIntensity: 31
+    postProcessingBloom: false,
+    postProcessingBloomIntensity: 31,
+    
+    // CircularText Settings
+    showCircularText: true,
+    circularTextSize: 1.0,
+    circularTextSpeed: 60
   },
   needsUpdate: false,
   lastUpdateTime: Date.now(),

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useCallback, useMemo, useState } from 'react'
 import type { BoulderData } from '../utils/csvLoader'
 import { useBoulderConfig } from '../context/BoulderConfigContext'
 import { getVisualizationState, updateVisualizerSettings } from '../store/visualizationStore'
+import { BarChart3, Settings, Save } from 'lucide-react'
 
 interface StatisticsViewProps {
   selectedBoulder: BoulderData | null
@@ -217,7 +218,14 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
 
   // Apply crop to boulder data
   const applyCrop = useCallback(async () => {
-    if (!selectedBoulder?.csvData || !cropStartTime || !cropEndTime) return
+    if (!selectedBoulder?.csvData || !cropStartTime || !cropEndTime) {
+      console.error('[StatisticsView] Missing data for crop:', { 
+        hasData: !!selectedBoulder?.csvData, 
+        startTime: cropStartTime, 
+        endTime: cropEndTime 
+      })
+      return
+    }
     
     const startTime = parseFloat(cropStartTime)
     const endTime = parseFloat(cropEndTime)
@@ -227,86 +235,112 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       return
     }
     
+    console.log(`[StatisticsView] Starting crop operation: ${startTime}s - ${endTime}s`)
+    
     const { time, absoluteAcceleration } = selectedBoulder.csvData
     const startIndex = time.findIndex(t => t >= startTime)
     const endIndex = time.findIndex(t => t >= endTime)
     
     if (startIndex === -1 || endIndex === -1 || startIndex >= endIndex) {
       alert('Invalid time range selected!')
+      console.error('[StatisticsView] Invalid indices:', { startIndex, endIndex, timeRange: [startTime, endTime] })
       return
     }
     
-    // Create cropped data
-    const croppedTime = time.slice(startIndex, endIndex + 1)
-    const croppedAcceleration = absoluteAcceleration.slice(startIndex, endIndex + 1)
-    
-    // Apply smoothing to cropped data
-    const smoothedAcceleration = smoothData(croppedAcceleration, smoothingStrength, baselineThreshold)
-    
-    // Normalize time to start at 0
-    const normalizedTime = croppedTime.map(t => t - croppedTime[0])
-    
-    // Create new CSV data
-    const newCsvData = {
-      ...selectedBoulder.csvData,
-      time: normalizedTime,
-      absoluteAcceleration: smoothedAcceleration,
-      duration: normalizedTime[normalizedTime.length - 1] - normalizedTime[0],
-      maxAcceleration: Math.max(...smoothedAcceleration),
-      avgAcceleration: smoothedAcceleration.reduce((a, b) => a + b, 0) / smoothedAcceleration.length,
-      sampleCount: normalizedTime.length
-    }
-    
-    // Update boulder data
-    const updatedBoulder = {
-      ...selectedBoulder,
-      csvData: newCsvData,
-      stats: {
-        ...selectedBoulder.stats,
-        duration: newCsvData.duration.toFixed(1),
-        maxAcceleration: newCsvData.maxAcceleration.toFixed(2),
-        avgAcceleration: newCsvData.avgAcceleration.toFixed(2),
-        sampleCount: newCsvData.sampleCount
-      }
-    }
-    
-    // Update localStorage if this is a saved boulder
-    if (selectedBoulder.source === 'csv-upload' || selectedBoulder.source === 'phyphox') {
-      const existingBoulders = JSON.parse(localStorage.getItem('climbing-boulders') || '[]')
-      const boulderIndex = existingBoulders.findIndex((b: any) => b.id === selectedBoulder.id)
+    try {
+      // Create cropped data
+      const croppedTime = time.slice(startIndex, endIndex + 1)
+      const croppedAcceleration = absoluteAcceleration.slice(startIndex, endIndex + 1)
       
-      if (boulderIndex !== -1) {
-        // Update the stored boulder data
-        existingBoulders[boulderIndex] = {
-          ...existingBoulders[boulderIndex],
-          csvData: newCsvData,
-          rawData: selectedBoulder.source === 'phyphox' ? {
-            acc_time: { buffer: normalizedTime },
-            accX: { buffer: normalizedTime.map(() => 0) },
-            accY: { buffer: normalizedTime.map(() => 0) },
-            accZ: { buffer: smoothedAcceleration }
-          } : undefined
-        }
-        
-        localStorage.setItem('climbing-boulders', JSON.stringify(existingBoulders))
-        
-        // Dispatch event to refresh boulder list
-        window.dispatchEvent(new CustomEvent('boulderSaved', { 
-          detail: { boulder: existingBoulders[boulderIndex] } 
-        }))
+      // Apply smoothing to cropped data
+      const smoothedAcceleration = smoothData(croppedAcceleration, smoothingStrength, baselineThreshold)
+      
+      // Normalize time to start at 0
+      const normalizedTime = croppedTime.map(t => t - croppedTime[0])
+      
+      // Create new CSV data
+      const newCsvData = {
+        ...selectedBoulder.csvData,
+        time: normalizedTime,
+        absoluteAcceleration: smoothedAcceleration,
+        duration: normalizedTime[normalizedTime.length - 1] - normalizedTime[0],
+        maxAcceleration: Math.max(...smoothedAcceleration),
+        avgAcceleration: smoothedAcceleration.reduce((a, b) => a + b, 0) / smoothedAcceleration.length,
+        sampleCount: normalizedTime.length
       }
+      
+      console.log(`[StatisticsView] Created new CSV data:`, {
+        originalLength: time.length,
+        croppedLength: normalizedTime.length,
+        newDuration: newCsvData.duration,
+        newMaxAccel: newCsvData.maxAcceleration
+      })
+      
+      // Update boulder data
+      const updatedBoulder = {
+        ...selectedBoulder,
+        csvData: newCsvData,
+        stats: {
+          ...selectedBoulder.stats,
+          duration: newCsvData.duration.toFixed(1),
+          maxAcceleration: newCsvData.maxAcceleration.toFixed(2),
+          avgAcceleration: newCsvData.avgAcceleration.toFixed(2),
+          sampleCount: newCsvData.sampleCount
+        }
+      }
+      
+      // Update localStorage if this is a saved boulder
+      if (selectedBoulder.source === 'csv-upload' || selectedBoulder.source === 'phyphox') {
+        const existingBoulders = JSON.parse(localStorage.getItem('climbing-boulders') || '[]')
+        const boulderIndex = existingBoulders.findIndex((b: any) => b.id === selectedBoulder.id)
+        
+        if (boulderIndex !== -1) {
+          // Update the stored boulder data
+          existingBoulders[boulderIndex] = {
+            ...existingBoulders[boulderIndex],
+            csvData: newCsvData,
+            stats: updatedBoulder.stats,
+            rawData: selectedBoulder.source === 'phyphox' ? {
+              acc_time: { buffer: normalizedTime },
+              accX: { buffer: normalizedTime.map(() => 0) },
+              accY: { buffer: normalizedTime.map(() => 0) },
+              accZ: { buffer: smoothedAcceleration }
+            } : undefined
+          }
+          
+          localStorage.setItem('climbing-boulders', JSON.stringify(existingBoulders))
+          console.log(`[StatisticsView] Updated localStorage for boulder ${selectedBoulder.id}`)
+          
+          // Dispatch event to refresh boulder list
+          window.dispatchEvent(new CustomEvent('boulderSaved', { 
+            detail: { boulder: existingBoulders[boulderIndex] } 
+          }))
+        } else {
+          console.warn(`[StatisticsView] Boulder ${selectedBoulder.id} not found in localStorage`)
+        }
+      }
+      
+      // Update the component - this should trigger a re-render and global store update
+      console.log(`[StatisticsView] Calling onBoulderDataUpdate with updated boulder`)
+      onBoulderDataUpdate(updatedBoulder)
+      
+      // Force refresh the boulder list to pick up changes
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('refreshBoulders'))
+      }, 100)
+      
+      // Reset crop selection
+      setCropSelection(null)
+      setShowCropPreview(false)
+      setCropStartTime('')
+      setCropEndTime('')
+      
+      console.log(`[StatisticsView] ✅ Applied crop: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s with smoothing: ${smoothingEnabled ? smoothingStrength : 'disabled'}`)
+      
+    } catch (error) {
+      console.error('[StatisticsView] Error during crop operation:', error)
+      alert('Error applying crop: ' + (error instanceof Error ? error.message : 'Unknown error'))
     }
-    
-    // Update the component
-    onBoulderDataUpdate(updatedBoulder)
-    
-    // Reset crop selection
-    setCropSelection(null)
-    setShowCropPreview(false)
-    setCropStartTime('')
-    setCropEndTime('')
-    
-    console.log(`Applied crop: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s with smoothing: ${smoothingEnabled ? smoothingStrength : 'disabled'}`)
   }, [selectedBoulder, cropStartTime, cropEndTime, smoothData, smoothingStrength, baselineThreshold, onBoulderDataUpdate, smoothingEnabled])
 
   // Canvas plot rendering
@@ -647,11 +681,56 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
     return localStorage.getItem(`boulder-settings-${selectedBoulder.id}`) !== null
   }, [selectedBoulder?.id])
 
+  // Listen for crop events from ControlPanel
+  useEffect(() => {
+    const handleCropPreview = (event: CustomEvent) => {
+      const { startTime, endTime } = event.detail
+      console.log(`[StatisticsView] 🔍 Crop preview event received: ${startTime}s - ${endTime}s`)
+      setCropStartTime(startTime.toString())
+      setCropEndTime(endTime.toString())
+      setShowCropPreview(true)
+      
+      // Create crop selection for visual feedback
+      setCropSelection({
+        startTime,
+        endTime,
+        isSelecting: false,
+        startX: 0,
+        endX: 0
+      })
+      
+      console.log(`[StatisticsView] 🔍 Crop preview state updated, triggering plot refresh`)
+    }
+    
+    const handleCropApply = (event: CustomEvent) => {
+      const { startTime, endTime } = event.detail
+      console.log(`[StatisticsView] ✂️ Crop apply event received: ${startTime}s - ${endTime}s`)
+      setCropStartTime(startTime.toString())
+      setCropEndTime(endTime.toString())
+      
+      // Call applyCrop directly
+      console.log(`[StatisticsView] ✂️ Calling applyCrop function`)
+      applyCrop()
+    }
+    
+    console.log(`[StatisticsView] 📡 Setting up crop event listeners`)
+    window.addEventListener('cropPreview', handleCropPreview as EventListener)
+    window.addEventListener('cropApply', handleCropApply as EventListener)
+    
+    return () => {
+      console.log(`[StatisticsView] 📡 Removing crop event listeners`)
+      window.removeEventListener('cropPreview', handleCropPreview as EventListener)
+      window.removeEventListener('cropApply', handleCropApply as EventListener)
+    }
+  }, [applyCrop])
+
   if (!selectedBoulder?.csvData) {
     return (
       <div className={`h-full flex items-center justify-center transition-all duration-300 ${isControlPanelVisible ? 'mr-[25rem]' : 'mr-0'}`}>
         <div className="text-center text-gray-400">
-          <div className="text-6xl mb-4">📊</div>
+          <div className="mb-4 flex justify-center">
+            <BarChart3 size={64} className="text-cyan-400" strokeWidth={1.5} />
+          </div>
           <h2 className="text-2xl font-bold mb-2">No Data Selected</h2>
           <p>Select a boulder from the control panel to view statistics</p>
         </div>
@@ -669,8 +748,9 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
               {selectedBoulder.name}
             </h1>
             {hasExistingSettings && (
-              <span className="text-sm text-green-400 bg-green-400/10 px-3 py-1 rounded-full border border-green-400/20">
-                ⚙️ Custom Settings
+              <span className="text-sm text-green-400 bg-green-400/10 px-3 py-1 rounded-full border border-green-400/20 flex items-center gap-1">
+                <Settings size={14} />
+                Custom Settings
               </span>
             )}
           </div>
