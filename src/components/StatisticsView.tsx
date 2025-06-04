@@ -175,6 +175,11 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       ctx.stroke()
 
       // Move markers - use global store moves instead of local detection
+      console.log(`📊 [StatisticsView] Processing moves for labeling:`)
+      globalMoves.forEach((move, index) => {
+        console.log(`  Index ${index}: isCrux=${move.isCrux}, accel=${move.acceleration?.toFixed(1)}, will be ${index === 0 ? 'SKIPPED' : `labeled as Move ${index}`}`)
+      })
+      
       globalMoves.forEach((move, index) => {
         if (index === 0) return // Skip start move
         
@@ -192,12 +197,12 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
         ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI)
         ctx.fill()
         
-        // Add move label at the top of the graph - FIXED: use index-1 since we skip start move
+        // Add move label at the top of the graph - use correct index for labeling
         const labelY = padding.top - 5 // Just above the graph area
         ctx.fillStyle = move.isCrux ? '#f59e0b' : '#22c55e'
         ctx.font = 'bold 11px Arial'
         ctx.textAlign = 'center'
-        ctx.fillText(`Move ${index}`, centerX, labelY) // index already accounts for start move being at 0
+        ctx.fillText(`Move ${index}`, centerX, labelY) // Use raw index since start move is at index 0
         
         // Add average strength below the move label
         ctx.font = '9px Arial'
