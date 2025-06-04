@@ -23,7 +23,7 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
   
   // Get data from global store instead of calculating locally
   const vizState = getVisualizationState()
-  const currentThreshold = vizState.threshold
+  const currentThreshold = vizState.visualizerSettings.moveThreshold // Use moveThreshold from settings
   const globalMoves = vizState.processedMoves || []
 
   // Calculate statistics using global store data

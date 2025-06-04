@@ -43,6 +43,7 @@ export interface VisualizationState {
     centerTextSize: number
     
     // Move Detection Algorithm Parameters
+    moveThreshold: number
     stillThreshold: number
     minStillDuration: number
     minMoveDuration: number
@@ -88,7 +89,8 @@ export interface ProcessedMove {
   startTime: number
   endTime: number
   duration: number
-  acceleration: number
+  acceleration: number // Peak acceleration (for backwards compatibility)
+  accelerationRange: { min: number; max: number; avg: number } // NEW: Full range during move
   dynamics: number
   isCrux: boolean
 }
@@ -131,11 +133,12 @@ let visualizationState: VisualizationState = {
     centerTextSize: 1.0,
     
     // Move Detection Algorithm Parameters
-    stillThreshold: 3.0,
-    minStillDuration: 1.0,
-    minMoveDuration: 0.5,
-    maxMoveDuration: 4.0,
-    maxMoveSequence: 3,
+    moveThreshold: 2.0,
+    stillThreshold: 2.5,
+    minStillDuration: 0.8,
+    minMoveDuration: 0.3,
+    maxMoveDuration: 3.0,
+    maxMoveSequence: 2,
     
     // Line Thickness - Updated to match user's current settings
     lineWidth: 0.6,
@@ -189,8 +192,7 @@ export function updateSelectedBoulder(boulder: BoulderData | null, savedThreshol
   if (boulder && boulder.csvData) {
     const moves = detectAndProcessMoves(
       boulder.csvData.time,
-      boulder.csvData.absoluteAcceleration,
-      visualizationState.threshold
+      boulder.csvData.absoluteAcceleration
     )
     console.log(`📊 [VisualizationStore] AUTO-CALCULATED ${moves.length} moves with threshold ${visualizationState.threshold}`)
     visualizationState.processedMoves = moves
@@ -222,8 +224,7 @@ export function updateThreshold(threshold: number) {
   if (visualizationState.selectedBoulder && visualizationState.selectedBoulder.csvData) {
     const moves = detectAndProcessMoves(
       visualizationState.selectedBoulder.csvData.time,
-      visualizationState.selectedBoulder.csvData.absoluteAcceleration,
-      threshold
+      visualizationState.selectedBoulder.csvData.absoluteAcceleration
     )
     console.log(`📊 [VisualizationStore] AUTO-RECALCULATED ${moves.length} moves with new threshold ${threshold}`)
     visualizationState.processedMoves = moves
@@ -241,7 +242,7 @@ export function updateVisualizerSettings(settings: Partial<VisualizationState['v
   }
   
   // Check if move detection settings changed
-  const moveDetectionKeys = ['stillThreshold', 'minStillDuration', 'minMoveDuration', 'maxMoveDuration', 'maxMoveSequence']
+  const moveDetectionKeys = ['moveThreshold', 'stillThreshold', 'minStillDuration', 'minMoveDuration', 'maxMoveDuration', 'maxMoveSequence']
   const moveDetectionChanged = moveDetectionKeys.some(key => 
     settings[key as keyof typeof settings] !== undefined && 
     settings[key as keyof typeof settings] !== oldSettings[key as keyof typeof oldSettings]
@@ -252,8 +253,7 @@ export function updateVisualizerSettings(settings: Partial<VisualizationState['v
     console.log(`📊 [VisualizationStore] Move detection settings changed, recalculating moves`)
     const moves = detectAndProcessMoves(
       visualizationState.selectedBoulder.csvData.time,
-      visualizationState.selectedBoulder.csvData.absoluteAcceleration,
-      visualizationState.threshold
+      visualizationState.selectedBoulder.csvData.absoluteAcceleration
     )
     console.log(`📊 [VisualizationStore] RECALCULATED ${moves.length} moves with new detection settings`)
     visualizationState.processedMoves = moves
@@ -270,23 +270,22 @@ export function markAsUpdated() {
 // Helper to detect moves from acceleration data
 export function detectAndProcessMoves(
   time: number[],
-  acceleration: number[],
-  threshold: number
+  acceleration: number[]
 ): ProcessedMove[] {
-  console.log(`🧗 [Move Detection] Starting stillness-based detection with threshold: ${threshold}`)
+  console.log(`🧗 [Move Detection] Starting stillness-based detection`)
   
   const moves: ProcessedMove[] = []
   
   // Get configurable constants from visualizer settings
   const settings = visualizationState.visualizerSettings
   const STILL_THRESHOLD = settings.stillThreshold // m/s² - below this is considered "still"
-  const MOVE_THRESHOLD = threshold // Use the adjustable threshold for movement
+  const MOVE_THRESHOLD = settings.moveThreshold // Use the configurable threshold for movement
   const MIN_STILL_DURATION = settings.minStillDuration // seconds - minimum time to be considered "holding"
   const MIN_MOVE_DURATION = settings.minMoveDuration // seconds - minimum time for a movement to count
   const MAX_MOVE_DURATION = settings.maxMoveDuration // seconds - longer moves get split
   const MAX_MOVE_SEQUENCE = settings.maxMoveSequence // maximum consecutive moves without still period
   
-  console.log(`🔧 [Move Detection] Using settings: still=${STILL_THRESHOLD}, minStill=${MIN_STILL_DURATION}s, minMove=${MIN_MOVE_DURATION}s, maxMove=${MAX_MOVE_DURATION}s, maxSeq=${MAX_MOVE_SEQUENCE}`)
+  console.log(`🔧 [Move Detection] Using settings: move=${MOVE_THRESHOLD}, still=${STILL_THRESHOLD}, minStill=${MIN_STILL_DURATION}s, minMove=${MIN_MOVE_DURATION}s, maxMove=${MAX_MOVE_DURATION}s, maxSeq=${MAX_MOVE_SEQUENCE}`)
   
   // State tracking
   let currentState: 'still' | 'moving' = 'still'
@@ -302,6 +301,7 @@ export function detectAndProcessMoves(
     endTime: time[0] || 0,
     duration: 0,
     acceleration: acceleration[0] || 0,
+    accelerationRange: { min: 0, max: 0, avg: 0 },
     dynamics: 0, // Start move always has dynamics 0
     isCrux: false
   })
@@ -362,6 +362,7 @@ export function detectAndProcessMoves(
                 endTime: time[splitIdx],
                 duration: time[splitIdx] - time[stateStartIdx + lastSplitIdx],
                 acceleration: splitMaxAccel,
+                accelerationRange: { min: Math.min(...splitAccelerations), max: Math.max(...splitAccelerations), avg: splitAccelerations.reduce((a, b) => a + b, 0) / splitAccelerations.length },
                 dynamics: 0, // Will be calculated later
                 isCrux: false
               })
@@ -378,6 +379,7 @@ export function detectAndProcessMoves(
               endTime: time[i - 1],
               duration: time[i - 1] - time[stateStartIdx + lastSplitIdx],
               acceleration: finalMaxAccel,
+              accelerationRange: { min: Math.min(...finalAccelerations), max: Math.max(...finalAccelerations), avg: finalAccelerations.reduce((a, b) => a + b, 0) / finalAccelerations.length },
               dynamics: 0,
               isCrux: false
             })
@@ -385,12 +387,20 @@ export function detectAndProcessMoves(
             // Normal move (not too long)
             console.log(`🧗 [Move Detection] Move detected: ${stateStartTime.toFixed(2)}s → ${currentTime.toFixed(2)}s (${timeSinceStateStart.toFixed(2)}s, max: ${maxAccel.toFixed(1)} m/s²)`)
             
+            // Calculate acceleration range for this move
+            const moveAccelRange = {
+              min: Math.min(...moveAccelerations),
+              max: Math.max(...moveAccelerations),
+              avg: moveAccelerations.reduce((a, b) => a + b, 0) / moveAccelerations.length
+            }
+            
             moves.push({
               index: moveIndex++,
               startTime: stateStartTime,
               endTime: currentTime,
               duration: timeSinceStateStart,
               acceleration: maxAccel,
+              accelerationRange: moveAccelRange,
               dynamics: 0, // Will be calculated later
               isCrux: false
             })
@@ -422,6 +432,13 @@ export function detectAndProcessMoves(
       const moveAccelerations = acceleration.slice(stateStartIdx)
       const maxAccel = Math.max(...moveAccelerations)
       
+      // Calculate acceleration range for final move
+      const moveAccelRange = {
+        min: Math.min(...moveAccelerations),
+        max: Math.max(...moveAccelerations),
+        avg: moveAccelerations.reduce((a, b) => a + b, 0) / moveAccelerations.length
+      }
+      
       console.log(`🏁 [Move Detection] Final move: ${stateStartTime.toFixed(2)}s → end (${timeSinceStateStart.toFixed(2)}s, max: ${maxAccel.toFixed(1)} m/s²)`)
       
       moves.push({
@@ -430,6 +447,7 @@ export function detectAndProcessMoves(
         endTime: time[time.length - 1],
         duration: timeSinceStateStart,
         acceleration: maxAccel,
+        accelerationRange: moveAccelRange,
         dynamics: 0,
         isCrux: false
       })

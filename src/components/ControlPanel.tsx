@@ -195,7 +195,7 @@ export function ControlPanel({
     debouncedSettingsUpdate(newSettings)
     
     // If it's a move detection setting, trigger move recalculation
-    const moveDetectionKeys = ['stillThreshold', 'minStillDuration', 'minMoveDuration', 'maxMoveDuration', 'maxMoveSequence']
+    const moveDetectionKeys = ['moveThreshold', 'stillThreshold', 'minStillDuration', 'minMoveDuration', 'maxMoveDuration', 'maxMoveSequence']
     if (moveDetectionKeys.includes(key) && selectedBoulder) {
       console.log(`🔧 [ControlPanel] Move detection setting changed: ${key} = ${value}, triggering recalculation`)
       // The global store will automatically recalculate when settings are updated
@@ -318,6 +318,7 @@ export function ControlPanel({
       name: '🔍 Move Detection',
       icon: '🔍',
       controls: [
+        { key: 'moveThreshold', name: 'Move Threshold', min: 0.0, max: 50.0, step: 0.5 },
         { key: 'stillThreshold', name: 'Still Threshold', min: 0.5, max: 8.0, step: 0.1 },
         { key: 'minStillDuration', name: 'Min Still Duration', min: 0.2, max: 3.0, step: 0.1 },
         { key: 'minMoveDuration', name: 'Min Move Duration', min: 0.1, max: 2.0, step: 0.1 },
@@ -895,25 +896,6 @@ export function ControlPanel({
                 </div>
               )}
 
-              {/* Move Threshold */}
-              <div>
-                <div className="flex justify-between items-center mb-3">
-                  <label className="text-sm font-medium text-cyan-400">Move Threshold</label>
-                  <span className="text-cyan-400 text-sm font-medium bg-cyan-400/10 px-2 py-1 rounded-lg border border-cyan-400/40">
-                    {currentThreshold.toFixed(1)} m/s²
-                  </span>
-                </div>
-                <ElasticSlider
-                  defaultValue={currentThreshold}
-                  startingValue={0}
-                  maxValue={50}
-                  isStepped={true}
-                  stepSize={0.5}
-                  className="w-full"
-                  onChange={handleThresholdChange}
-                />
-              </div>
-
               {/* Live Mode Section */}
               <div>
                 <div className="flex items-center justify-between mb-4">
@@ -1108,6 +1090,7 @@ export function ControlPanel({
               <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-4">
                 <h5 className="text-cyan-400 font-medium mb-2">Stillness-Based Move Detection</h5>
                 <ul className="text-xs text-gray-400 space-y-1">
+                  <li>• <strong>Move Threshold:</strong> Above this = movement detected</li>
                   <li>• <strong>Still Threshold:</strong> Below this = holding position</li>
                   <li>• <strong>Min Still Duration:</strong> How long to hold before counting</li>
                   <li>• <strong>Min Move Duration:</strong> Minimum time for a valid move</li>
