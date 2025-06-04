@@ -319,9 +319,9 @@ export function ControlPanel({
       icon: '🔍',
       controls: [
         { key: 'moveThreshold', name: 'Move Threshold', min: 0.5, max: 3.0, step: 0.1 },
-        { key: 'minStillDuration', name: 'Min Still Duration', min: 0.2, max: 1.0, step: 0.05 },
-        { key: 'minMoveDuration', name: 'Min Move Duration', min: 0.2, max: 1.0, step: 0.05 },
-        { key: 'maxMoveDuration', name: 'Max Move Duration', min: 0.5, max: 2.0, step: 0.1 },
+        { key: 'minStillDuration', name: 'Min Still Duration', min: 0.2, max: 3.0, step: 0.05 },
+        { key: 'minMoveDuration', name: 'Min Move Duration', min: 1.0, max: 3.0, step: 0.1 },
+        { key: 'maxMoveDuration', name: 'Max Move Duration', min: 1.0, max: 6.0, step: 0.1 },
         { key: 'maxMoveSequence', name: 'Max Move Sequence', min: 1, max: 4, step: 1 }
       ]
     },
@@ -646,7 +646,6 @@ export function ControlPanel({
           </span>
         </div>
         <ElasticSlider
-          // Remove the key prop that includes value to prevent remounting
           defaultValue={currentValue}
           startingValue={control.min}
           maxValue={control.max}

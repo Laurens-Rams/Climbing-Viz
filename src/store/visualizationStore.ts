@@ -135,9 +135,9 @@ let visualizationState: VisualizationState = {
     // Move Detection Algorithm Parameters
     moveThreshold: 1.5,
     stillThreshold: 3.0,
-    minStillDuration: 0.5,
-    minMoveDuration: 0.5,
-    maxMoveDuration: 1.0,
+    minStillDuration: 1.5,
+    minMoveDuration: 1.0,
+    maxMoveDuration: 2.0,
     maxMoveSequence: 2,
     
     // Line Thickness - Updated to match user's current settings

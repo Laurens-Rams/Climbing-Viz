@@ -74,6 +74,20 @@ function App() {
     // Text Display
     centerTextSize: 1.0,
     
+    // Move Detection Algorithm Parameters - ADDED TO FIX NaN
+    moveThreshold: 1.5,
+    stillThreshold: 3.0,
+    minStillDuration: 1.5,
+    minMoveDuration: 1.0,
+    maxMoveDuration: 2.0,
+    maxMoveSequence: 2,
+    
+    // Move Position Lines - ADDED TO FIX NaN
+    showMovePositionLines: true,
+    moveLineLength: 3.0,
+    moveLineOpacity: 0.8,
+    moveLineWidth: 2.0,
+    
     // Attempt Visualization - Updated to match user's current settings
     showAttemptLines: true,
     maxAttempts: 95.0,
@@ -118,7 +132,18 @@ function App() {
     visualizerSettings.attemptCount,
     visualizerSettings.attemptZHeight,
     visualizerSettings.attemptWaveEffect,
-    visualizerSettings.maxRadiusScale
+    visualizerSettings.maxRadiusScale,
+    // Add move detection parameters
+    visualizerSettings.moveThreshold,
+    visualizerSettings.minStillDuration,
+    visualizerSettings.minMoveDuration,
+    visualizerSettings.maxMoveDuration,
+    visualizerSettings.maxMoveSequence,
+    // Add move line parameters
+    visualizerSettings.showMovePositionLines,
+    visualizerSettings.moveLineLength,
+    visualizerSettings.moveLineOpacity,
+    visualizerSettings.moveLineWidth
   ])
   
   // Centralized boulder data management
