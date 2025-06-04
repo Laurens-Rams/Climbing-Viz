@@ -611,12 +611,6 @@ function VisualizationScene() {
     const moveCount = moves.length
     if (moveCount <= 0) return
     
-    console.log(`[BoulderVisualizerSimple] Creating ${moveCount} move position lines`)
-    console.log(`[BoulderVisualizerSimple] Move details:`)
-    moves.forEach((move, index) => {
-      console.log(`  Line ${index}: dynamics=${move.dynamics}, accel=${move.acceleration}, range=${JSON.stringify(move.accelerationRange)}, isCrux=${move.isCrux}`)
-    })
-    
     // Calculate the radius where lines end (controllable from settings)
     const startRadius = settings.baseRadius * settings.combinedSize
     const endRadius = startRadius + settings.moveLineLength
@@ -626,9 +620,8 @@ function VisualizationScene() {
       
       // Calculate angle for this move - start at 12 o'clock (top) by adding PI/2
       const anglePerMove = (Math.PI * 2) / moveCount
-      const moveAngle = i * anglePerMove + Math.PI / 2
-      
-      console.log(`[BoulderVisualizerSimple] Move ${i}: angle=${(moveAngle * 180 / Math.PI).toFixed(1)}°, dynamics=${move.dynamics}`)
+      const rawAngle = i * anglePerMove + Math.PI / 2
+      const moveAngle = rawAngle % (Math.PI * 2) // Wrap angle to stay within 0-2π
       
       // Calculate line start and end positions
       const startX = Math.cos(moveAngle) * startRadius
@@ -752,8 +745,6 @@ function VisualizationScene() {
         managedObjects.current.push(dot)
       }
     }
-    
-    console.log(`[BoulderVisualizerSimple] Created ${moveCount} move position lines`)
   }
   
   return (

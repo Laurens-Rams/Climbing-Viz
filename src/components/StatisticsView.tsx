@@ -36,12 +36,6 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       sampleCount: 0
     };
     
-    // Debug: Log move data to understand the structure
-    console.log(`📊 [StatisticsView] Processing ${globalMoves.length} total moves:`)
-    globalMoves.forEach((move, index) => {
-      console.log(`  Move ${index}: dynamics=${move.dynamics}, accel=${move.acceleration}, range=${JSON.stringify(move.accelerationRange)}, isCrux=${move.isCrux}`)
-    })
-    
     // Use moves from global store instead of calculating locally
     return {
       maxAccel: selectedBoulder.csvData.maxAcceleration,
