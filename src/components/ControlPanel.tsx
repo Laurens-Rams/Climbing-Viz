@@ -1087,14 +1087,14 @@ export function ControlPanel({
           {currentFolder === 'moveDetection' && (
             <div className="space-y-6">
               <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-4">
-                <h5 className="text-cyan-400 font-medium mb-2">Stillness-Based Move Detection</h5>
+                <h5 className="text-cyan-400 font-medium mb-2">Move Detection Algorithm</h5>
                 <ul className="text-xs text-gray-400 space-y-1">
-                  <li>• <strong>Move Threshold:</strong> Above this = movement detected</li>
-                  <li>• <strong>Still Zone:</strong> Auto-calculated as Move Threshold ÷ 2.5</li>
-                  <li>• <strong>Min Still Duration:</strong> How long to hold before counting</li>
-                  <li>• <strong>Min Move Duration:</strong> Minimum time for a valid move</li>
-                  <li>• <strong>Max Move Duration:</strong> Longer moves get split</li>
-                  <li>• <strong>Max Move Sequence:</strong> Max consecutive moves</li>
+                  <li>• <strong>Move Threshold:</strong> Acceleration above this = potential move</li>
+                  <li>• <strong>Everything is either:</strong> 🟢 Move or ⬜ Stillness (rest)</li>
+                  <li>• <strong>Min Still Duration:</strong> Must hold still this long before/after moves</li>
+                  <li>• <strong>Min Move Duration:</strong> Movement must last this long to count</li>
+                  <li>• <strong>Max Move Duration:</strong> Longer movements get split into multiple moves</li>
+                  <li>• <strong>Max Move Sequence:</strong> Max consecutive moves without rest</li>
                 </ul>
               </div>
               
@@ -1104,11 +1104,11 @@ export function ControlPanel({
                 ))}
               </div>
               
-              <div className="bg-yellow-400/10 border border-yellow-400/40 rounded-lg p-4">
-                <h5 className="text-yellow-400 font-medium mb-2">⚠️ Algorithm Info</h5>
+              <div className="bg-green-400/10 border border-green-400/40 rounded-lg p-4">
+                <h5 className="text-green-400 font-medium mb-2">✅ How It Works</h5>
                 <p className="text-xs text-gray-400">
-                  Changes to these settings will automatically recalculate moves for the current boulder. 
-                  The main "Move Threshold" slider controls when movement starts.
+                  The algorithm detects transitions: Rest → Movement → Rest = 1 Move. 
+                  Green shaded areas show detected moves. Everything else is stillness/rest.
                 </p>
               </div>
             </div>

@@ -80,20 +80,12 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       const minTime = Math.min(...time)
       const maxTime = Math.max(...time)
       const minAccel = 0
-      const maxAccel = Math.max(...absoluteAcceleration, currentThreshold + 5)
+      const dataMaxAccel = Math.max(...absoluteAcceleration, currentThreshold + 5)
+      const maxAccel = dataMaxAccel * 1.2 // Add 20% headroom so peaks don't hit the top
 
       const xScale = (t: number) => padding.left + ((t - minTime) / (maxTime - minTime)) * plotWidth
       const yScale = (a: number) => padding.top + plotHeight - ((a - minAccel) / (maxAccel - minAccel)) * plotHeight
 
-      // Draw stillness zones (NEW)
-      const STILL_THRESHOLD = vizState.visualizerSettings.moveThreshold / 2.5 // Auto-calculated
-      ctx.fillStyle = 'rgba(34, 197, 94, 0.1)' // Green with low opacity
-      ctx.fillRect(padding.left, yScale(STILL_THRESHOLD), plotWidth, yScale(0) - yScale(STILL_THRESHOLD))
-      
-      // Draw movement zone (NEW)
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.1)' // Red with low opacity
-      ctx.fillRect(padding.left, padding.top, plotWidth, yScale(currentThreshold) - padding.top)
-      
       // Grid
       ctx.strokeStyle = '#333'
       ctx.lineWidth = 1
@@ -119,47 +111,34 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       
       ctx.setLineDash([])
 
-      // Stillness threshold line (NEW)
-      ctx.strokeStyle = '#22c55e' // Green
+      // Movement threshold line - this is the key threshold
+      ctx.strokeStyle = '#00ff00' // Green for the main threshold
       ctx.lineWidth = 2
       ctx.setLineDash([5, 5])
-      const stillThresholdY = yScale(STILL_THRESHOLD)
-      ctx.beginPath()
-      ctx.moveTo(padding.left, stillThresholdY)
-      ctx.lineTo(padding.left + plotWidth, stillThresholdY)
-      ctx.stroke()
-      ctx.setLineDash([])
-      
-      ctx.fillStyle = '#22c55e'
-      ctx.font = 'bold 12px Arial'
-      ctx.fillText(`Still Zone: <${STILL_THRESHOLD}m/s²`, padding.left + 10, stillThresholdY + 15)
-
-      // Movement threshold line
-      ctx.strokeStyle = '#ff4444'
-      ctx.lineWidth = 2
       const thresholdY = yScale(currentThreshold)
       ctx.beginPath()
       ctx.moveTo(padding.left, thresholdY)
       ctx.lineTo(padding.left + plotWidth, thresholdY)
       ctx.stroke()
+      ctx.setLineDash([])
       
-      ctx.fillStyle = '#ff4444'
+      ctx.fillStyle = '#00ff00'
       ctx.font = 'bold 12px Arial'
-      ctx.fillText(`Move Threshold: ${currentThreshold}m/s²`, padding.left + 10, thresholdY - 8)
+      ctx.fillText(`Move Detection: ${currentThreshold}m/s²`, padding.left + 10, thresholdY - 8)
 
-      // Draw move periods as shaded regions (NEW)
+      // Draw detected moves as shaded regions
       globalMoves.forEach((move, index) => {
         if (index === 0) return // Skip start move
         
         const startX = xScale(move.startTime)
         const endX = xScale(move.endTime)
         
-        // Shade the move period
-        ctx.fillStyle = move.isCrux ? 'rgba(222, 80, 27, 0.2)' : 'rgba(0, 255, 204, 0.2)'
+        // Shade the move period - green for normal, orange for crux
+        ctx.fillStyle = move.isCrux ? 'rgba(245, 158, 11, 0.3)' : 'rgba(34, 197, 94, 0.3)'
         ctx.fillRect(startX, padding.top, endX - startX, plotHeight)
         
         // Draw vertical lines at move boundaries
-        ctx.strokeStyle = move.isCrux ? '#DE501B' : '#00ffcc'
+        ctx.strokeStyle = move.isCrux ? '#f59e0b' : '#22c55e'
         ctx.lineWidth = 1
         ctx.setLineDash([3, 3])
         
@@ -197,36 +176,33 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
 
       // Move markers - use global store moves instead of local detection
       globalMoves.forEach((move, index) => {
-        // Find the peak acceleration point in this move
-        const moveStartIdx = time.findIndex(t => t >= move.startTime)
-        const moveEndIdx = time.findIndex(t => t >= move.endTime)
+        if (index === 0) return // Skip start move
         
-        if (moveStartIdx >= 0 && moveEndIdx >= 0) {
-          // Find peak within move period
-          let peakIdx = moveStartIdx
-          let peakAccel = absoluteAcceleration[moveStartIdx]
-          
-          for (let i = moveStartIdx; i <= moveEndIdx && i < absoluteAcceleration.length; i++) {
-            if (absoluteAcceleration[i] > peakAccel) {
-              peakAccel = absoluteAcceleration[i]
-              peakIdx = i
-            }
-          }
-          
-          const x = xScale(time[peakIdx])
-          const y = yScale(peakAccel)
-          
-          ctx.fillStyle = index === 0 ? '#00ff00' : (move.isCrux ? '#DE501B' : '#00ffcc')
-          ctx.beginPath()
-          ctx.arc(x, y, index === 0 ? 6 : 4, 0, 2 * Math.PI)
-          ctx.fill()
-          
-          // Move number
-          ctx.fillStyle = '#ffffff'
-          ctx.font = 'bold 10px Arial'
-          ctx.textAlign = 'center'
-          ctx.fillText((index + 1).toString(), x, y - 10)
-        }
+        // Calculate center time of the move span
+        const centerTime = (move.startTime + move.endTime) / 2
+        const centerX = xScale(centerTime)
+        
+        // Use the average acceleration from the move range instead of peak
+        const avgAccel = move.accelerationRange?.avg || move.acceleration
+        const centerY = yScale(avgAccel)
+        
+        // Draw dot at center of move span
+        ctx.fillStyle = move.isCrux ? '#f59e0b' : '#22c55e'
+        ctx.beginPath()
+        ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI)
+        ctx.fill()
+        
+        // Add move label at the top of the graph
+        const labelY = padding.top - 5 // Just above the graph area
+        ctx.fillStyle = move.isCrux ? '#f59e0b' : '#22c55e'
+        ctx.font = 'bold 11px Arial'
+        ctx.textAlign = 'center'
+        ctx.fillText(`Move ${index}`, centerX, labelY)
+        
+        // Add average strength below the move label
+        ctx.font = '9px Arial'
+        ctx.fillStyle = '#999'
+        ctx.fillText(`${avgAccel.toFixed(1)} m/s²`, centerX, labelY + 12)
       })
 
       // Axes

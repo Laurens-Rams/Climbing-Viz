@@ -137,7 +137,7 @@ let visualizationState: VisualizationState = {
     stillThreshold: 3.0,
     minStillDuration: 1.0,
     minMoveDuration: 0.5,
-    maxMoveDuration: 4.0,
+    maxMoveDuration: 1.0,
     maxMoveSequence: 2,
     
     // Line Thickness - Updated to match user's current settings
@@ -457,6 +457,14 @@ export function detectAndProcessMoves(
   // Calculate dynamics and identify crux moves (skip the start move at index 0)
   if (moves.length > 1) {
     const actualMoves = moves.slice(1) // Exclude start move from calculations
+    
+    // Safety check: if we only have the start move, no actual moves to process
+    if (actualMoves.length === 0) {
+      console.log(`📊 [Move Detection] Only start move detected, no dynamics to calculate`)
+      console.log(`✅ [Move Detection] Detected ${moves.length} total moves (including start move)`)
+      return moves
+    }
+    
     const accelerations = actualMoves.map(m => m.acceleration)
     const maxAccel = Math.max(...accelerations)
     const minAccel = Math.min(...accelerations)
