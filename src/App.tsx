@@ -14,7 +14,9 @@ import Silk from './components/ui/Silk'
 import { Play, Square, RotateCcw } from 'lucide-react'
 import { 
   updateSelectedBoulder, 
-  updateVisualizerSettings
+  updateVisualizerSettings,
+  updateThreshold,
+  getVisualizationState
 } from './store/visualizationStore'
 import './utils/corsHelper' // Initialize CORS helper
 import './App.css'
@@ -486,7 +488,7 @@ function App() {
           {/* Logo */}
           <div className="mb-8 flex justify-center">
             <img 
-              src="/assets/logoTENDOR.png" 
+              src="./assets/logoTENDOR.png" 
               alt="TENDOR Logo" 
               className="h-16 w-auto opacity-80"
             />
