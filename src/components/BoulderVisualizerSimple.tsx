@@ -461,14 +461,14 @@ function VisualizationScene() {
       let radius = currentBaseRadius
       const ringProgress = ringIndex / settings.ringCount
 
-      // Enhanced dynamics calculation
+      // Enhanced dynamics calculation with better scaling
       let enhancedDynamics
-      if (dynamics < 0.3) enhancedDynamics = dynamics * 0.1
-      else if (dynamics < 0.6) enhancedDynamics = 0.03 + (dynamics - 0.3) * 1.5
-      else enhancedDynamics = 0.48 + Math.pow(dynamics - 0.6, 2.5) * 8.0
-      enhancedDynamics *= (1 + ringProgress * 1.2)
+      if (dynamics < 0.3) enhancedDynamics = dynamics * 0.05 // Reduced from 0.1
+      else if (dynamics < 0.6) enhancedDynamics = 0.015 + (dynamics - 0.3) * 0.8 // Reduced from 1.5
+      else enhancedDynamics = 0.25 + Math.pow(dynamics - 0.6, 2.5) * 2.0 // Reduced from 8.0
+      enhancedDynamics *= (1 + ringProgress * 0.6) // Reduced from 1.2
 
-      const dynamicsEffect = enhancedDynamics * settings.dynamicsMultiplier
+      const dynamicsEffect = enhancedDynamics * settings.dynamicsMultiplier * 0.3 // Scale down overall effect
       if (!isFinite(dynamicsEffect)) continue
       
       radius += dynamicsEffect * Math.pow(ringProgress, 0.6)
@@ -664,19 +664,87 @@ function VisualizationScene() {
       moveLinesRef.current.add(line)
       managedObjects.current.push(line)
       
-      // Add a small dot at the end of each line to show exact move position
-      const dotGeometry = new THREE.SphereGeometry(0.05, 8, 6)
-      const dotMaterial = new THREE.MeshBasicMaterial({
-        color: lineColor,
-        transparent: true,
-        opacity: settings.moveLineOpacity || 0.8
-      })
-      
-      const dot = new THREE.Mesh(dotGeometry, dotMaterial)
-      dot.position.set(endX, endY, 0.1)
-      
-      moveLinesRef.current.add(dot)
-      managedObjects.current.push(dot)
+      // Add visualization of acceleration range instead of just a dot
+      if (move.accelerationRange) {
+        const { min, max, avg } = move.accelerationRange
+        
+        // Create multiple segments to show the range
+        const rangeSegments = 5
+        const segmentLength = (endRadius - startRadius) / rangeSegments
+        
+        for (let seg = 0; seg < rangeSegments; seg++) {
+          const segmentStart = startRadius + (seg * segmentLength)
+          const segmentEnd = segmentStart + segmentLength
+          
+          // Calculate intensity for this segment based on range
+          const segmentProgress = seg / (rangeSegments - 1)
+          const segmentAccel = min + (max - min) * segmentProgress
+          const intensity = (segmentAccel - min) / (max - min) || 0
+          
+          // Create segment geometry
+          const segmentGeometry = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(Math.cos(moveAngle) * segmentStart, Math.sin(moveAngle) * segmentStart, 0),
+            new THREE.Vector3(Math.cos(moveAngle) * segmentEnd, Math.sin(moveAngle) * segmentEnd, 0)
+          ])
+          
+          // Color based on intensity within the range
+          let segmentColor = lineColor
+          if (!isStartMove) {
+            // Blend from dark to bright based on intensity
+            const baseColor = new THREE.Color(lineColor)
+            const brightColor = new THREE.Color(lineColor).multiplyScalar(1.5)
+            segmentColor = baseColor.lerp(brightColor, intensity).getHex()
+          }
+          
+          // Create segment material with varying opacity
+          const segmentMaterial = new THREE.LineBasicMaterial({
+            color: segmentColor,
+            transparent: true,
+            opacity: (settings.moveLineOpacity || 0.8) * (0.3 + intensity * 0.7),
+            linewidth: (settings.moveLineWidth || 2) * (0.5 + intensity * 0.5)
+          })
+          
+          // Create segment line
+          const segmentLine = new THREE.Line(segmentGeometry, segmentMaterial)
+          segmentLine.position.z = 0.1 + seg * 0.01 // Slight Z offset for each segment
+          
+          moveLinesRef.current.add(segmentLine)
+          managedObjects.current.push(segmentLine)
+        }
+        
+        // Add a dot at the peak (max acceleration position)
+        const peakProgress = (max - min) / (max - min) || 1
+        const peakRadius = startRadius + (endRadius - startRadius) * peakProgress
+        const peakX = Math.cos(moveAngle) * peakRadius
+        const peakY = Math.sin(moveAngle) * peakRadius
+        
+        const dotGeometry = new THREE.SphereGeometry(0.03, 8, 6)
+        const dotMaterial = new THREE.MeshBasicMaterial({
+          color: lineColor,
+          transparent: true,
+          opacity: settings.moveLineOpacity || 0.8
+        })
+        
+        const dot = new THREE.Mesh(dotGeometry, dotMaterial)
+        dot.position.set(peakX, peakY, 0.15)
+        
+        moveLinesRef.current.add(dot)
+        managedObjects.current.push(dot)
+      } else {
+        // Fallback: single dot at end (for backwards compatibility)
+        const dotGeometry = new THREE.SphereGeometry(0.05, 8, 6)
+        const dotMaterial = new THREE.MeshBasicMaterial({
+          color: lineColor,
+          transparent: true,
+          opacity: settings.moveLineOpacity || 0.8
+        })
+        
+        const dot = new THREE.Mesh(dotGeometry, dotMaterial)
+        dot.position.set(endX, endY, 0.1)
+        
+        moveLinesRef.current.add(dot)
+        managedObjects.current.push(dot)
+      }
     }
     
     console.log(`[BoulderVisualizerSimple] Created ${moveCount} move position lines`)
@@ -777,8 +845,7 @@ export function BoulderVisualizerSimple() {
           if (liveBoulderData.csvData) {
             const moves = detectAndProcessMoves(
               liveBoulderData.csvData.time,
-              liveBoulderData.csvData.absoluteAcceleration,
-              threshold
+              liveBoulderData.csvData.absoluteAcceleration
             )
             
             liveBoulderData.numberOfMoves = moves.length
