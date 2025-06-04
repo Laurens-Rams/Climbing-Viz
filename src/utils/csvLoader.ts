@@ -9,6 +9,14 @@ export interface CSVData {
   sampleCount: number
 }
 
+// Import BoulderConfig to get saved thresholds
+let getBoulderThreshold: ((id: number) => number) | null = null
+
+// Function to set the threshold getter (called from App.tsx)
+export function setBoulderThresholdGetter(getter: (id: number) => number) {
+  getBoulderThreshold = getter
+}
+
 export interface BoulderData {
   id: number
   name: string
@@ -120,54 +128,9 @@ export function parsePhyphoxCSV(csvText: string, filename: string): CSVData {
   }
 }
 
-// Detect moves from acceleration data
-function detectMovesFromAcceleration(time: number[], acceleration: number[], threshold = 12.0) {
-  const moves = []
-  let moveNumber = 1
-  
-  // Find the actual max acceleration in the data for better normalization
-  const maxAccel = Math.max(...acceleration)
-  const minAccel = Math.min(...acceleration)
-  const accelRange = maxAccel - minAccel
-  
-  console.log(`[Move Detection] Max accel: ${maxAccel.toFixed(2)}, Min accel: ${minAccel.toFixed(2)}, Range: ${accelRange.toFixed(2)}`)
-  
-  for (let i = 1; i < acceleration.length - 1; i++) {
-    if (acceleration[i] > threshold) {
-      // Check if this is a local peak
-      if (acceleration[i] > acceleration[i - 1] && acceleration[i] > acceleration[i + 1]) {
-        // Normalize dynamics based on the actual data range, not a fixed value
-        // This ensures we get good variation in the visualization
-        let dynamics
-        if (accelRange > 0) {
-          // Normalize to 0-1 based on actual data range, with some minimum threshold
-          dynamics = Math.max(0.1, (acceleration[i] - threshold) / (maxAccel - threshold))
-          dynamics = Math.min(dynamics, 1.0) // Cap at 1.0
-        } else {
-          dynamics = 0.5 // Fallback if no range
-        }
-        
-        const isCrux = acceleration[i] > threshold * 1.5
-        
-        console.log(`[Move Detection] Move ${moveNumber}: accel=${acceleration[i].toFixed(2)}, dynamics=${dynamics.toFixed(3)}, isCrux=${isCrux}`)
-        
-        moves.push({
-          move_number: moveNumber++,
-          dynamics,
-          isCrux
-        })
-      }
-    }
-  }
-  
-  console.log(`[Move Detection] Detected ${moves.length} moves with dynamics range: ${Math.min(...moves.map(m => m.dynamics)).toFixed(3)} - ${Math.max(...moves.map(m => m.dynamics)).toFixed(3)}`)
-  
-  return moves
-}
-
-// Convert CSV data to boulder format
+// Convert CSV data to boulder format - NO MOVE DETECTION, only raw data
 export function convertCSVToBoulder(csvData: CSVData, id: number): BoulderData {
-  const moves = detectMovesFromAcceleration(csvData.time, csvData.absoluteAcceleration)
+  console.log(`🗂️ [csvLoader] Converting boulder ${id} - RAW DATA ONLY (no move detection)`)
   
   // Estimate grade based on acceleration characteristics
   const maxAccel = csvData.maxAcceleration
@@ -186,15 +149,15 @@ export function convertCSVToBoulder(csvData: CSVData, id: number): BoulderData {
     name: cleanName,
     grade,
     type: 'csv',
-    description: `${csvData.duration.toFixed(1)}s duration, ${moves.length} moves detected`,
+    description: `${csvData.duration.toFixed(1)}s duration, moves will be calculated by global store`,
     csvFile: csvData.filename.replace(/^.*\//, ''),
-    moves,
+    moves: [], // Empty moves array - global store will calculate these
     csvData,
     stats: {
       duration: csvData.duration.toFixed(1),
       maxAcceleration: csvData.maxAcceleration.toFixed(2),
       avgAcceleration: csvData.avgAcceleration.toFixed(2),
-      moveCount: moves.length,
+      moveCount: 0, // Will be calculated by global store
       sampleCount: csvData.sampleCount
     }
   }
@@ -307,4 +270,4 @@ export async function handleFileUpload(file: File): Promise<BoulderData> {
     console.error('Error processing uploaded file:', error)
     throw error
   }
-} 
+}

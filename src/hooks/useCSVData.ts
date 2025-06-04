@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { BoulderData, loadAvailableBoulders, handleFileUpload } from '../utils/csvLoader'
+import { useState, useEffect, useCallback } from 'react'
+import { loadAvailableBoulders, handleFileUpload } from '../utils/csvLoader'
+import type { BoulderData } from '../utils/csvLoader'
 
 interface UseCSVDataResult {
   boulders: BoulderData[]
   selectedBoulder: BoulderData | null
   isLoading: boolean
   error: string | null
-  selectBoulder: (boulderId: number) => void
-  updateBoulderData: (updatedBoulder: BoulderData) => void
+  selectBoulder: (id: number) => void
+  refreshBoulders: () => void
   uploadFile: (file: File) => Promise<void>
-  refreshBoulders: () => Promise<void>
 }
 
 export function useCSVData(): UseCSVDataResult {
@@ -17,111 +17,165 @@ export function useCSVData(): UseCSVDataResult {
   const [selectedBoulder, setSelectedBoulder] = useState<BoulderData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const isLoadingRef = useRef(false) // Use ref to prevent dependency cycles
+
+  // Load saved Phyphox boulders from localStorage
+  const loadSavedPhyphoxBoulders = useCallback((): BoulderData[] => {
+    try {
+      const saved = localStorage.getItem('climbing-boulders')
+      if (saved) {
+        const savedBoulders = JSON.parse(saved)
+        console.log('[useCSVData] Loaded saved Phyphox boulders:', savedBoulders.length)
+        
+        // Convert Phyphox data to BoulderData format
+        return savedBoulders.map((saved: any, index: number) => ({
+          id: saved.id || (1000 + index), // Use saved ID or generate unique one
+          name: saved.name,
+          grade: saved.grade,
+          type: 'phyphox',
+          description: `Recorded with Phyphox on ${new Date(saved.recordedAt).toLocaleDateString()}`,
+          routeSetter: saved.routeSetter,
+          numberOfMoves: saved.numberOfMoves,
+          moves: saved.moves || [],
+          csvData: saved.rawData ? convertPhyphoxToCSV(saved.rawData) : null,
+          stats: {
+            totalMoves: saved.numberOfMoves || 0,
+            duration: saved.rawData ? calculateDuration(saved.rawData) : '0',
+            maxAcceleration: saved.rawData ? calculateMaxAcceleration(saved.rawData) : 0,
+            avgAcceleration: saved.rawData ? calculateAvgAcceleration(saved.rawData) : 0,
+            sampleCount: saved.totalDataPoints || 0
+          },
+          phyphoxData: saved.rawData,
+          recordedAt: saved.recordedAt,
+          source: 'phyphox'
+        }))
+      }
+    } catch (error) {
+      console.error('[useCSVData] Error loading saved Phyphox boulders:', error)
+    }
+    return []
+  }, [])
+
+  // Convert Phyphox raw data to CSV format for compatibility
+  const convertPhyphoxToCSV = useCallback((rawData: any) => {
+    if (!rawData || !rawData.acc_time || !rawData.accX || !rawData.accY || !rawData.accZ) {
+      return null
+    }
+    
+    const timeArray = rawData.acc_time.buffer || []
+    const accXArray = rawData.accX.buffer || []
+    const accYArray = rawData.accY.buffer || []
+    const accZArray = rawData.accZ.buffer || []
+    
+    const time = timeArray.map((t: number) => t - timeArray[0]) // Normalize to start at 0
+    const absoluteAcceleration = timeArray.map((_: number, i: number) => {
+      const x = accXArray[i] || 0
+      const y = accYArray[i] || 0  
+      const z = accZArray[i] || 0
+      return Math.sqrt(x * x + y * y + z * z)
+    })
+    
+    return {
+      time,
+      absoluteAcceleration,
+      filename: 'phyphox-recording.csv',
+      duration: time.length > 0 ? time[time.length - 1] - time[0] : 0,
+      maxAcceleration: Math.max(...absoluteAcceleration),
+      avgAcceleration: absoluteAcceleration.reduce((a: number, b: number) => a + b, 0) / absoluteAcceleration.length,
+      sampleCount: time.length
+    }
+  }, [])
+
+  // Helper functions for statistics
+  const calculateDuration = useCallback((rawData: any) => {
+    if (rawData?.acc_time?.buffer) {
+      const timeArray = rawData.acc_time.buffer
+      return timeArray.length > 0 ? (timeArray[timeArray.length - 1] - timeArray[0]).toFixed(1) : '0'
+    }
+    return '0'
+  }, [])
+
+  const calculateMaxAcceleration = useCallback((rawData: any) => {
+    if (rawData?.accX?.buffer && rawData?.accY?.buffer && rawData?.accZ?.buffer) {
+      const magnitudes = rawData.accX.buffer.map((x: number, i: number) => {
+        const y = rawData.accY.buffer[i] || 0
+        const z = rawData.accZ.buffer[i] || 0
+        return Math.sqrt(x * x + y * y + z * z)
+      })
+      return Math.max(...magnitudes)
+    }
+    return 0
+  }, [])
+
+  const calculateAvgAcceleration = useCallback((rawData: any) => {
+    if (rawData?.accX?.buffer && rawData?.accY?.buffer && rawData?.accZ?.buffer) {
+      const magnitudes = rawData.accX.buffer.map((x: number, i: number) => {
+        const y = rawData.accY.buffer[i] || 0
+        const z = rawData.accZ.buffer[i] || 0
+        return Math.sqrt(x * x + y * y + z * z)
+      })
+      return magnitudes.reduce((a: number, b: number) => a + b, 0) / magnitudes.length
+    }
+    return 0
+  }, [])
 
   const loadBoulders = useCallback(async () => {
-    if (isLoadingRef.current) {
-      console.log('Boulder loading already in progress, skipping...')
-      return
-    }
-    
     try {
-      isLoadingRef.current = true
       setIsLoading(true)
       setError(null)
-      console.log('Starting to load boulders...')
       
-      const loadedBoulders = await loadAvailableBoulders()
-      console.log('Loaded boulders:', loadedBoulders.length, loadedBoulders.map(b => b.name))
+      // Load CSV boulders and saved Phyphox boulders
+      const [csvBoulders, phyphoxBoulders] = await Promise.all([
+        loadAvailableBoulders(),
+        Promise.resolve(loadSavedPhyphoxBoulders())
+      ])
       
-      setBoulders(loadedBoulders)
+      // Merge both types of boulders
+      const allBoulders = [...csvBoulders, ...phyphoxBoulders]
+      console.log(`[useCSVData] Loaded ${allBoulders.length} total boulders (${csvBoulders.length} CSV + ${phyphoxBoulders.length} Phyphox)`)
       
-      // Auto-select first boulder if none selected and we have boulders
-      if (loadedBoulders.length > 0) {
-        setSelectedBoulder(prev => {
-          const selected = prev || loadedBoulders[0]
-          console.log('Selected boulder:', selected.name)
-          
-          // Show success message
-          if (loadedBoulders.length > 1) {
-            console.log(`✅ Successfully loaded ${loadedBoulders.length} CSV files! Switch to "📊 Data Analysis" to select and analyze different files.`)
-          }
-          
-          return selected
-        })
+      setBoulders(allBoulders)
+      
+      // Set first boulder as selected if none selected
+      if (!selectedBoulder && allBoulders.length > 0) {
+        setSelectedBoulder(allBoulders[0])
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load boulders')
-      console.error('Error loading boulders:', err)
+      console.error('[useCSVData] Error loading boulders:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load boulder data')
     } finally {
       setIsLoading(false)
-      isLoadingRef.current = false
     }
-  }, []) // Remove isLoadingRef from dependencies since it's now a ref
+  }, [loadSavedPhyphoxBoulders, selectedBoulder])
 
-  const selectBoulder = useCallback((boulderId: number) => {
-    // Avoid unnecessary re-selections to prevent infinite loops
-    if (selectedBoulder?.id === boulderId) {
-      console.log('Boulder already selected:', selectedBoulder.name, 'ID:', boulderId)
-      return
-    }
-    
-    const boulder = boulders.find(b => b.id === boulderId)
+  const selectBoulder = useCallback((id: number) => {
+    const boulder = boulders.find(b => b.id === id)
     if (boulder) {
-      console.log('Selecting boulder:', boulder.name, 'ID:', boulderId)
       setSelectedBoulder(boulder)
-    } else {
-      console.warn('Boulder not found with ID:', boulderId)
+      console.log('[useCSVData] Selected boulder:', boulder.name)
     }
-  }, [boulders, selectedBoulder])
+  }, [boulders])
 
-  const updateBoulderData = useCallback((updatedBoulder: BoulderData) => {
-    // Prevent unnecessary updates by checking if the boulder actually changed
-    const existingBoulder = boulders.find(b => b.id === updatedBoulder.id);
-    
-    // Compare key properties to avoid unnecessary updates
-    if (existingBoulder && 
-        existingBoulder.appliedThreshold === updatedBoulder.appliedThreshold &&
-        existingBoulder.stats?.moveCount === updatedBoulder.stats?.moveCount) {
-      return; // No significant changes, skip update
-    }
-    
-    console.log('Updating boulder data:', updatedBoulder.name, 'ID:', updatedBoulder.id);
-    
-    // Update the boulder in the list
-    setBoulders(prev => prev.map(boulder => 
-      boulder.id === updatedBoulder.id ? updatedBoulder : boulder
-    ));
-    
-    // Update selected boulder if it's the same one
-    if (selectedBoulder?.id === updatedBoulder.id) {
-      setSelectedBoulder(updatedBoulder);
-    }
-  }, [boulders, selectedBoulder]);
+  const refreshBoulders = useCallback(() => {
+    console.log('[useCSVData] Refreshing boulder list')
+    loadBoulders()
+  }, [loadBoulders])
 
   const uploadFile = useCallback(async (file: File) => {
     try {
       setIsLoading(true)
       setError(null)
       
-      const newBoulder = await handleFileUpload(file)
+      await handleFileUpload(file)
       
-      // Add to the boulder list
-      setBoulders(prev => [...prev, newBoulder])
-      setSelectedBoulder(newBoulder)
-      
-      console.log('File uploaded successfully:', newBoulder.name)
+      // Refresh boulders after upload
+      await loadBoulders()
     } catch (err) {
+      console.error('[useCSVData] Error uploading file:', err)
       setError(err instanceof Error ? err.message : 'Failed to upload file')
-      console.error('Error uploading file:', err)
       throw err
     } finally {
       setIsLoading(false)
     }
-  }, [])
-
-  const refreshBoulders = useCallback(async () => {
-    await loadBoulders()
   }, [loadBoulders])
 
   // Load boulders on mount
@@ -129,14 +183,24 @@ export function useCSVData(): UseCSVDataResult {
     loadBoulders()
   }, [loadBoulders])
 
+  // Listen for new boulder saves
+  useEffect(() => {
+    const handleBoulderSaved = () => {
+      console.log('[useCSVData] New boulder saved, refreshing list')
+      refreshBoulders()
+    }
+    
+    window.addEventListener('boulderSaved', handleBoulderSaved)
+    return () => window.removeEventListener('boulderSaved', handleBoulderSaved)
+  }, [refreshBoulders])
+
   return {
     boulders,
     selectedBoulder,
     isLoading,
     error,
     selectBoulder,
-    updateBoulderData,
-    uploadFile,
-    refreshBoulders
+    refreshBoulders,
+    uploadFile
   }
 } 

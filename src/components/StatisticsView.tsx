@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback, useMemo } from 'react'
 import type { BoulderData } from '../utils/csvLoader'
 import { useBoulderConfig } from '../context/BoulderConfigContext'
+import { getVisualizationState } from '../store/visualizationStore'
 
 interface StatisticsViewProps {
   selectedBoulder: BoulderData | null
@@ -16,45 +17,16 @@ interface StatData {
   sampleCount: number
 }
 
-// Move detection function
-const detectMoves = (time: number[], acceleration: number[], threshold: number) => {
-  const detectedMoves = [];
-  const minMoveDuration = 0.5;
-  let lastMoveTime = -minMoveDuration;
-  
-  detectedMoves.push({
-    time: 0,
-    acceleration: acceleration[0] || 9.8
-  });
-  
-  for (let i = 1; i < acceleration.length - 1; i++) {
-    const currentAccel = acceleration[i];
-    const currentTime = time[i];
-    
-    if (currentAccel > threshold && 
-        currentAccel > acceleration[i-1] && 
-        currentAccel > acceleration[i+1] &&
-        (currentTime - lastMoveTime) > minMoveDuration) {
-      
-      detectedMoves.push({
-        time: currentTime,
-        acceleration: currentAccel
-      });
-      
-      lastMoveTime = currentTime;
-    }
-  }
-  
-  return detectedMoves;
-};
-
 export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControlPanelVisible }: StatisticsViewProps) {
   const plotRef = useRef<HTMLDivElement>(null)
   const { getThreshold } = useBoulderConfig()
   
-  const currentThreshold = selectedBoulder ? getThreshold(selectedBoulder.id) : 12.0
+  // Get data from global store instead of calculating locally
+  const vizState = getVisualizationState()
+  const currentThreshold = vizState.threshold
+  const globalMoves = vizState.processedMoves || []
 
-  // Calculate statistics
+  // Calculate statistics using global store data
   const stats = useMemo((): StatData => {
     if (!selectedBoulder?.csvData) return {
       maxAccel: 0,
@@ -64,16 +36,15 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       sampleCount: 0
     };
     
-    const moves = detectMoves(selectedBoulder.csvData.time, selectedBoulder.csvData.absoluteAcceleration, currentThreshold);
-    
+    // Use moves from global store instead of calculating locally
     return {
       maxAccel: selectedBoulder.csvData.maxAcceleration,
       avgAccel: selectedBoulder.csvData.avgAcceleration,
-      moveCount: moves.length,
+      moveCount: globalMoves.length,
       duration: selectedBoulder.csvData.duration,
       sampleCount: selectedBoulder.csvData.sampleCount
     };
-  }, [selectedBoulder, currentThreshold]);
+  }, [selectedBoulder, globalMoves.length]);
 
   // Canvas plot rendering
   const updatePlot = useCallback(() => {
@@ -169,23 +140,25 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       }
       ctx.stroke()
 
-      // Move markers
-      const detectedMoves = detectMoves(time, absoluteAcceleration, currentThreshold);
-      
-      detectedMoves.forEach((move, index) => {
-        const x = xScale(move.time)
-        const y = yScale(move.acceleration)
-        
-        ctx.fillStyle = index === 0 ? '#00ffcc' : (move.acceleration > currentThreshold * 1.5 ? '#DE501B' : '#00ffcc')
-        ctx.beginPath()
-        ctx.arc(x, y, index === 0 ? 6 : 4, 0, 2 * Math.PI)
-        ctx.fill()
-        
-        // Move number
-        ctx.fillStyle = '#ffffff'
-        ctx.font = 'bold 10px Arial'
-        ctx.textAlign = 'center'
-        ctx.fillText((index + 1).toString(), x, y - 10)
+      // Move markers - use global store moves instead of local detection
+      globalMoves.forEach((move, index) => {
+        // Find the closest time point in the data for this move
+        const moveTimeIndex = time.findIndex(t => t >= move.startTime)
+        if (moveTimeIndex >= 0 && moveTimeIndex < time.length) {
+          const x = xScale(time[moveTimeIndex])
+          const y = yScale(absoluteAcceleration[moveTimeIndex])
+          
+          ctx.fillStyle = index === 0 ? '#00ff00' : (move.isCrux ? '#DE501B' : '#00ffcc')
+          ctx.beginPath()
+          ctx.arc(x, y, index === 0 ? 6 : 4, 0, 2 * Math.PI)
+          ctx.fill()
+          
+          // Move number
+          ctx.fillStyle = '#ffffff'
+          ctx.font = 'bold 10px Arial'
+          ctx.textAlign = 'center'
+          ctx.fillText((index + 1).toString(), x, y - 10)
+        }
       })
 
       // Axes
@@ -241,62 +214,14 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
     } catch (error) {
       console.error('Error updating plot:', error)
     }
-  }, [selectedBoulder, currentThreshold])
+  }, [selectedBoulder, currentThreshold, globalMoves])
 
   // Update plot when data changes
   useEffect(() => {
     if (selectedBoulder?.csvData) {
       updatePlot()
     }
-  }, [selectedBoulder, currentThreshold, updatePlot])
-
-  // Update boulder data when threshold changes
-  useEffect(() => {
-    if (selectedBoulder?.csvData) {
-      const needsUpdate = !selectedBoulder.appliedThreshold || selectedBoulder.appliedThreshold !== currentThreshold;
-      
-      if (needsUpdate) {
-        console.log(`[StatisticsView] Threshold changed from ${selectedBoulder.appliedThreshold} to ${currentThreshold}, updating moves`);
-        
-        // Debounce the update to prevent race conditions
-        const timeoutId = setTimeout(() => {
-          console.log(`[StatisticsView] Executing debounced move update with threshold ${currentThreshold}`);
-          const newMoves = detectMoves(
-            selectedBoulder.csvData.time,
-            selectedBoulder.csvData.absoluteAcceleration,
-            currentThreshold
-          ).map((move, index) => ({
-            move_number: index + 1,
-            dynamics: Math.min(move.acceleration / 20, 1),
-            isCrux: move.acceleration > currentThreshold * 1.5,
-            thresholdDetected: true,
-            time: move.time,
-            acceleration: move.acceleration
-          }));
-
-          const updatedBoulder: BoulderData = {
-            ...selectedBoulder,
-            moves: newMoves,
-            stats: {
-              ...selectedBoulder.stats,
-              moveCount: newMoves.length,
-              threshold: currentThreshold
-            },
-            appliedThreshold: currentThreshold,
-            // Remove lastUpdated to prevent unnecessary re-renders
-            // lastUpdated: Date.now()
-          };
-          
-          console.log(`[StatisticsView] Calling onBoulderDataUpdate with ${newMoves.length} moves`);
-          onBoulderDataUpdate(updatedBoulder);
-        }, 100); // 100ms debounce
-        
-        return () => clearTimeout(timeoutId);
-      } else {
-        console.log(`[StatisticsView] Threshold unchanged at ${currentThreshold}, skipping update`);
-      }
-    }
-  }, [selectedBoulder?.id, selectedBoulder?.appliedThreshold, currentThreshold, selectedBoulder?.csvData, onBoulderDataUpdate]);
+  }, [selectedBoulder, currentThreshold, globalMoves, updatePlot])
 
   if (!selectedBoulder?.csvData) {
     return (
@@ -334,14 +259,8 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
 
       {/* Plot Area */}
       <div className="flex-1 bg-black/70 border border-cyan-400/40 rounded-xl p-6 backdrop-blur-sm">
-        <div 
-          ref={plotRef}
-          className="w-full h-full flex items-center justify-center"
-        >
-          <canvas
-            className="w-full h-full rounded-lg"
-            style={{ maxWidth: '100%', maxHeight: '100%' }}
-          />
+        <div ref={plotRef} className="w-full h-full">
+          <canvas className="w-full h-full" />
         </div>
       </div>
     </div>

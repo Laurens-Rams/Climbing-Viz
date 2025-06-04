@@ -6,11 +6,8 @@ import ElasticSlider from "./ui/ElasticSlider"
 import { useCSVData } from '../hooks/useCSVData'
 import { debounce } from '../utils/debounce'
 import { 
-  updateSelectedBoulder, 
-  updateProcessedMoves, 
   updateThreshold, 
   updateVisualizerSettings,
-  detectAndProcessMoves,
   getVisualizationState
 } from '../store/visualizationStore'
 
@@ -20,8 +17,8 @@ interface ControlPanelProps {
   onViewChange: (view: 'visualizer' | 'add-boulder') => void
   
   // Visualization mode (within visualizer view)
-  visualizationMode: '3d' | 'statistics'
-  onVisualizationModeChange: (mode: '3d' | 'statistics') => void
+  visualizationMode: '3d' | 'statistics' | 'simple'
+  onVisualizationModeChange: (mode: '3d' | 'statistics' | 'simple') => void
   
   // Settings
   onSettingsChange: (settings: any) => void
@@ -63,38 +60,6 @@ interface StatData {
   sampleCount: number
 }
 
-// Move detection function for statistics
-const detectMoves = (time: number[], acceleration: number[], threshold: number) => {
-  const detectedMoves = [];
-  const minMoveDuration = 0.5;
-  let lastMoveTime = -minMoveDuration;
-  
-  detectedMoves.push({
-    time: 0,
-    acceleration: acceleration[0] || 9.8
-  });
-  
-  for (let i = 1; i < acceleration.length - 1; i++) {
-    const currentAccel = acceleration[i];
-    const currentTime = time[i];
-    
-    if (currentAccel > threshold && 
-        currentAccel > acceleration[i-1] && 
-        currentAccel > acceleration[i+1] &&
-        (currentTime - lastMoveTime) > minMoveDuration) {
-      
-      detectedMoves.push({
-        time: currentTime,
-        acceleration: currentAccel
-      });
-      
-      lastMoveTime = currentTime;
-    }
-  }
-  
-  return detectedMoves;
-};
-
 export function ControlPanel({ 
   currentView, 
   onViewChange, 
@@ -124,7 +89,7 @@ export function ControlPanel({
   const [currentFolder, setCurrentFolder] = useState<string | null>('selection')
   const [isLiveModeActive, setIsLiveModeActive] = useState(false)
   const [selectedServer, setSelectedServer] = useState(0)
-  const [serverUrl, setServerUrl] = useState('http://192.168.1.36')
+  const [serverUrl, setServerUrl] = useState('http://10.237.1.101')
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('disconnected')
   const [fontLoaded, setFontLoaded] = useState(false)
   
@@ -138,6 +103,8 @@ export function ControlPanel({
   // Get current state from global store
   const state = getVisualizationState()
   const selectedBoulderId = state.selectedBoulder?.id
+  const currentThreshold = state.threshold
+  const globalMoves = state.processedMoves || []
   
   // Notify parent of initial visibility state
   useEffect(() => {
@@ -173,16 +140,14 @@ export function ControlPanel({
   }, [])
   
   const servers: ServerOption[] = [
-    { name: 'Server 1 (192.168.1.36)', url: 'http://192.168.1.36' },
+    { name: 'Server 1 (192.168.1.36)', url: 'http://10.237.1.101' },
     { name: 'Server 2 (10.237.1.101)', url: 'http://10.237.1.101' },
     { name: 'Server 3 (192.168.1.100)', url: 'http://192.168.1.100' },
     { name: 'Server 4 (172.20.10.1)', url: 'http://172.20.10.1' },
     { name: 'Server 5 (10.224.1.221)', url: 'http://10.224.1.221' }
   ]
 
-  const currentThreshold = selectedBoulder ? getThreshold(selectedBoulder.id) : 12.0
-
-  // Calculate statistics
+  // Calculate statistics using global store data
   const stats = useMemo((): StatData => {
     if (!selectedBoulder?.csvData) return {
       maxAccel: 0,
@@ -192,57 +157,28 @@ export function ControlPanel({
       sampleCount: 0
     };
     
-    const moves = detectMoves(selectedBoulder.csvData.time, selectedBoulder.csvData.absoluteAcceleration, currentThreshold);
-    
+    // Use moves from global store instead of calculating locally
     return {
       maxAccel: selectedBoulder.csvData.maxAcceleration,
       avgAccel: selectedBoulder.csvData.avgAcceleration,
-      moveCount: moves.length,
+      moveCount: globalMoves.length,
       duration: selectedBoulder.csvData.duration,
       sampleCount: selectedBoulder.csvData.sampleCount
     };
-  }, [selectedBoulder, currentThreshold]);
-
-  // Create debounced threshold update
-  const debouncedThresholdUpdate = useRef(
-    debounce((boulderId: number, threshold: number) => {
-      console.log(`[ControlPanel] Updating threshold for boulder ${boulderId} to ${threshold}`)
-      
-      // Update config
-      setThreshold(boulderId, threshold)
-      
-      // Recalculate moves if we have CSV data
-      if (state.selectedBoulder?.csvData) {
-        const moves = detectAndProcessMoves(
-          state.selectedBoulder.csvData.time,
-          state.selectedBoulder.csvData.absoluteAcceleration,
-          threshold
-        )
-        updateProcessedMoves(moves)
-      }
-    }, 500)
-  ).current
+  }, [selectedBoulder, globalMoves.length]);
   
   // Handle threshold change
   const handleThresholdChange = useCallback((value: number) => {
     if (selectedBoulder?.id !== undefined) {
+      console.log(`🎯 [ControlPanel] THRESHOLD CHANGE: ${currentThreshold} → ${value} for boulder "${selectedBoulder.name}"`)
+      
       // Update local state for UI
       setThreshold(selectedBoulder.id, value)
       
-      // Update global store
+      // Update global store - it will automatically recalculate moves
       updateThreshold(value)
-      
-      // Recalculate moves
-      if (selectedBoulder.csvData) {
-        const moves = detectAndProcessMoves(
-          selectedBoulder.csvData.time,
-          selectedBoulder.csvData.absoluteAcceleration,
-          value
-        )
-        updateProcessedMoves(moves)
-      }
     }
-  }, [selectedBoulder, setThreshold])
+  }, [selectedBoulder, currentThreshold, setThreshold])
   
   // Create debounced settings update
   const debouncedSettingsUpdate = useRef(
@@ -262,18 +198,23 @@ export function ControlPanel({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      debouncedThresholdUpdate.cancel()
       debouncedSettingsUpdate.cancel()
     }
-  }, [debouncedThresholdUpdate, debouncedSettingsUpdate])
+  }, [debouncedSettingsUpdate])
 
   const handleBoulderSelect = useCallback((boulderId: string) => {
     if (boulderId) {
       const id = parseInt(boulderId)
+      console.log(`🗂️ [ControlPanel] BOULDER SELECTED: ID ${id}`)
       selectBoulderFromHook(id)
       onBoulderChange(id)
+      
+      // Sync the saved threshold to the global store
+      const savedThreshold = getThreshold(id)
+      console.log(`🗂️ [ControlPanel] Syncing saved threshold ${savedThreshold} to global store`)
+      updateThreshold(savedThreshold)
     }
-  }, [selectBoulderFromHook, onBoulderChange])
+  }, [selectBoulderFromHook, onBoulderChange, getThreshold])
 
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -327,19 +268,28 @@ export function ControlPanel({
       try {
         await testConnection(serverUrl)
         
+        // Store server URL for later use
+        localStorage.setItem('phyphox-server-url', serverUrl)
+        
         setIsLiveModeActive(true)
         setConnectionStatus('connected')
         onServerToggle(true)
+        
+        console.log('[ControlPanel] Live mode activated with server:', serverUrl)
+        console.log('[ControlPanel] Live recording will be auto-created and selected')
         
       } catch (error) {
         setIsLiveModeActive(false)
         setConnectionStatus('disconnected')
         onServerToggle(false)
+        console.error('[ControlPanel] Live mode connection failed:', error)
       }
     } else {
       setIsLiveModeActive(false)
       setConnectionStatus('disconnected')
       onServerToggle(false)
+      
+      console.log('[ControlPanel] Live mode deactivated')
     }
   }, [isLiveModeActive, serverUrl, testConnection, onServerToggle])
 
@@ -400,6 +350,19 @@ export function ControlPanel({
         { key: 'rotationSpeed', name: 'Rotation Speed', min: 0.0, max: 2.0, step: 0.1 },
         { key: 'liquidSpeed', name: 'Animation Speed', min: 0.0, max: 10.0, step: 0.05 },
         { key: 'liquidSize', name: 'Liquid Size', min: 0.1, max: 5.0, step: 0.1 }
+      ]
+    },
+    {
+      id: 'moveLines',
+      name: '📍 Move Lines',
+      icon: '📍',
+      controls: [
+        { key: 'moveLineLength', name: 'Line Length', min: 0.5, max: 10.0, step: 0.1 },
+        { key: 'moveLineOpacity', name: 'Line Opacity', min: 0.0, max: 1.0, step: 0.05 },
+        { key: 'moveLineWidth', name: 'Line Width', min: 0.5, max: 5.0, step: 0.1 }
+      ],
+      toggleControls: [
+        { key: 'showMovePositionLines', name: 'Show Move Position Lines' }
       ]
     },
     {
@@ -738,6 +701,27 @@ export function ControlPanel({
     );
   };
 
+  // Listen for new boulder saves
+  useEffect(() => {
+    const handleBoulderSaved = (event: CustomEvent) => {
+      console.log('[ControlPanel] New boulder saved, refreshing list')
+      refreshBoulders()
+      
+      // If it's a live recording, auto-select it
+      const boulder = event.detail?.boulder
+      if (boulder && boulder.source === 'live') {
+        console.log('[ControlPanel] Auto-selecting live recording:', boulder.name)
+        setTimeout(() => {
+          selectBoulder(boulder.id)
+          onBoulderChange(boulder.id)
+        }, 500) // Small delay to ensure boulder list is refreshed
+      }
+    }
+    
+    window.addEventListener('boulderSaved', handleBoulderSaved as EventListener)
+    return () => window.removeEventListener('boulderSaved', handleBoulderSaved as EventListener)
+  }, [refreshBoulders, selectBoulder, onBoulderChange])
+
   return (
     <div className={`fixed top-20 right-6 bottom-6 z-50 transition-all duration-300 ${!isVisible ? 'translate-x-full' : ''}`}>
       {/* Toggle button */}
@@ -789,7 +773,7 @@ export function ControlPanel({
               onClick={() => {
                 if (currentView === 'visualizer') {
                   // Toggle visualization mode if already in visualizer
-                  onVisualizationModeChange(visualizationMode === '3d' ? 'statistics' : '3d')
+                  onVisualizationModeChange(visualizationMode === '3d' ? 'statistics' : visualizationMode === 'statistics' ? 'simple' : '3d')
                 } else {
                   // Switch to visualizer view
                   onViewChange('visualizer')
@@ -802,7 +786,7 @@ export function ControlPanel({
               }`}
             >
               {currentView === 'visualizer' 
-                ? (visualizationMode === '3d' ? '🧗 3D View' : '📊 Statistics')
+                ? (visualizationMode === '3d' ? '🧗 3D View' : visualizationMode === 'statistics' ? '📊 Statistics' : '🌊 Simple')
                 : '🧗 Visualizer'
               }
             </button>
@@ -951,7 +935,7 @@ export function ControlPanel({
                       type="text"
                       value={serverUrl}
                       onChange={(e) => setServerUrl(e.target.value)}
-                      placeholder="http://192.168.1.36"
+                      placeholder="http://10.237.1.101"
                       className="w-full px-4 py-3 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none text-sm backdrop-blur-sm transition-all"
                     />
                   </div>
@@ -1020,7 +1004,7 @@ export function ControlPanel({
             </div>
           )}
 
-          {/* Settings Folders */}
+          {/* Attempts Settings */}
           {currentFolder === 'attempts' && (
             <div className="space-y-6">
               {/* Attempts Toggle */}
@@ -1054,8 +1038,53 @@ export function ControlPanel({
             </div>
           )}
           
+          {/* Move Lines Settings */}
+          {currentFolder === 'moveLines' && (
+            <div className="space-y-6">
+              {/* Move Lines Toggle */}
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-cyan-400">Show Move Position Lines</label>
+                <button
+                  onClick={() => {
+                    const newValue = !visualizerSettings.showMovePositionLines
+                    handleSettingChange('showMovePositionLines', newValue)
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    visualizerSettings.showMovePositionLines ? 'bg-cyan-400' : 'bg-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      visualizerSettings.showMovePositionLines ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              
+              {/* Move Line Controls - only show when enabled */}
+              {visualizerSettings.showMovePositionLines && (
+                <div className="space-y-4">
+                  {folders.find(f => f.id === 'moveLines')?.controls.map((control) => (
+                    <ControlSlider key={control.key} control={control} />
+                  ))}
+                </div>
+              )}
+              
+              {/* Info about move lines */}
+              <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-4">
+                <h5 className="text-cyan-400 font-medium mb-2">Move Position Lines</h5>
+                <ul className="text-xs text-gray-400 space-y-1">
+                  <li>• <strong>Green line:</strong> Start position (12 o'clock)</li>
+                  <li>• <strong>Colored lines:</strong> Move positions around circle</li>
+                  <li>• <strong>Crux moves:</strong> Use crux color</li>
+                  <li>• <strong>Dots:</strong> Show exact move positions</li>
+                </ul>
+              </div>
+            </div>
+          )}
+          
           {/* Other Settings Folders */}
-          {currentFolder && currentFolder !== 'selection' && currentFolder !== 'attempts' && (
+          {currentFolder && currentFolder !== 'selection' && currentFolder !== 'presets' && currentFolder !== 'attempts' && currentFolder !== 'moveLines' && (
             <div className="space-y-4">
               {/* Regular Controls */}
               {folders.find(f => f.id === currentFolder)?.controls.map((control) => (

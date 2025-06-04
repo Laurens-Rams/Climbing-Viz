@@ -2,7 +2,14 @@ import React, { useRef, useEffect, Suspense } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
-import { getVisualizationState, markAsUpdated, ProcessedMove, VisualizationState } from '../store/visualizationStore'
+import { 
+  getVisualizationState, 
+  markAsUpdated, 
+  ProcessedMove, 
+  VisualizationState,
+  updateSelectedBoulder,
+  detectAndProcessMoves
+} from '../store/visualizationStore'
 
 // The visualization component that reads from global store at 15 FPS
 function VisualizationScene() {
@@ -10,6 +17,7 @@ function VisualizationScene() {
   const ringsRef = useRef<THREE.Group>(null)
   const centerTextRef = useRef<THREE.Mesh | null>(null)
   const attemptLinesRef = useRef<THREE.Group>(null)
+  const moveLinesRef = useRef<THREE.Group>(null) // Add move lines ref
   const managedObjects = useRef<THREE.Object3D[]>([])
   const lastUpdateRef = useRef<number>(0)
   const lastSettingsRef = useRef<any>(null)
@@ -51,6 +59,11 @@ function VisualizationScene() {
                            JSON.stringify(vizState.visualizerSettings) !== JSON.stringify(lastSettingsRef.current)
     
     if (needsRecreation) {
+      // Only log on actual data changes, not settings changes
+      if (vizState.needsUpdate || vizState.lastUpdateTime !== lastUpdateRef.current) {
+        console.log(`🧗‍♂️ [BoulderVisualizerSimple] RECREATING VISUALIZATION - Moves: ${vizState.processedMoves?.length || 0}`)
+      }
+      
       lastUpdateRef.current = vizState.lastUpdateTime
       lastSettingsRef.current = { ...vizState.visualizerSettings }
       markAsUpdated()
@@ -145,6 +158,7 @@ function VisualizationScene() {
     
     if (ringsRef.current) ringsRef.current.clear()
     if (attemptLinesRef.current) attemptLinesRef.current.clear()
+    if (moveLinesRef.current) moveLinesRef.current.clear() // Clear move lines
     if (centerTextRef.current) {
       if (centerTextRef.current.parent) centerTextRef.current.parent.remove(centerTextRef.current)
       if (centerTextRef.current.geometry) centerTextRef.current.geometry.dispose()
@@ -250,6 +264,9 @@ function VisualizationScene() {
       createAttemptLines(moves, settings)
     }
     
+    // Create move position lines - straight lines from center to specific radius
+    createMovePositionLines(moves, settings)
+    
     console.log(`[BoulderVisualizerSimple] Successfully created ${ringsCreated} rings`)
   }
   
@@ -263,24 +280,34 @@ function VisualizationScene() {
     
     console.log(`[BoulderVisualizerSimple] Creating ${attemptCount} attempt lines`)
     
+    // Calculate how many attempts should be completed (25%)
+    const completedAttemptCount = Math.floor(attemptCount * 0.25)
+    
     for (let i = 0; i < attemptCount; i++) {
       // Generate attempt data like the original
       const boulderSeed = 789.123 // Simple seed
       const angle = seededRandom(boulderSeed + i * 100.123) * Math.PI * 2
       
-      // Generate completion percentage with exponential distribution (more failures early)
-      const randomValue = seededRandom(boulderSeed + i * 200.456)
+      // Determine if this attempt is completed (first 25% are completed)
+      const isCompleted = i < completedAttemptCount
+      
+      // Generate completion percentage
       let completionPercent
-      if (randomValue < 0.4) {
-        completionPercent = 0.1 + randomValue * 0.5 // 10-30%
-      } else if (randomValue < 0.7) {
-        completionPercent = 0.3 + (randomValue - 0.4) * 1.0 // 30-60%
-      } else if (randomValue < 0.9) {
-        completionPercent = 0.6 + (randomValue - 0.7) * 1.25 // 60-85%
+      if (isCompleted) {
+        // Completed attempts always reach 100%
+        completionPercent = 1.0
       } else {
-        completionPercent = 0.85 + (randomValue - 0.9) * 1.5 // 85-100%
+        // Non-completed attempts have exponential distribution (more failures early)
+        const randomValue = seededRandom(boulderSeed + i * 200.456)
+        if (randomValue < 0.5) {
+          completionPercent = 0.1 + randomValue * 0.4 // 10-30%
+        } else if (randomValue < 0.8) {
+          completionPercent = 0.3 + (randomValue - 0.5) * 1.0 // 30-60%
+        } else {
+          completionPercent = 0.6 + (randomValue - 0.8) * 1.25 // 60-85%
+        }
+        completionPercent = Math.min(0.85, Math.max(0.1, completionPercent)) // Cap at 85% for non-completed
       }
-      completionPercent = Math.min(1.0, Math.max(0.1, completionPercent))
       
       // Calculate dramatic completion for more visual impact
       const dramaticCompletion = Math.pow(completionPercent, 1.8)
@@ -344,10 +371,15 @@ function VisualizationScene() {
       // Add alpha attribute to geometry
       tubeGeometry.setAttribute('alpha', new THREE.Float32BufferAttribute(alphas, 1))
       
+      // Different colors for completed vs incomplete attempts
+      // White with 10% turquoise for completed attempts
+      const completedColor = new THREE.Color(0xffffff).lerp(new THREE.Color(0x40e0d0), 0.1) // White + 10% turquoise
+      const lineColor = isCompleted ? completedColor : new THREE.Color(0xffffff) // Turquoise-tinted white for completed, pure white for incomplete
+      
       // Use custom shader material for smooth opacity gradient
       const material = new THREE.ShaderMaterial({
         uniforms: {
-          color: { value: new THREE.Color(0xffffff) }
+          color: { value: lineColor }
         },
         vertexShader: `
           attribute float alpha;
@@ -372,14 +404,16 @@ function VisualizationScene() {
       attemptLinesRef.current.add(line)
       managedObjects.current.push(line)
       
-      // Add completion dot at the end
+      // Add completion dot at the end - ALWAYS 100% WHITE with size adjustments
       const lastPoint = points[points.length - 1]
-      const dotSize = 0.015 + 0.03 * completionPercent
+      const baseDotSize = 0.015 + 0.03 * completionPercent
+      // Finished dots are 30% bigger, unfinished dots are 30% smaller
+      const dotSize = isCompleted ? baseDotSize * 1.3 : baseDotSize * 0.7
       const dotGeometry = new THREE.SphereGeometry(dotSize, 10, 6)
       const dotMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: (settings.attemptOpacity || 0.8) * 0.9
+        color: 0xffffff, // ALWAYS 100% WHITE
+        transparent: false, // No transparency - always 100% opacity
+        opacity: 1.0 // Always 100% opacity
       })
       
       const dot = new THREE.Mesh(dotGeometry, dotMaterial)
@@ -570,16 +604,253 @@ function VisualizationScene() {
     }
   }
   
+  // Create move position lines - straight lines from center to specific radius
+  const createMovePositionLines = (moves: ProcessedMove[], settings: any) => {
+    if (!settings.showMovePositionLines || !moveLinesRef.current) return
+    
+    const moveCount = moves.length
+    if (moveCount <= 0) return
+    
+    console.log(`[BoulderVisualizerSimple] Creating ${moveCount} move position lines`)
+    
+    // Calculate the radius where lines end (controllable from settings)
+    const startRadius = settings.baseRadius * settings.combinedSize
+    const endRadius = startRadius + settings.moveLineLength
+    
+    for (let i = 0; i < moveCount; i++) {
+      const move = moves[i]
+      
+      // Calculate angle for this move - start at 12 o'clock (top) by adding PI/2
+      const anglePerMove = (Math.PI * 2) / moveCount
+      const moveAngle = i * anglePerMove + Math.PI / 2
+      
+      // Calculate line start and end positions
+      const startX = Math.cos(moveAngle) * startRadius
+      const startY = Math.sin(moveAngle) * startRadius
+      const endX = Math.cos(moveAngle) * endRadius
+      const endY = Math.sin(moveAngle) * endRadius
+      
+      // Create line geometry
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(startX, startY, 0),
+        new THREE.Vector3(endX, endY, 0)
+      ])
+      
+      // Determine line color based on move properties
+      const isStartMove = i === 0 && move.dynamics === 0
+      const isCrux = move.isCrux
+      
+      let lineColor = 0xffffff // Default white
+      if (isStartMove) {
+        lineColor = 0x00ff00 // Green for start move
+      } else if (isCrux) {
+        lineColor = parseInt(settings.cruxColor.replace('#', ''), 16) // Crux color
+      } else {
+        lineColor = parseInt(settings.moveColor.replace('#', ''), 16) // Normal move color
+      }
+      
+      // Create line material with opacity
+      const lineMaterial = new THREE.LineBasicMaterial({
+        color: lineColor,
+        transparent: true,
+        opacity: settings.moveLineOpacity || 0.8,
+        linewidth: settings.moveLineWidth || 2
+      })
+      
+      // Create line mesh
+      const line = new THREE.Line(lineGeometry, lineMaterial)
+      line.position.z = 0.1 // Place slightly in front of rings
+      
+      moveLinesRef.current.add(line)
+      managedObjects.current.push(line)
+      
+      // Add a small dot at the end of each line to show exact move position
+      const dotGeometry = new THREE.SphereGeometry(0.05, 8, 6)
+      const dotMaterial = new THREE.MeshBasicMaterial({
+        color: lineColor,
+        transparent: true,
+        opacity: settings.moveLineOpacity || 0.8
+      })
+      
+      const dot = new THREE.Mesh(dotGeometry, dotMaterial)
+      dot.position.set(endX, endY, 0.1)
+      
+      moveLinesRef.current.add(dot)
+      managedObjects.current.push(dot)
+    }
+    
+    console.log(`[BoulderVisualizerSimple] Created ${moveCount} move position lines`)
+  }
+  
   return (
     <group ref={meshRef}>
       <group ref={ringsRef} />
       <group ref={attemptLinesRef} />
+      <group ref={moveLinesRef} />
     </group>
   )
 }
 
 // Main component
 export function BoulderVisualizerSimple() {
+  // Add live data event listener
+  useEffect(() => {
+    let liveRecordingId: number | null = null
+    
+    const handleLiveDataUpdate = (event: CustomEvent) => {
+      const { data, isRecording, timestamp } = event.detail
+      
+      if (data && data.acc_time && data.accX && data.accY && data.accZ) {
+        console.log('[BoulderVisualizerSimple] Received live data update:', {
+          timePoints: data.acc_time.buffer?.length || 0,
+          isRecording,
+          timestamp
+        })
+        
+        // Convert Phyphox data to CSV format for compatibility with the store
+        const timeArray = data.acc_time.buffer || []
+        const accXArray = data.accX.buffer || []
+        const accYArray = data.accY.buffer || []
+        const accZArray = data.accZ.buffer || []
+        
+        if (timeArray.length > 0) {
+          // Create or update live recording ID
+          if (liveRecordingId === null) {
+            liveRecordingId = Date.now() // Use timestamp as unique ID
+            console.log('[BoulderVisualizerSimple] Created new live recording ID:', liveRecordingId)
+          }
+          
+          const duration = timeArray.length > 0 ? timeArray[timeArray.length - 1] - timeArray[0] : 0
+          const recordingNumber = Math.floor(Date.now() / 1000) % 1000 // Simple incrementing number
+          
+          // Create a live boulder data object
+          const liveBoulderData = {
+            id: liveRecordingId,
+            name: `LiveRecording${recordingNumber} (${Math.floor(duration)}s)`,
+            grade: 'Live',
+            type: 'csv' as const,
+            description: `Live recording - ${Math.floor(duration)}s duration`,
+            csvFile: `live-recording-${liveRecordingId}.csv`,
+            routeSetter: 'Live Recording',
+            numberOfMoves: 0,
+            moves: [],
+            csvData: {
+              time: timeArray.map((t: number) => t - timeArray[0]), // Normalize to start at 0
+              absoluteAcceleration: timeArray.map((_: number, i: number) => {
+                const x = accXArray[i] || 0
+                const y = accYArray[i] || 0
+                const z = accZArray[i] || 0
+                return Math.sqrt(x * x + y * y + z * z)
+              }),
+              filename: `live-recording-${liveRecordingId}.csv`,
+              duration: duration,
+              maxAcceleration: 0, // Will be calculated
+              avgAcceleration: 0, // Will be calculated
+              sampleCount: timeArray.length
+            },
+            stats: {
+              duration: '0',
+              maxAcceleration: '0',
+              avgAcceleration: '0',
+              moveCount: 0,
+              sampleCount: timeArray.length
+            },
+            recordedAt: new Date().toISOString(),
+            source: 'live'
+          }
+          
+          // Calculate acceleration statistics
+          if (liveBoulderData.csvData) {
+            const accels = liveBoulderData.csvData.absoluteAcceleration
+            liveBoulderData.csvData.maxAcceleration = Math.max(...accels)
+            liveBoulderData.csvData.avgAcceleration = accels.reduce((a: number, b: number) => a + b, 0) / accels.length
+            liveBoulderData.stats.maxAcceleration = liveBoulderData.csvData.maxAcceleration.toFixed(2)
+            liveBoulderData.stats.avgAcceleration = liveBoulderData.csvData.avgAcceleration.toFixed(2)
+            liveBoulderData.stats.duration = liveBoulderData.csvData.duration.toFixed(1)
+          }
+          
+          // Get current threshold for move detection
+          const currentState = getVisualizationState()
+          const threshold = currentState.threshold || 12.0
+          
+          // Process moves from live data
+          if (liveBoulderData.csvData) {
+            const moves = detectAndProcessMoves(
+              liveBoulderData.csvData.time,
+              liveBoulderData.csvData.absoluteAcceleration,
+              threshold
+            )
+            
+            liveBoulderData.numberOfMoves = moves.length
+            liveBoulderData.stats.moveCount = moves.length
+            
+            // Save to localStorage as Phyphox boulder
+            const existingBoulders = JSON.parse(localStorage.getItem('climbing-boulders') || '[]')
+            const existingIndex = existingBoulders.findIndex((b: any) => b.id === liveRecordingId)
+            
+            const boulderForStorage = {
+              id: liveBoulderData.id,
+              name: liveBoulderData.name,
+              grade: liveBoulderData.grade,
+              routeSetter: liveBoulderData.routeSetter,
+              numberOfMoves: liveBoulderData.numberOfMoves,
+              date: new Date().toISOString().split('T')[0],
+              recordedAt: liveBoulderData.recordedAt,
+              moves: moves,
+              rawData: {
+                acc_time: { buffer: timeArray },
+                accX: { buffer: accXArray },
+                accY: { buffer: accYArray },
+                accZ: { buffer: accZArray }
+              },
+              source: 'phyphox',
+              isLiveRecording: true
+            }
+            
+            if (existingIndex >= 0) {
+              // Update existing entry
+              existingBoulders[existingIndex] = boulderForStorage
+            } else {
+              // Add new entry
+              existingBoulders.push(boulderForStorage)
+            }
+            
+            localStorage.setItem('climbing-boulders', JSON.stringify(existingBoulders))
+            
+            // Update the store
+            updateSelectedBoulder(liveBoulderData)
+            
+            // Trigger boulder list refresh and selection
+            window.dispatchEvent(new CustomEvent('boulderSaved', { 
+              detail: { boulder: liveBoulderData }
+            }))
+            
+            // Auto-select this boulder in the UI
+            document.dispatchEvent(new CustomEvent('boulderSelectionChanged', {
+              detail: { boulderId: liveBoulderData.id, source: 'live-recording' }
+            }))
+            
+            console.log('[BoulderVisualizerSimple] Updated live recording:', {
+              name: liveBoulderData.name,
+              moves: moves.length,
+              dataPoints: liveBoulderData.csvData.time.length,
+              duration: liveBoulderData.stats.duration
+            })
+          }
+        }
+      }
+    }
+    
+    // Listen for live data updates
+    window.addEventListener('liveDataUpdate', handleLiveDataUpdate as EventListener)
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('liveDataUpdate', handleLiveDataUpdate as EventListener)
+      liveRecordingId = null
+    }
+  }, [])
+
   return (
     <div className="w-full h-full relative overflow-hidden" style={{ background: 'transparent' }}>
       <Canvas

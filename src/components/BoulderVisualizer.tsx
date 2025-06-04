@@ -74,7 +74,10 @@ function convertBoulderDataForHook(boulderData: BoulderData | null, threshold: n
     const recalculatedMoves = detectedMoves.map((move, index) => {
       // Normalize dynamics between 0.1 and 1.0 (same as CSV loader)
       let dynamics = 0.1;
-      if (range > 0) {
+      if (index === 0) {
+        // First move is always the start move with dynamics 0
+        dynamics = 0;
+      } else if (range > 0) {
         dynamics = 0.1 + ((move.acceleration - minAccel) / range) * 0.9;
       }
       

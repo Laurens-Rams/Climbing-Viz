@@ -2,7 +2,7 @@ class RemoteDataHandler {
     constructor() {
         this.isPolling = false;
         this.recordedData = [];
-        this.remoteUrl = 'http://192.168.1.36';
+        this.remoteUrl = 'http://10.237.1.101';
         this.pollIntervalId = null;
         this.pollRate = 200; // Keep fast polling for data collection
         this.onDataCallback = null;

@@ -45,6 +45,12 @@ export interface VisualizationState {
     // Line Thickness
     lineWidth: number
     
+    // Move Position Lines - NEW SETTINGS
+    showMovePositionLines: boolean
+    moveLineLength: number
+    moveLineOpacity: number
+    moveLineWidth: number
+    
     // Attempt Visualization (restored from original)
     showAttemptLines: boolean
     maxAttempts: number
@@ -67,6 +73,7 @@ export interface VisualizationState {
   // State flags
   needsUpdate: boolean
   lastUpdateTime: number
+  lastMoveUpdateTime: number | null
 }
 
 export interface ProcessedMove {
@@ -119,6 +126,12 @@ let visualizationState: VisualizationState = {
     // Line Thickness - Updated to match user's current settings
     lineWidth: 0.6,
     
+    // Move Position Lines - NEW SETTINGS
+    showMovePositionLines: true,
+    moveLineLength: 3.0,
+    moveLineOpacity: 0.8,
+    moveLineWidth: 2.0,
+    
     // Attempt Visualization (restored from original) - Updated to match user's current settings
     showAttemptLines: true,
     maxAttempts: 85.0,
@@ -138,7 +151,8 @@ let visualizationState: VisualizationState = {
     maxRadiusScale: 1.20
   },
   needsUpdate: false,
-  lastUpdateTime: Date.now()
+  lastUpdateTime: Date.now(),
+  lastMoveUpdateTime: null
 }
 
 // Getter for the visualizer to read state
@@ -147,20 +161,60 @@ export function getVisualizationState(): VisualizationState {
 }
 
 // Update functions - ONLY called from controller
-export function updateSelectedBoulder(boulder: BoulderData | null) {
+export function updateSelectedBoulder(boulder: BoulderData | null, savedThreshold?: number) {
+  console.log(`📊 [VisualizationStore] BOULDER UPDATED: ${boulder ? `"${boulder.name}" (${boulder.csvData?.time.length || 0} data points)` : 'null'}`)
   visualizationState.selectedBoulder = boulder
+  
+  // If a saved threshold is provided, use it
+  if (savedThreshold !== undefined) {
+    console.log(`📊 [VisualizationStore] Using saved threshold: ${savedThreshold}`)
+    visualizationState.threshold = savedThreshold
+  }
+  
+  // When a new boulder is selected, recalculate moves with current threshold
+  if (boulder && boulder.csvData) {
+    const moves = detectAndProcessMoves(
+      boulder.csvData.time,
+      boulder.csvData.absoluteAcceleration,
+      visualizationState.threshold
+    )
+    console.log(`📊 [VisualizationStore] AUTO-CALCULATED ${moves.length} moves with threshold ${visualizationState.threshold}`)
+    visualizationState.processedMoves = moves
+  } else {
+    visualizationState.processedMoves = null
+  }
+  
   visualizationState.needsUpdate = true
   visualizationState.lastUpdateTime = Date.now()
 }
 
-export function updateProcessedMoves(moves: ProcessedMove[] | null) {
+export function updateProcessedMoves(moves: ProcessedMove[] | null, source: string = 'unknown') {
+  const timestamp = Date.now()
+  console.log(`📊 [VisualizationStore] MOVES UPDATED: ${moves ? `${moves.length} moves` : 'null'} (source: ${source}, timestamp: ${timestamp})`)
+  
+  if (moves && moves.length > 0) {
+    console.log(`📊 [VisualizationStore] First move: dynamics=${moves[0].dynamics}, Last move: dynamics=${moves[moves.length-1].dynamics}`)
+  }
   visualizationState.processedMoves = moves
   visualizationState.needsUpdate = true
-  visualizationState.lastUpdateTime = Date.now()
+  visualizationState.lastUpdateTime = timestamp
 }
 
 export function updateThreshold(threshold: number) {
+  console.log(`📊 [VisualizationStore] THRESHOLD UPDATED: ${visualizationState.threshold} → ${threshold}`)
   visualizationState.threshold = threshold
+  
+  // Automatically recalculate moves when threshold changes
+  if (visualizationState.selectedBoulder && visualizationState.selectedBoulder.csvData) {
+    const moves = detectAndProcessMoves(
+      visualizationState.selectedBoulder.csvData.time,
+      visualizationState.selectedBoulder.csvData.absoluteAcceleration,
+      threshold
+    )
+    console.log(`📊 [VisualizationStore] AUTO-RECALCULATED ${moves.length} moves with new threshold ${threshold}`)
+    visualizationState.processedMoves = moves
+  }
+  
   visualizationState.needsUpdate = true
   visualizationState.lastUpdateTime = Date.now()
 }
@@ -187,7 +241,18 @@ export function detectAndProcessMoves(
   const moves: ProcessedMove[] = []
   let inMove = false
   let moveStartIdx = 0
-  let moveIndex = 0
+  let moveIndex = 1 // Start at 1 since index 0 will be the start move
+  
+  // Always add a start move at index 0 with dynamics 0
+  moves.push({
+    index: 0,
+    startTime: time[0] || 0,
+    endTime: time[0] || 0,
+    duration: 0,
+    acceleration: acceleration[0] || 9.8,
+    dynamics: 0, // Start move always has dynamics 0
+    isCrux: false
+  })
   
   for (let i = 0; i < acceleration.length; i++) {
     if (!inMove && acceleration[i] >= threshold) {
@@ -222,9 +287,10 @@ export function detectAndProcessMoves(
     })
   }
   
-  // Calculate dynamics and identify crux moves
-  if (moves.length > 0) {
-    const accelerations = moves.map(m => m.acceleration)
+  // Calculate dynamics and identify crux moves (skip the start move at index 0)
+  if (moves.length > 1) {
+    const actualMoves = moves.slice(1) // Exclude start move from calculations
+    const accelerations = actualMoves.map(m => m.acceleration)
     const maxAccel = Math.max(...accelerations)
     const minAccel = Math.min(...accelerations)
     const range = maxAccel - minAccel
@@ -233,7 +299,7 @@ export function detectAndProcessMoves(
     const avgAccel = accelerations.reduce((a, b) => a + b, 0) / accelerations.length
     const threshold = avgAccel * 1.2
     
-    moves.forEach(move => {
+    actualMoves.forEach(move => {
       // Normalize dynamics between 0.1 and 1.0
       if (range > 0) {
         move.dynamics = 0.1 + ((move.acceleration - minAccel) / range) * 0.9

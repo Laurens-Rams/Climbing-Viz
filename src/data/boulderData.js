@@ -229,7 +229,7 @@ function detectMovesFromAcceleration(time, acceleration) {
     moves.push({
         time: 0,
         type: 'start',
-        dynamics: 0.5,
+        dynamics: 0,
         isCrux: false,
         acceleration: acceleration[0] || 9.8, // Use first acceleration value or gravity
         description: 'Starting position'

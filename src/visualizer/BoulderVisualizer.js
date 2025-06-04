@@ -1432,7 +1432,7 @@ export class BoulderVisualizer {
                 id: 0,
                 time: rawData[0].time,
                 type: 'start',
-                dynamics: 0.3,
+                dynamics: 0, // Start move always has dynamics 0
                 isCrux: false,
                 x: 0,
                 y: 0,
