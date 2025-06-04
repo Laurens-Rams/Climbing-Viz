@@ -193,7 +193,14 @@ export function ControlPanel({
   const handleSettingChange = useCallback((key: string, value: any) => {
     const newSettings = { ...visualizerSettings, [key]: value }
     debouncedSettingsUpdate(newSettings)
-  }, [visualizerSettings, debouncedSettingsUpdate])
+    
+    // If it's a move detection setting, trigger move recalculation
+    const moveDetectionKeys = ['stillThreshold', 'minStillDuration', 'minMoveDuration', 'maxMoveDuration', 'maxMoveSequence']
+    if (moveDetectionKeys.includes(key) && selectedBoulder) {
+      console.log(`🔧 [ControlPanel] Move detection setting changed: ${key} = ${value}, triggering recalculation`)
+      // The global store will automatically recalculate when settings are updated
+    }
+  }, [visualizerSettings, debouncedSettingsUpdate, selectedBoulder])
   
   // Cleanup on unmount
   useEffect(() => {
@@ -305,6 +312,18 @@ export function ControlPanel({
       name: '🎯 Presets',
       icon: '🎯',
       controls: []
+    },
+    {
+      id: 'moveDetection',
+      name: '🔍 Move Detection',
+      icon: '🔍',
+      controls: [
+        { key: 'stillThreshold', name: 'Still Threshold', min: 0.5, max: 8.0, step: 0.1 },
+        { key: 'minStillDuration', name: 'Min Still Duration', min: 0.2, max: 3.0, step: 0.1 },
+        { key: 'minMoveDuration', name: 'Min Move Duration', min: 0.1, max: 2.0, step: 0.1 },
+        { key: 'maxMoveDuration', name: 'Max Move Duration', min: 2.0, max: 10.0, step: 0.5 },
+        { key: 'maxMoveSequence', name: 'Max Move Sequence', min: 1, max: 5, step: 1 }
+      ]
     },
     {
       id: 'basics',
@@ -886,7 +905,7 @@ export function ControlPanel({
                 </div>
                 <ElasticSlider
                   defaultValue={currentThreshold}
-                  startingValue={8}
+                  startingValue={0}
                   maxValue={50}
                   isStepped={true}
                   stepSize={0.5}
@@ -1083,8 +1102,38 @@ export function ControlPanel({
             </div>
           )}
           
+          {/* Move Detection Settings */}
+          {currentFolder === 'moveDetection' && (
+            <div className="space-y-6">
+              <div className="bg-cyan-400/10 border border-cyan-400/40 rounded-lg p-4">
+                <h5 className="text-cyan-400 font-medium mb-2">Stillness-Based Move Detection</h5>
+                <ul className="text-xs text-gray-400 space-y-1">
+                  <li>• <strong>Still Threshold:</strong> Below this = holding position</li>
+                  <li>• <strong>Min Still Duration:</strong> How long to hold before counting</li>
+                  <li>• <strong>Min Move Duration:</strong> Minimum time for a valid move</li>
+                  <li>• <strong>Max Move Duration:</strong> Longer moves get split</li>
+                  <li>• <strong>Max Move Sequence:</strong> Max consecutive moves</li>
+                </ul>
+              </div>
+              
+              <div className="space-y-4">
+                {folders.find(f => f.id === 'moveDetection')?.controls.map((control) => (
+                  <ControlSlider key={control.key} control={control} />
+                ))}
+              </div>
+              
+              <div className="bg-yellow-400/10 border border-yellow-400/40 rounded-lg p-4">
+                <h5 className="text-yellow-400 font-medium mb-2">⚠️ Algorithm Info</h5>
+                <p className="text-xs text-gray-400">
+                  Changes to these settings will automatically recalculate moves for the current boulder. 
+                  The main "Move Threshold" slider controls when movement starts.
+                </p>
+              </div>
+            </div>
+          )}
+          
           {/* Other Settings Folders */}
-          {currentFolder && currentFolder !== 'selection' && currentFolder !== 'presets' && currentFolder !== 'attempts' && currentFolder !== 'moveLines' && (
+          {currentFolder && currentFolder !== 'selection' && currentFolder !== 'presets' && currentFolder !== 'attempts' && currentFolder !== 'moveLines' && currentFolder !== 'moveDetection' && (
             <div className="space-y-4">
               {/* Regular Controls */}
               {folders.find(f => f.id === currentFolder)?.controls.map((control) => (

@@ -85,6 +85,15 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       const xScale = (t: number) => padding.left + ((t - minTime) / (maxTime - minTime)) * plotWidth
       const yScale = (a: number) => padding.top + plotHeight - ((a - minAccel) / (maxAccel - minAccel)) * plotHeight
 
+      // Draw stillness zones (NEW)
+      const STILL_THRESHOLD = vizState.visualizerSettings.stillThreshold // Use configurable value
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.1)' // Green with low opacity
+      ctx.fillRect(padding.left, yScale(STILL_THRESHOLD), plotWidth, yScale(0) - yScale(STILL_THRESHOLD))
+      
+      // Draw movement zone (NEW)
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.1)' // Red with low opacity
+      ctx.fillRect(padding.left, padding.top, plotWidth, yScale(currentThreshold) - padding.top)
+      
       // Grid
       ctx.strokeStyle = '#333'
       ctx.lineWidth = 1
@@ -110,7 +119,22 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       
       ctx.setLineDash([])
 
-      // Threshold line
+      // Stillness threshold line (NEW)
+      ctx.strokeStyle = '#22c55e' // Green
+      ctx.lineWidth = 2
+      ctx.setLineDash([5, 5])
+      const stillThresholdY = yScale(STILL_THRESHOLD)
+      ctx.beginPath()
+      ctx.moveTo(padding.left, stillThresholdY)
+      ctx.lineTo(padding.left + plotWidth, stillThresholdY)
+      ctx.stroke()
+      ctx.setLineDash([])
+      
+      ctx.fillStyle = '#22c55e'
+      ctx.font = 'bold 12px Arial'
+      ctx.fillText(`Still Zone: <${STILL_THRESHOLD}m/s²`, padding.left + 10, stillThresholdY + 15)
+
+      // Movement threshold line
       ctx.strokeStyle = '#ff4444'
       ctx.lineWidth = 2
       const thresholdY = yScale(currentThreshold)
@@ -121,7 +145,38 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       
       ctx.fillStyle = '#ff4444'
       ctx.font = 'bold 12px Arial'
-      ctx.fillText(`Threshold: ${currentThreshold}m/s²`, padding.left + 10, thresholdY - 8)
+      ctx.fillText(`Move Threshold: ${currentThreshold}m/s²`, padding.left + 10, thresholdY - 8)
+
+      // Draw move periods as shaded regions (NEW)
+      globalMoves.forEach((move, index) => {
+        if (index === 0) return // Skip start move
+        
+        const startX = xScale(move.startTime)
+        const endX = xScale(move.endTime)
+        
+        // Shade the move period
+        ctx.fillStyle = move.isCrux ? 'rgba(222, 80, 27, 0.2)' : 'rgba(0, 255, 204, 0.2)'
+        ctx.fillRect(startX, padding.top, endX - startX, plotHeight)
+        
+        // Draw vertical lines at move boundaries
+        ctx.strokeStyle = move.isCrux ? '#DE501B' : '#00ffcc'
+        ctx.lineWidth = 1
+        ctx.setLineDash([3, 3])
+        
+        // Start line
+        ctx.beginPath()
+        ctx.moveTo(startX, padding.top)
+        ctx.lineTo(startX, padding.top + plotHeight)
+        ctx.stroke()
+        
+        // End line
+        ctx.beginPath()
+        ctx.moveTo(endX, padding.top)
+        ctx.lineTo(endX, padding.top + plotHeight)
+        ctx.stroke()
+        
+        ctx.setLineDash([])
+      })
 
       // Data line
       ctx.strokeStyle = '#00ffcc'
@@ -142,11 +197,24 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
 
       // Move markers - use global store moves instead of local detection
       globalMoves.forEach((move, index) => {
-        // Find the closest time point in the data for this move
-        const moveTimeIndex = time.findIndex(t => t >= move.startTime)
-        if (moveTimeIndex >= 0 && moveTimeIndex < time.length) {
-          const x = xScale(time[moveTimeIndex])
-          const y = yScale(absoluteAcceleration[moveTimeIndex])
+        // Find the peak acceleration point in this move
+        const moveStartIdx = time.findIndex(t => t >= move.startTime)
+        const moveEndIdx = time.findIndex(t => t >= move.endTime)
+        
+        if (moveStartIdx >= 0 && moveEndIdx >= 0) {
+          // Find peak within move period
+          let peakIdx = moveStartIdx
+          let peakAccel = absoluteAcceleration[moveStartIdx]
+          
+          for (let i = moveStartIdx; i <= moveEndIdx && i < absoluteAcceleration.length; i++) {
+            if (absoluteAcceleration[i] > peakAccel) {
+              peakAccel = absoluteAcceleration[i]
+              peakIdx = i
+            }
+          }
+          
+          const x = xScale(time[peakIdx])
+          const y = yScale(peakAccel)
           
           ctx.fillStyle = index === 0 ? '#00ff00' : (move.isCrux ? '#DE501B' : '#00ffcc')
           ctx.beginPath()
