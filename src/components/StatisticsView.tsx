@@ -175,11 +175,6 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       ctx.stroke()
 
       // Move markers - use global store moves instead of local detection
-      console.log(`📊 [StatisticsView] Processing moves for labeling:`)
-      globalMoves.forEach((move, index) => {
-        console.log(`  Index ${index}: isCrux=${move.isCrux}, accel=${move.acceleration?.toFixed(1)}, will be ${index === 0 ? 'SKIPPED' : `labeled as Move ${index}`}`)
-      })
-      
       globalMoves.forEach((move, index) => {
         if (index === 0) return // Skip start move
         
