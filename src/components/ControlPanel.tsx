@@ -195,7 +195,7 @@ export function ControlPanel({
     debouncedSettingsUpdate(newSettings)
     
     // If it's a move detection setting, trigger move recalculation
-    const moveDetectionKeys = ['moveThreshold', 'stillThreshold', 'minStillDuration', 'minMoveDuration', 'maxMoveDuration', 'maxMoveSequence']
+    const moveDetectionKeys = ['moveThreshold', 'minStillDuration', 'minMoveDuration', 'maxMoveDuration', 'maxMoveSequence']
     if (moveDetectionKeys.includes(key) && selectedBoulder) {
       console.log(`🔧 [ControlPanel] Move detection setting changed: ${key} = ${value}, triggering recalculation`)
       // The global store will automatically recalculate when settings are updated
@@ -319,7 +319,6 @@ export function ControlPanel({
       icon: '🔍',
       controls: [
         { key: 'moveThreshold', name: 'Move Threshold', min: 0.0, max: 50.0, step: 0.5 },
-        { key: 'stillThreshold', name: 'Still Threshold', min: 0.5, max: 8.0, step: 0.1 },
         { key: 'minStillDuration', name: 'Min Still Duration', min: 0.2, max: 3.0, step: 0.1 },
         { key: 'minMoveDuration', name: 'Min Move Duration', min: 0.1, max: 2.0, step: 0.1 },
         { key: 'maxMoveDuration', name: 'Max Move Duration', min: 2.0, max: 10.0, step: 0.5 },
@@ -1091,7 +1090,7 @@ export function ControlPanel({
                 <h5 className="text-cyan-400 font-medium mb-2">Stillness-Based Move Detection</h5>
                 <ul className="text-xs text-gray-400 space-y-1">
                   <li>• <strong>Move Threshold:</strong> Above this = movement detected</li>
-                  <li>• <strong>Still Threshold:</strong> Below this = holding position</li>
+                  <li>• <strong>Still Zone:</strong> Auto-calculated as Move Threshold ÷ 2.5</li>
                   <li>• <strong>Min Still Duration:</strong> How long to hold before counting</li>
                   <li>• <strong>Min Move Duration:</strong> Minimum time for a valid move</li>
                   <li>• <strong>Max Move Duration:</strong> Longer moves get split</li>

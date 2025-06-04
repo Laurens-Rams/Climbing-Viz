@@ -86,7 +86,7 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       const yScale = (a: number) => padding.top + plotHeight - ((a - minAccel) / (maxAccel - minAccel)) * plotHeight
 
       // Draw stillness zones (NEW)
-      const STILL_THRESHOLD = vizState.visualizerSettings.stillThreshold // Use configurable value
+      const STILL_THRESHOLD = vizState.visualizerSettings.moveThreshold / 2.5 // Auto-calculated
       ctx.fillStyle = 'rgba(34, 197, 94, 0.1)' // Green with low opacity
       ctx.fillRect(padding.left, yScale(STILL_THRESHOLD), plotWidth, yScale(0) - yScale(STILL_THRESHOLD))
       

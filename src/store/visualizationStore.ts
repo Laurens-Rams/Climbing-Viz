@@ -133,11 +133,11 @@ let visualizationState: VisualizationState = {
     centerTextSize: 1.0,
     
     // Move Detection Algorithm Parameters
-    moveThreshold: 2.0,
-    stillThreshold: 2.5,
-    minStillDuration: 0.8,
-    minMoveDuration: 0.3,
-    maxMoveDuration: 3.0,
+    moveThreshold: 8.0,
+    stillThreshold: 3.0,
+    minStillDuration: 1.0,
+    minMoveDuration: 0.5,
+    maxMoveDuration: 4.0,
     maxMoveSequence: 2,
     
     // Line Thickness - Updated to match user's current settings
@@ -242,7 +242,7 @@ export function updateVisualizerSettings(settings: Partial<VisualizationState['v
   }
   
   // Check if move detection settings changed
-  const moveDetectionKeys = ['moveThreshold', 'stillThreshold', 'minStillDuration', 'minMoveDuration', 'maxMoveDuration', 'maxMoveSequence']
+  const moveDetectionKeys = ['moveThreshold', 'minStillDuration', 'minMoveDuration', 'maxMoveDuration', 'maxMoveSequence']
   const moveDetectionChanged = moveDetectionKeys.some(key => 
     settings[key as keyof typeof settings] !== undefined && 
     settings[key as keyof typeof settings] !== oldSettings[key as keyof typeof oldSettings]
@@ -278,14 +278,14 @@ export function detectAndProcessMoves(
   
   // Get configurable constants from visualizer settings
   const settings = visualizationState.visualizerSettings
-  const STILL_THRESHOLD = settings.stillThreshold // m/s² - below this is considered "still"
   const MOVE_THRESHOLD = settings.moveThreshold // Use the configurable threshold for movement
+  const STILL_THRESHOLD = MOVE_THRESHOLD / 2.5 // Auto-calculate: still = move/2.5 (logical gap)
   const MIN_STILL_DURATION = settings.minStillDuration // seconds - minimum time to be considered "holding"
   const MIN_MOVE_DURATION = settings.minMoveDuration // seconds - minimum time for a movement to count
   const MAX_MOVE_DURATION = settings.maxMoveDuration // seconds - longer moves get split
   const MAX_MOVE_SEQUENCE = settings.maxMoveSequence // maximum consecutive moves without still period
   
-  console.log(`🔧 [Move Detection] Using settings: move=${MOVE_THRESHOLD}, still=${STILL_THRESHOLD}, minStill=${MIN_STILL_DURATION}s, minMove=${MIN_MOVE_DURATION}s, maxMove=${MAX_MOVE_DURATION}s, maxSeq=${MAX_MOVE_SEQUENCE}`)
+  console.log(`🔧 [Move Detection] Using settings: move=${MOVE_THRESHOLD}, still=${STILL_THRESHOLD.toFixed(1)} (auto), minStill=${MIN_STILL_DURATION}s, minMove=${MIN_MOVE_DURATION}s, maxMove=${MAX_MOVE_DURATION}s, maxSeq=${MAX_MOVE_SEQUENCE}`)
   
   // State tracking
   let currentState: 'still' | 'moving' = 'still'
