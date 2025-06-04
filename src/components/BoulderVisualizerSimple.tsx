@@ -130,7 +130,7 @@ function VisualizationScene() {
           
           for (let i = 0; i < positionArray.length; i += 3) {
             const t = i / (positionArray.length - 3)
-            const waveOffset = Math.sin(elapsedTime * 2 + index * 0.1 + t * Math.PI * 4) * settings.attemptWaviness * 0.1
+            const waveOffset = Math.sin(elapsedTime * 2 + index * 0.1 + t * Math.PI * 4) * settings.attemptWaviness * t * 0.6
             
             // Apply wave to Z position
             positionArray[i + 2] += waveOffset
@@ -743,6 +743,59 @@ function VisualizationScene() {
         
         moveLinesRef.current.add(dot)
         managedObjects.current.push(dot)
+      }
+      
+      // Add move number label at the end of each line
+      const labelRadius = endRadius + 0.3 // Position label slightly beyond the line end
+      const labelX = Math.cos(moveAngle) * labelRadius
+      const labelY = Math.sin(moveAngle) * labelRadius
+      
+      // Create canvas for text
+      const canvas = document.createElement('canvas')
+      const context = canvas.getContext('2d')
+      if (context) {
+        canvas.width = 128
+        canvas.height = 128
+        
+        // Clear canvas
+        context.clearRect(0, 0, canvas.width, canvas.height)
+        
+        // Set font and style
+        context.font = 'bold 48px Arial'
+        context.textAlign = 'center'
+        context.textBaseline = 'middle'
+        
+        // Determine label text and color
+        const moveLabel = i.toString() // Use raw index: 0 for start, 1 for first real move, etc.
+        if (isStartMove) {
+          context.fillStyle = '#00ff00' // Green for start move
+        } else if (isCrux) {
+          context.fillStyle = settings.cruxColor || '#ef4444' // Crux color
+        } else {
+          context.fillStyle = settings.moveColor || '#8b5cf6' // Normal move color
+        }
+        
+        // Draw text
+        context.fillText(moveLabel, canvas.width / 2, canvas.height / 2)
+        
+        // Create texture and material
+        const texture = new THREE.CanvasTexture(canvas)
+        texture.needsUpdate = true
+        
+        const labelGeometry = new THREE.PlaneGeometry(0.4, 0.4)
+        const labelMaterial = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          opacity: settings.moveLineOpacity || 0.8,
+          alphaTest: 0.1
+        })
+        
+        // Create label mesh
+        const label = new THREE.Mesh(labelGeometry, labelMaterial)
+        label.position.set(labelX, labelY, 0.2)
+        
+        moveLinesRef.current.add(label)
+        managedObjects.current.push(label)
       }
     }
   }
