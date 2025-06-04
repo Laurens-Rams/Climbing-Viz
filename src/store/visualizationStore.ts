@@ -133,11 +133,11 @@ let visualizationState: VisualizationState = {
     centerTextSize: 1.0,
     
     // Move Detection Algorithm Parameters
-    moveThreshold: 1.5,
+    moveThreshold: 1.2,
     stillThreshold: 3.0,
-    minStillDuration: 1.5,
-    minMoveDuration: 1.0,
-    maxMoveDuration: 2.0,
+    minStillDuration: 0.5,
+    minMoveDuration: 0.5,
+    maxMoveDuration: 4.7,
     maxMoveSequence: 2,
     
     // Line Thickness - Updated to match user's current settings
