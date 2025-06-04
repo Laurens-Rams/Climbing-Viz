@@ -1544,7 +1544,7 @@ export class BoulderControlPanel {
     }
     
     async promptCustomUrl() {
-        const customUrl = prompt('Enter custom server URL:\n\nExamples:\n• http://192.168.1.100\n• 10.0.0.50:8080\n• 172.16.1.35', 'http://192.168.1.36');
+        const customUrl = prompt('Enter custom server URL:\n\nExamples:\n• http://192.168.1.100\n• 10.0.0.50:8080\n• 172.16.1.35', 'http://10.237.1.101');
         
         if (customUrl && customUrl.trim()) {
             await this.setQuickUrl(customUrl.trim());

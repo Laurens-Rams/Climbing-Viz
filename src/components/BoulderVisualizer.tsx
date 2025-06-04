@@ -19,12 +19,90 @@ interface BoulderVisualizerProps {
   isControlPanelVisible?: boolean
 }
 
+// Move detection function (same as in StatisticsView)
+const detectMoves = (time: number[], acceleration: number[], threshold: number) => {
+  const detectedMoves = [];
+  const minMoveDuration = 0.5;
+  let lastMoveTime = -minMoveDuration;
+  
+  detectedMoves.push({
+    time: 0,
+    acceleration: acceleration[0] || 9.8
+  });
+  
+  for (let i = 1; i < acceleration.length - 1; i++) {
+    const currentAccel = acceleration[i];
+    const currentTime = time[i];
+    
+    if (currentAccel > threshold && 
+        currentAccel > acceleration[i-1] && 
+        currentAccel > acceleration[i+1] &&
+        (currentTime - lastMoveTime) > minMoveDuration) {
+      
+      detectedMoves.push({
+        time: currentTime,
+        acceleration: currentAccel
+      });
+      
+      lastMoveTime = currentTime;
+    }
+  }
+  
+  return detectedMoves;
+};
+
 // Convert CSV BoulderData to hook-compatible format - memoized to prevent excessive conversions
-function convertBoulderDataForHook(boulderData: BoulderData | null) {
+function convertBoulderDataForHook(boulderData: BoulderData | null, threshold: number) {
   if (!boulderData) {
     return null
   }
   
+  // If we have CSV data and a threshold, recalculate moves
+  if (boulderData.csvData && threshold) {
+    const detectedMoves = detectMoves(
+      boulderData.csvData.time,
+      boulderData.csvData.absoluteAcceleration,
+      threshold
+    );
+    
+    // Calculate dynamics range (same as CSV loader)
+    const accelerations = detectedMoves.map(m => m.acceleration);
+    const maxAccel = Math.max(...accelerations);
+    const minAccel = Math.min(...accelerations);
+    const range = maxAccel - minAccel;
+    
+    const recalculatedMoves = detectedMoves.map((move, index) => {
+      // Normalize dynamics between 0.1 and 1.0 (same as CSV loader)
+      let dynamics = 0.1;
+      if (index === 0) {
+        // First move is always the start move with dynamics 0
+        dynamics = 0;
+      } else if (range > 0) {
+        dynamics = 0.1 + ((move.acceleration - minAccel) / range) * 0.9;
+      }
+      
+      return {
+        move_number: index + 1,
+        dynamics: dynamics,
+        crux: move.acceleration > threshold * 1.5,
+        isCrux: move.acceleration > threshold * 1.5,
+        angle: 0,
+        x: 0,
+        y: 0,
+        z: 0
+      };
+    });
+    
+    console.log(`[BoulderVisualizer] Recalculated ${recalculatedMoves.length} moves with threshold ${threshold}`);
+    
+    return {
+      ...boulderData,
+      grade: boulderData.grade || 'V0',
+      moves: recalculatedMoves
+    };
+  }
+  
+  // Otherwise use existing moves
   if (!boulderData.moves || !Array.isArray(boulderData.moves)) {
     console.warn('[BoulderVisualizer] Invalid or missing moves array:', boulderData.moves)
     return null
@@ -76,8 +154,30 @@ function convertBoulderDataForHook(boulderData: BoulderData | null) {
 function BoulderScene({ boulderData, settings, threshold }: { boulderData?: BoulderData | null, settings?: any, threshold?: number }) {
   // Memoize the conversion to prevent excessive re-computation
   const convertedData = useMemo(() => {
-    return convertBoulderDataForHook(boulderData || null)
-  }, [boulderData?.id, boulderData?.moves?.length, threshold]) // Add threshold to dependencies
+    console.log('[BoulderScene] Recalculating moves with threshold:', threshold);
+    const converted = convertBoulderDataForHook(boulderData || null, threshold || 12.0);
+    
+    // Add a unique key based on threshold and move count to force updates
+    if (converted) {
+      return {
+        ...converted,
+        // Add a stable identifier that changes when threshold or moves change
+        _thresholdKey: `${threshold}_${converted.moves.length}`
+      };
+    }
+    return converted;
+  }, [boulderData?.id, boulderData?.csvData, threshold]) // Simplified dependencies
+  
+  // Log when convertedData changes
+  useEffect(() => {
+    if (convertedData) {
+      console.log('[BoulderScene] Converted data updated:', {
+        id: convertedData.id,
+        moveCount: convertedData.moves.length,
+        threshold: threshold
+      });
+    }
+  }, [convertedData, threshold]);
   
   // Use the hook within the Canvas context - let it manage its own refs
   const { ringsRef, centerTextRef, attemptLinesRef, moveLinesRef, moveSegmentsRef } = useBoulderVisualizer(convertedData, settings)
@@ -109,11 +209,41 @@ function BoulderScene({ boulderData, settings, threshold }: { boulderData?: Boul
   )
 }
 
-export function BoulderVisualizer({ boulderData, settings, currentBoulderId, boulders, selectedBoulder, isLoading, error, selectBoulder: selectBoulderFromAppProps, isControlPanelVisible }: BoulderVisualizerProps) {
-  const { getThreshold } = useBoulderConfig()
+// Memoize the BoulderScene component to prevent unnecessary re-renders
+const MemoizedBoulderScene = React.memo(BoulderScene, (prevProps, nextProps) => {
+  // Custom comparison function - only re-render if essential props changed
+  const shouldRerender = 
+    prevProps.boulderData?.id !== nextProps.boulderData?.id ||
+    prevProps.threshold !== nextProps.threshold ||
+    prevProps.settings !== nextProps.settings // This will use reference equality
   
-  // Get current threshold for the selected boulder
-  const currentThreshold = selectedBoulder ? getThreshold(selectedBoulder.id) : 12.0
+  if (shouldRerender) {
+    console.log('[MemoizedBoulderScene] Re-rendering due to prop changes:', {
+      boulderIdChanged: prevProps.boulderData?.id !== nextProps.boulderData?.id,
+      thresholdChanged: prevProps.threshold !== nextProps.threshold,
+      settingsChanged: prevProps.settings !== nextProps.settings
+    })
+  }
+  
+  return !shouldRerender // Return true to prevent re-render, false to allow
+})
+
+export function BoulderVisualizer({ boulderData, settings, currentBoulderId, boulders, selectedBoulder, isLoading, error, selectBoulder: selectBoulderFromAppProps, isControlPanelVisible }: BoulderVisualizerProps) {
+  const { getThreshold, configs } = useBoulderConfig()
+  
+  // Get current threshold for the selected boulder - this will re-render when configs change
+  const currentThreshold = useMemo(() => {
+    if (!selectedBoulder) return 12.0
+    const config = configs.get(selectedBoulder.id)
+    return config?.threshold || 12.0
+  }, [selectedBoulder?.id, configs])
+  
+  // Log threshold changes
+  useEffect(() => {
+    if (selectedBoulder) {
+      console.log(`[BoulderVisualizer] Threshold for boulder ${selectedBoulder.id} is ${currentThreshold}`)
+    }
+  }, [selectedBoulder?.id, currentThreshold])
   
   // Use effect to react to boulderSelectionChanged events, primarily for logging or side-effects if needed in future.
   // The component will primarily re-render based on prop changes (selectedBoulder, currentBoulderId).
@@ -154,10 +284,11 @@ export function BoulderVisualizer({ boulderData, settings, currentBoulderId, bou
     <div className={`w-full h-full relative transition-all duration-300 ${isControlPanelVisible ? 'mr-[25rem]' : 'mr-0'}`}>
       <Canvas
         camera={{ position: [0, 0, 20], fov: 50 }}
-        style={{ background: '#000000' }}
+        style={{ background: 'transparent' }}
+        gl={{ alpha: true, antialias: true }}
       >
         <Suspense fallback={null}>
-          <BoulderScene boulderData={effectiveBoulderData} settings={settings} threshold={currentThreshold} />
+          <MemoizedBoulderScene boulderData={effectiveBoulderData} settings={settings} threshold={currentThreshold} />
         </Suspense>
       </Canvas>
       

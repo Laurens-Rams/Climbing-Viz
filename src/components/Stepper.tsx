@@ -1,4 +1,5 @@
 import React from 'react'
+import { Check } from 'lucide-react'
 
 export interface Step {
   id: string
@@ -70,7 +71,7 @@ export function Stepper({
                 onClick={() => onStepClick?.(index)}
               >
                 <span className="text-sm font-bold">
-                  {index < currentStep ? '✓' : (step.icon || (index + 1))}
+                  {index < currentStep ? <Check size={16} className="text-green-400" strokeWidth={3} /> : (step.icon || (index + 1))}
                 </span>
               </div>
               {/* Connecting line positioned right after the circle */}

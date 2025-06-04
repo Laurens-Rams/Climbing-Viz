@@ -1,0 +1,32 @@
+.circular-text {
+    margin: 0 auto;
+    border-radius: 50%;
+    width: 100%;
+    height: 100%;
+    position: relative;
+    font-weight: bold;
+    color: rgba(34, 211, 238, 0.6); /* cyan-400/60 */
+    font-weight: 900;
+    text-align: center;
+    cursor: pointer;
+    transform-origin: 50% 50%;
+    -webkit-transform-origin: 50% 50%;
+    transition: color 0.3s ease-in-out;
+  }
+  
+  .circular-text:hover {
+    color: rgba(34, 211, 238, 0.8); /* cyan-300/80 */
+  }
+  
+  .circular-text span {
+    position: absolute;
+    display: inline-block;
+    left: 50%;
+    top: 50%;
+    font-size: 14px;
+    font-family: 'TT-Supermolot-Neue-Trial-Expanded-Bold', 'Arial Black', sans-serif;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    transition: all 0.5s cubic-bezier(0, 0, 0, 1);
+    transform-origin: 0 0;
+  }

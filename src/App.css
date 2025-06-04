@@ -36,4 +36,30 @@ canvas {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(26, 222, 186, 0.5);
+}
+
+/* Custom font classes for headlines and loading screen */
+.custom-headline-font {
+  font-family: 'TT-Supermolot-Neue-Trial-Expanded-Bold', 'Arial Black', Arial, sans-serif !important;
+  font-weight: bold !important;
+  letter-spacing: -0.02em;
+}
+
+.custom-headline-font .split-line,
+.custom-headline-font .split-word,
+.custom-headline-font .split-char {
+  font-family: 'TT-Supermolot-Neue-Trial-Expanded-Bold', 'Arial Black', Arial, sans-serif !important;
+  font-weight: bold !important;
+}
+
+/* Ensure font loading doesn't cause layout shift */
+.custom-headline-font {
+  font-display: swap;
+}
+
+/* Control Center title font */
+.control-center-title {
+  font-family: 'TT-Supermolot-Neue-Trial-Expanded-Bold', 'Arial Black', Arial, sans-serif;
+  font-weight: bold;
+  letter-spacing: -0.01em;
 } 

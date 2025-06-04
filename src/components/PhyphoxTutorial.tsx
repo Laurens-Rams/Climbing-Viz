@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Stepper, Step } from './Stepper'
-import { Play, Square, Trash2, Upload } from 'lucide-react'
+import { ChevronRight, ChevronLeft, Play, Square, Trash2, Upload, ArrowLeft, Smartphone, Globe, Link, Film, Clipboard, CheckCircle, X, BarChart3, Save, Check } from 'lucide-react'
 import ElasticSlider from './ui/ElasticSlider'
 
 interface PhyphoxTutorialProps {
@@ -10,6 +10,12 @@ interface PhyphoxTutorialProps {
   isServerConnected?: boolean
   uploadFile?: (file: File) => Promise<void>
   isControlPanelVisible?: boolean
+}
+
+// Live data interface
+interface LiveDataPoint {
+  time: number
+  magnitude: number
 }
 
 export function PhyphoxTutorial({ 
@@ -26,6 +32,11 @@ export function PhyphoxTutorial({
   const [isRecording, setIsRecording] = useState(false)
   const [recordingSuccess, setRecordingSuccess] = useState(false)
   
+  // Live data tracking
+  const [liveData, setLiveData] = useState<LiveDataPoint[]>([])
+  const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null)
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  
   // Boulder form data
   const [boulderName, setBoulderName] = useState('')
   const [routeSetter, setRouteSetter] = useState('')
@@ -33,6 +44,10 @@ export function PhyphoxTutorial({
   const [gradeSystem, setGradeSystem] = useState<'V' | 'Font' | 'YDS'>('V') // V-scale, Font (French), YDS (Yosemite)
   const [numberOfMoves, setNumberOfMoves] = useState('')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+
+  // Save confirmation state
+  const [showSaveConfirmation, setShowSaveConfirmation] = useState(false)
+  const [savedBoulderData, setSavedBoulderData] = useState<any>(null)
 
   // Grade systems data with conversion mappings
   const gradeSystems = {
@@ -146,6 +161,14 @@ export function PhyphoxTutorial({
       
       if (response.ok) {
         setIsRecording(true)
+        setLiveData([]) // Clear previous data
+        setRecordingStartTime(null) // Will be set when first data arrives
+        
+        console.log('[PhyphoxTutorial] Recording started, waiting for first data...')
+        
+        // Start polling for live data immediately
+        startLiveDataPolling()
+        
         if (onServerCommand) {
           onServerCommand('start')
         }
@@ -165,6 +188,10 @@ export function PhyphoxTutorial({
       if (response.ok) {
         setIsRecording(false)
         setRecordingSuccess(true)
+        
+        // Stop polling
+        stopLiveDataPolling()
+        
         if (onServerCommand) {
           onServerCommand('stop')
         }
@@ -184,6 +211,11 @@ export function PhyphoxTutorial({
       if (response.ok) {
         setIsRecording(false)
         setRecordingSuccess(false)
+        setLiveData([])
+        
+        // Stop polling
+        stopLiveDataPolling()
+        
         if (onServerCommand) {
           onServerCommand('clear')
         }
@@ -207,21 +239,210 @@ export function PhyphoxTutorial({
     }
   }
 
-  const handleSaveBoulder = () => {
-    // Create boulder data object with the form information
-    const boulderData = {
-      name: boulderName || 'Unnamed Boulder',
-      routeSetter: routeSetter || 'Unknown',
-      grade: grade || 'Ungraded',
-      numberOfMoves: numberOfMoves ? parseInt(numberOfMoves) : 0,
-      date: date,
-      recordedAt: new Date().toISOString()
+  const handleSaveBoulder = async () => {
+    try {
+      // Fetch the final recorded data from Phyphox
+      const response = await fetch(`http://${serverIP}/get?acc_time=full&accX=full&accY=full&accZ=full`, {
+        method: 'GET',
+        mode: 'cors',
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        
+        // Create boulder data object with the form information and recorded data
+        const boulderData = {
+          id: Date.now(), // Simple ID generation
+          name: boulderName || 'Unnamed Boulder',
+          routeSetter: routeSetter || 'Unknown',
+          grade: grade || 'Ungraded',
+          gradeSystem: gradeSystem,
+          numberOfMoves: numberOfMoves ? parseInt(numberOfMoves) : 0,
+          date: date,
+          recordedAt: new Date().toISOString(),
+          moves: [], // Will be processed from the raw data
+          rawData: data.buffer, // Store the raw Phyphox data
+          source: 'phyphox',
+          totalDataPoints: data.buffer?.acc_time?.buffer?.length || 0
+        }
+        
+        // Save to localStorage
+        const existingBoulders = JSON.parse(localStorage.getItem('climbing-boulders') || '[]')
+        existingBoulders.push(boulderData)
+        localStorage.setItem('climbing-boulders', JSON.stringify(existingBoulders))
+        
+        console.log('Boulder saved successfully:', boulderData)
+        
+        // Store boulder data for confirmation popup
+        setSavedBoulderData(boulderData)
+        setShowSaveConfirmation(true)
+        
+        // Dispatch event to notify other components
+        window.dispatchEvent(new CustomEvent('boulderSaved', { 
+          detail: { boulder: boulderData } 
+        }))
+        
+      } else {
+        throw new Error('Failed to fetch final recording data')
+      }
+    } catch (error) {
+      console.error('Error saving boulder:', error)
+      
+      // Save without raw data as fallback
+      const boulderData = {
+        id: Date.now(),
+        name: boulderName || 'Unnamed Boulder',
+        routeSetter: routeSetter || 'Unknown',
+        grade: grade || 'Ungraded',
+        gradeSystem: gradeSystem,
+        numberOfMoves: numberOfMoves ? parseInt(numberOfMoves) : 0,
+        date: date,
+        recordedAt: new Date().toISOString(),
+        moves: [],
+        source: 'phyphox',
+        error: 'Could not fetch recording data'
+      }
+      
+      const existingBoulders = JSON.parse(localStorage.getItem('climbing-boulders') || '[]')
+      existingBoulders.push(boulderData)
+      localStorage.setItem('climbing-boulders', JSON.stringify(existingBoulders))
+      
+      console.log('Boulder saved without raw data:', boulderData)
+      
+      // Store boulder data for confirmation popup
+      setSavedBoulderData(boulderData)
+      setShowSaveConfirmation(true)
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('boulderSaved', { 
+        detail: { boulder: boulderData } 
+      }))
+    }
+  }
+
+  // Progress graph component
+  const ProgressGraph = () => {
+    if (!isRecording && liveData.length === 0) return null
+    
+    const graphHeight = 150
+    const padding = 20
+    
+    // Calculate graph bounds
+    const dataHeight = graphHeight - 2 * padding
+    
+    if (liveData.length < 2) {
+      return (
+        <div className="bg-black/50 border border-cyan-400/40 rounded-lg p-4">
+          <h4 className="text-cyan-400 font-medium mb-2 flex items-center gap-2">
+            <BarChart3 size={16} className="text-cyan-400" />
+            Live Progress
+          </h4>
+          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+            {isRecording ? 'Waiting for data...' : 'No data recorded'}
+          </div>
+        </div>
+      )
     }
     
-    console.log('Saving boulder to library:', boulderData)
+    // Use full recording timeline - from start to current
+    const recordingStartTimeSeconds = recordingStartTime ? recordingStartTime / 1000 : 0
+    const actualStartTime = liveData.length > 0 ? Math.min(...liveData.map(d => d.time)) : recordingStartTimeSeconds
+    const currentTime = Math.max(...liveData.map(d => d.time))
+    const minMagnitude = Math.min(...liveData.map(d => d.magnitude))
+    const maxMagnitude = Math.max(...liveData.map(d => d.magnitude))
     
-    // Navigate back to visualizer
-    onBack()
+    const timeRange = Math.max(currentTime - actualStartTime, 1) // Ensure minimum range
+    const magnitudeRange = Math.max(maxMagnitude - minMagnitude, 0.1) // Ensure minimum range
+    
+    return (
+      <div className="bg-black/50 border border-cyan-400/40 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-cyan-400 font-medium mb-2 flex items-center gap-2">
+            <BarChart3 size={16} className="text-cyan-400" />
+            Live Progress
+          </h4>
+          <div className="text-xs text-gray-400">
+            {liveData.length} points • {timeRange.toFixed(1)}s
+          </div>
+        </div>
+        
+        {/* Full-width responsive SVG container */}
+        <div className="w-full bg-gray-900/50 rounded border border-gray-600/30">
+          <svg 
+            width="100%" 
+            height={graphHeight} 
+            viewBox={`0 0 400 ${graphHeight}`}
+            preserveAspectRatio="none"
+            className="w-full"
+          >
+            {/* Grid lines */}
+            <defs>
+              <pattern id="grid" width="40" height="30" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 30" fill="none" stroke="#374151" strokeWidth="0.5" opacity="0.3"/>
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+            
+            {/* Generate SVG path using full timeline */}
+            {(() => {
+              const dataWidth = 400 - 2 * padding
+              
+              const pathData = liveData.map((point, index) => {
+                const x = padding + ((point.time - actualStartTime) / timeRange) * dataWidth
+                const y = padding + dataHeight - ((point.magnitude - minMagnitude) / magnitudeRange) * dataHeight
+                
+                return index === 0 ? `M${x},${y}` : `L${x},${y}`
+              }).join(' ')
+              
+              return (
+                <>
+                  {/* Data line */}
+                  <path
+                    d={pathData}
+                    fill="none"
+                    stroke="#00ffcc"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                    className="drop-shadow-sm"
+                  />
+                  
+                  {/* Current point if recording */}
+                  {isRecording && liveData.length > 0 && (
+                    <circle
+                      cx={padding + ((liveData[liveData.length - 1].time - actualStartTime) / timeRange) * dataWidth}
+                      cy={padding + dataHeight - ((liveData[liveData.length - 1].magnitude - minMagnitude) / magnitudeRange) * dataHeight}
+                      r="3"
+                      fill="#00ffcc"
+                      className="animate-pulse"
+                    />
+                  )}
+                  
+                  {/* Recording start indicator */}
+                  {recordingStartTime && (
+                    <line
+                      x1={padding}
+                      y1={padding}
+                      x2={padding}
+                      y2={padding + dataHeight}
+                      stroke="#10b981"
+                      strokeWidth="2"
+                      strokeDasharray="5,5"
+                      opacity="0.7"
+                    />
+                  )}
+                </>
+              )
+            })()}
+          </svg>
+        </div>
+        
+        <div className="flex justify-between text-xs text-gray-500 mt-1">
+          <span>Min: {minMagnitude.toFixed(1)}</span>
+          <span>Range: {timeRange.toFixed(1)}s</span>
+          <span>Max: {maxMagnitude.toFixed(1)}</span>
+        </div>
+      </div>
+    )
   }
 
   // Define tutorial steps
@@ -265,6 +486,73 @@ export function PhyphoxTutorial({
     handleSaveBoulder()
   }
 
+  // Live data polling functions
+  const startLiveDataPolling = () => {
+    if (pollIntervalRef.current) return // Already polling
+    
+    console.log('[PhyphoxTutorial] Starting live data polling')
+    
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const response = await fetch(`http://${serverIP}/get?acc_time=full&accX=full&accY=full&accZ=full`, {
+          method: 'GET',
+          mode: 'cors',
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          
+          if (data.buffer && data.buffer.acc_time && data.buffer.accX && data.buffer.accY && data.buffer.accZ) {
+            const timeArray = data.buffer.acc_time.buffer || []
+            const accXArray = data.buffer.accX.buffer || []
+            const accYArray = data.buffer.accY.buffer || []
+            const accZArray = data.buffer.accZ.buffer || []
+            
+            // Set recording start time from first data point if not set
+            if (recordingStartTime === null && timeArray.length > 0) {
+              const firstTime = timeArray[0]
+              setRecordingStartTime(firstTime * 1000) // Convert to milliseconds
+              console.log('[PhyphoxTutorial] Recording start time set from first data point:', firstTime)
+            }
+            
+            // Process all data points from recording start
+            const newDataPoints: LiveDataPoint[] = timeArray.map((time: number, index: number) => {
+              const x = accXArray[index] || 0
+              const y = accYArray[index] || 0
+              const z = accZArray[index] || 0
+              const magnitude = Math.sqrt(x * x + y * y + z * z)
+              
+              return { time, magnitude }
+            })
+            
+            // Keep all data points to show full recording timeline
+            setLiveData(newDataPoints)
+            
+            // Log progress every 100 points to avoid console spam
+            if (newDataPoints.length > 0 && newDataPoints.length % 100 === 0) {
+              console.log(`[PhyphoxTutorial] Live data updated: ${newDataPoints.length} points, duration: ${(newDataPoints[newDataPoints.length - 1].time - newDataPoints[0].time).toFixed(1)}s`)
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[PhyphoxTutorial] Live data polling error:', error)
+      }
+    }, 200) // Poll every 200ms for smoother updates
+  }
+
+  const stopLiveDataPolling = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+    }
+  }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopLiveDataPolling()
+    }
+  }, [])
 
   const renderStepContent = () => {
     switch (currentStep) {
@@ -290,7 +578,9 @@ export function PhyphoxTutorial({
                 
                 {/* Step 1: Download & Open */}
                 <div className="bg-black/30 rounded-xl p-6 text-center">
-                  <div className="text-4xl mb-4">📱</div>
+                  <div className="mb-4 flex justify-center">
+                    <Smartphone size={48} className="text-cyan-400" strokeWidth={1.5} />
+                  </div>
                   <h4 className="text-lg font-semibold text-cyan-400 mb-3">1. Download App</h4>
                   <p className="text-cyan-400/80 text-sm mb-4">
                     Download Phyphox from your app store and open the "Acceleration (without g)" experiment.
@@ -299,7 +589,9 @@ export function PhyphoxTutorial({
 
                 {/* Step 2: Enable Remote Access */}
                 <div className="bg-black/30 rounded-xl p-6 text-center">
-                  <div className="text-4xl mb-4">🌐</div>
+                  <div className="mb-4 flex justify-center">
+                    <Globe size={48} className="text-green-400" strokeWidth={1.5} />
+                  </div>
                   <h4 className="text-lg font-semibold text-cyan-400 mb-3">2. Enable Remote Access</h4>
                   <p className="text-cyan-400/80 text-sm mb-4">
                     In the app, tap the three dots menu → "Allow remote access" to enable network control.
@@ -308,7 +600,9 @@ export function PhyphoxTutorial({
 
                 {/* Step 3: Note IP Address */}
                 <div className="bg-black/30 rounded-xl p-6 text-center">
-                  <div className="text-4xl mb-4">🔗</div>
+                  <div className="mb-4 flex justify-center">
+                    <Link size={48} className="text-purple-400" strokeWidth={1.5} />
+                  </div>
                   <h4 className="text-lg font-semibold text-cyan-400 mb-3">3. Get IP Address</h4>
                   <p className="text-cyan-400/80 text-sm mb-4">
                     The app will show an IP address (e.g., 192.168.1.36). Enter this below to connect.
@@ -323,7 +617,10 @@ export function PhyphoxTutorial({
               {/* Server Connection Section (2/3 width) */}
               <div className="lg:col-span-2 space-y-6">
                 <div className="h-full">
-                  <h4 className="text-xl font-semibold text-cyan-400 mb-6">🔗 Connect to Server</h4>
+                  <div className="flex items-center gap-2 mb-6">
+                    <Link size={24} className="text-cyan-400" />
+                    <h4 className="text-xl font-semibold text-cyan-400">Connect to Server</h4>
+                  </div>
                   
                   <div className="space-y-4">
                     <div>
@@ -347,12 +644,22 @@ export function PhyphoxTutorial({
                     </button>
                     
                     {connectionAttempted && (
-                      <div className={`text-sm p-3 rounded-lg ${
+                      <div className={`text-sm p-3 rounded-lg flex items-center gap-2 ${
                         isServerConnected 
                           ? 'text-green-400 bg-green-400/10' 
                           : 'text-red-400 bg-red-400/10'
                       }`}>
-                        {isServerConnected ? '✅ Connected successfully!' : '❌ Connection failed'}
+                        {isServerConnected ? (
+                          <>
+                            <CheckCircle size={16} className="text-green-400" />
+                            Connected successfully!
+                          </>
+                        ) : (
+                          <>
+                            <X size={16} className="text-red-400" />
+                            Connection failed
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -405,7 +712,10 @@ export function PhyphoxTutorial({
               />
             </div>
 
-            <h3 className="text-xl font-semibold text-cyan-400 mb-6">🎬 Recording Controls</h3>
+            <div className="flex items-center gap-2 mb-6">
+              <Film size={24} className="text-cyan-400" />
+              <h3 className="text-xl font-semibold text-cyan-400">Recording Controls</h3>
+            </div>
             
             <div className="space-y-4">
               {/* Full-width improved playback buttons */}
@@ -458,7 +768,10 @@ export function PhyphoxTutorial({
 
               {/* Instructions */}
               <div className="bg-cyan-400/10 rounded-lg p-4">
-                <h4 className="font-semibold text-cyan-400 mb-2">📋 Recording Instructions:</h4>
+                <div className="flex items-center gap-2 mb-2">
+                  <Clipboard size={20} className="text-cyan-400" />
+                  <h4 className="font-semibold text-cyan-400">Recording Instructions:</h4>
+                </div>
                 <ul className="text-sm space-y-1 text-cyan-400/80">
                   <li>• Attach your phone securely to your body or climbing harness</li>
                   <li>• Start recording before beginning your climb</li>
@@ -469,9 +782,17 @@ export function PhyphoxTutorial({
 
               {recordingSuccess && (
                 <div className="bg-green-400/10 rounded-lg p-4">
-                  <p className="text-green-400 font-semibold">🎉 Recording completed successfully!</p>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={20} className="text-green-400" />
+                    <p className="text-green-400 font-semibold">Recording completed successfully!</p>
+                  </div>
                   <p className="text-green-400/80 text-sm mt-1">Your climbing data has been captured. Click Next to save boulder details.</p>
                 </div>
+              )}
+
+              {/* Live Progress Graph */}
+              {(isRecording || liveData.length > 0) && (
+                <ProgressGraph />
               )}
             </div>
           </div>
@@ -492,7 +813,10 @@ export function PhyphoxTutorial({
               />
             </div>
 
-            <h3 className="text-xl font-semibold text-cyan-400 mb-6">💾 Boulder Information</h3>
+            <h3 className="text-xl font-semibold text-cyan-400 mb-6 flex items-center gap-2">
+              <Save size={20} className="text-cyan-400" />
+              Boulder Information
+            </h3>
             
             <div className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
@@ -598,7 +922,53 @@ export function PhyphoxTutorial({
   }
 
   return (
-    <div className="h-full bg-gradient-to-br from-gray-900 to-black">
+    <div className="h-screen relative">
+      {/* Save Confirmation Popup */}
+      {showSaveConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-black/90 border border-green-400/40 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
+            <div className="text-center">
+              <div className="mb-6">
+                <div className="w-16 h-16 bg-green-400/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Check size={32} className="text-green-400" />
+                </div>
+                <h3 className="text-2xl font-bold text-green-400 mb-2">Boulder Saved!</h3>
+                <p className="text-gray-300">
+                  "{savedBoulderData?.name}" has been successfully saved to your library.
+                </p>
+              </div>
+              
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    setShowSaveConfirmation(false)
+                    // Navigate to visualizer -> statistics view for analysis
+                    window.dispatchEvent(new CustomEvent('navigateToStatistics', {
+                      detail: { boulderId: savedBoulderData?.id }
+                    }))
+                    onBack()
+                  }}
+                  className="w-full px-6 py-3 bg-cyan-400/20 border border-cyan-400/40 text-cyan-400 rounded-xl font-medium transition-all hover:bg-cyan-400/30 hover:border-cyan-400/60 flex items-center justify-center gap-2"
+                >
+                  <BarChart3 size={20} />
+                  Analyze & Crop Data
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setShowSaveConfirmation(false)
+                    onBack()
+                  }}
+                  className="w-full px-6 py-3 bg-gray-500/20 border border-gray-500/40 text-gray-300 rounded-xl font-medium transition-all hover:bg-gray-500/30"
+                >
+                  Back to Home
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={`h-full flex items-center justify-center transition-all duration-300 ${
         isControlPanelVisible ? 'pr-[25rem]' : 'pr-0'
       }`}>
