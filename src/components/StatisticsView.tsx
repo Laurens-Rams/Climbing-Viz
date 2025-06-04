@@ -216,6 +216,126 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
     }
   }, [cropSelection])
 
+  // Apply crop to boulder data with specific times
+  const applyCropWithTimes = useCallback(async (startTime: number, endTime: number) => {
+    if (!selectedBoulder?.csvData) {
+      console.error('[StatisticsView] Missing boulder data for crop')
+      return
+    }
+    
+    if (startTime >= endTime) {
+      alert('End time must be greater than start time!')
+      return
+    }
+    
+    console.log(`[StatisticsView] Starting crop operation: ${startTime}s - ${endTime}s`)
+    
+    const { time, absoluteAcceleration } = selectedBoulder.csvData
+    const startIndex = time.findIndex(t => t >= startTime)
+    const endIndex = time.findIndex(t => t >= endTime)
+    
+    if (startIndex === -1 || endIndex === -1 || startIndex >= endIndex) {
+      alert('Invalid time range selected!')
+      console.error('[StatisticsView] Invalid indices:', { startIndex, endIndex, timeRange: [startTime, endTime] })
+      return
+    }
+    
+    try {
+      // Create cropped data
+      const croppedTime = time.slice(startIndex, endIndex + 1)
+      const croppedAcceleration = absoluteAcceleration.slice(startIndex, endIndex + 1)
+      
+      // Apply smoothing to cropped data
+      const smoothedAcceleration = smoothData(croppedAcceleration, smoothingStrength, baselineThreshold)
+      
+      // Normalize time to start at 0
+      const normalizedTime = croppedTime.map(t => t - croppedTime[0])
+      
+      // Create new CSV data
+      const newCsvData = {
+        ...selectedBoulder.csvData,
+        time: normalizedTime,
+        absoluteAcceleration: smoothedAcceleration,
+        duration: normalizedTime[normalizedTime.length - 1] - normalizedTime[0],
+        maxAcceleration: Math.max(...smoothedAcceleration),
+        avgAcceleration: smoothedAcceleration.reduce((a, b) => a + b, 0) / smoothedAcceleration.length,
+        sampleCount: normalizedTime.length
+      }
+      
+      console.log(`[StatisticsView] Created new CSV data:`, {
+        originalLength: time.length,
+        croppedLength: normalizedTime.length,
+        newDuration: newCsvData.duration,
+        newMaxAccel: newCsvData.maxAcceleration
+      })
+      
+      // Update boulder data
+      const updatedBoulder = {
+        ...selectedBoulder,
+        csvData: newCsvData,
+        stats: {
+          ...selectedBoulder.stats,
+          duration: newCsvData.duration.toFixed(1),
+          maxAcceleration: newCsvData.maxAcceleration.toFixed(2),
+          avgAcceleration: newCsvData.avgAcceleration.toFixed(2),
+          sampleCount: newCsvData.sampleCount
+        }
+      }
+      
+      // Update localStorage if this is a saved boulder
+      if (selectedBoulder.source === 'csv-upload' || selectedBoulder.source === 'phyphox') {
+        const existingBoulders = JSON.parse(localStorage.getItem('climbing-boulders') || '[]')
+        const boulderIndex = existingBoulders.findIndex((b: any) => b.id === selectedBoulder.id)
+        
+        if (boulderIndex !== -1) {
+          // Update the stored boulder data
+          existingBoulders[boulderIndex] = {
+            ...existingBoulders[boulderIndex],
+            csvData: newCsvData,
+            stats: updatedBoulder.stats,
+            rawData: selectedBoulder.source === 'phyphox' ? {
+              acc_time: { buffer: normalizedTime },
+              accX: { buffer: normalizedTime.map(() => 0) },
+              accY: { buffer: normalizedTime.map(() => 0) },
+              accZ: { buffer: smoothedAcceleration }
+            } : undefined
+          }
+          
+          localStorage.setItem('climbing-boulders', JSON.stringify(existingBoulders))
+          console.log(`[StatisticsView] Updated localStorage for boulder ${selectedBoulder.id}`)
+          
+          // Dispatch event to refresh boulder list
+          window.dispatchEvent(new CustomEvent('boulderSaved', { 
+            detail: { boulder: existingBoulders[boulderIndex] } 
+          }))
+        } else {
+          console.warn(`[StatisticsView] Boulder ${selectedBoulder.id} not found in localStorage`)
+        }
+      }
+      
+      // Update the component - this should trigger a re-render and global store update
+      console.log(`[StatisticsView] Calling onBoulderDataUpdate with updated boulder`)
+      onBoulderDataUpdate(updatedBoulder)
+      
+      // Force refresh the boulder list to pick up changes
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('refreshBoulders'))
+      }, 100)
+      
+      // Reset crop selection
+      setCropSelection(null)
+      setShowCropPreview(false)
+      setCropStartTime('')
+      setCropEndTime('')
+      
+      console.log(`[StatisticsView] ✅ Applied crop: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s with smoothing: ${smoothingEnabled ? smoothingStrength : 'disabled'}`)
+      
+    } catch (error) {
+      console.error('[StatisticsView] Error during crop operation:', error)
+      alert('Error applying crop: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    }
+  }, [selectedBoulder, smoothData, smoothingStrength, baselineThreshold, onBoulderDataUpdate, smoothingEnabled])
+
   // Apply crop to boulder data
   const applyCrop = useCallback(async () => {
     if (!selectedBoulder?.csvData || !cropStartTime || !cropEndTime) {
@@ -705,12 +825,9 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
     const handleCropApply = (event: CustomEvent) => {
       const { startTime, endTime } = event.detail
       console.log(`[StatisticsView] ✂️ Crop apply event received: ${startTime}s - ${endTime}s`)
-      setCropStartTime(startTime.toString())
-      setCropEndTime(endTime.toString())
       
-      // Call applyCrop directly
-      console.log(`[StatisticsView] ✂️ Calling applyCrop function`)
-      applyCrop()
+      // Apply crop directly with the event data instead of waiting for state updates
+      applyCropWithTimes(startTime, endTime)
     }
     
     console.log(`[StatisticsView] 📡 Setting up crop event listeners`)
@@ -722,7 +839,7 @@ export function StatisticsView({ selectedBoulder, onBoulderDataUpdate, isControl
       window.removeEventListener('cropPreview', handleCropPreview as EventListener)
       window.removeEventListener('cropApply', handleCropApply as EventListener)
     }
-  }, [applyCrop])
+  }, [applyCropWithTimes])
 
   if (!selectedBoulder?.csvData) {
     return (
