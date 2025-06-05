@@ -161,7 +161,7 @@ export function ControlPanel({
   }, [])
   
   const servers: ServerOption[] = [
-    { name: 'Server 1 (192.168.1.36)', url: 'http://10.237.1.101' },
+    { name: 'Server 1 (10.237.1.101)', url: 'http://10.237.1.101' },
     { name: 'Server 2 (10.237.1.101)', url: 'http://10.237.1.101' },
     { name: 'Server 3 (192.168.1.100)', url: 'http://192.168.1.100' },
     { name: 'Server 4 (172.20.10.1)', url: 'http://172.20.10.1' },
@@ -1183,7 +1183,7 @@ export function ControlPanel({
                       type="text"
                       value={serverUrl}
                       onChange={(e) => setServerUrl(e.target.value)}
-                      placeholder="192.168.1.36 or http://192.168.1.36"
+                      placeholder="10.237.1.101 or http://10.237.1.101"
                       className="w-full px-4 py-3 bg-black/50 border border-cyan-400/40 rounded-xl text-gray-200 hover:border-cyan-400 focus:border-cyan-400 focus:outline-none text-sm backdrop-blur-sm transition-all"
                     />
                     

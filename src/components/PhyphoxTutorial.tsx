@@ -27,7 +27,7 @@ export function PhyphoxTutorial({
   isControlPanelVisible = true
 }: PhyphoxTutorialProps) {
   const [currentStep, setCurrentStep] = useState(0)
-  const [serverIP, setServerIP] = useState('192.168.1.36')
+  const [serverIP, setServerIP] = useState('10.237.1.101')
   const [connectionAttempted, setConnectionAttempted] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [recordingSuccess, setRecordingSuccess] = useState(false)
@@ -605,7 +605,7 @@ export function PhyphoxTutorial({
                   </div>
                   <h4 className="text-lg font-semibold text-cyan-400 mb-3">3. Get IP Address</h4>
                   <p className="text-cyan-400/80 text-sm mb-4">
-                    The app will show an IP address (e.g., 192.168.1.36). Enter this below to connect.
+                    The app will show an IP address (e.g., 10.237.1.101). Enter this below to connect.
                   </p>
                 </div>
               </div>
@@ -631,7 +631,7 @@ export function PhyphoxTutorial({
                         type="text"
                         value={serverIP}
                         onChange={(e) => setServerIP(e.target.value)}
-                        placeholder="192.168.1.36"
+                        placeholder="10.237.1.101"
                         className="w-full px-3 py-2 bg-black/50 border border-cyan-400/40 rounded-lg text-cyan-400 placeholder-cyan-400/50 focus:border-cyan-400 focus:outline-none"
                       />
                     </div>

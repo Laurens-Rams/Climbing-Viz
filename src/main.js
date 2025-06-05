@@ -285,7 +285,7 @@ class BoulderVisualizerApp {
 
         // Server options
         const servers = [
-            { name: 'Server 1 (192.168.1.36)', url: 'http://10.237.1.101' },
+            { name: 'Server 1 (10.237.1.101)', url: 'http://10.237.1.101' },
             { name: 'Server 2 (10.237.1.101)', url: 'http://10.237.1.101' },
             { name: 'Server 3 (192.168.1.100)', url: 'http://192.168.1.100' },
             { name: 'Server 4 (172.20.10.1)', url: 'http://172.20.10.1' },
