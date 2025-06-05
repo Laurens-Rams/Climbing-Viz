@@ -86,7 +86,7 @@ export function ControlPanel({
   const [isVisible, setIsVisible] = useState(false)
   const [currentFolder, setCurrentFolder] = useState<string>('selection')
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [serverUrl, setServerUrl] = useState('')
+  const [serverUrl, setServerUrl] = useState('10.237.1.101')
   const [customServerUrl, setCustomServerUrl] = useState('')
   const [showCustomServer, setShowCustomServer] = useState(false)
   const [isLiveModeActive, setIsLiveModeActive] = useState(false)
@@ -125,6 +125,10 @@ export function ControlPanel({
     if (savedServerUrl) {
       setServerUrl(savedServerUrl)
       console.log('[ControlPanel] Loaded saved server URL:', savedServerUrl)
+    } else {
+      // Set default server URL if none saved
+      setServerUrl('10.237.1.101')
+      console.log('[ControlPanel] Using default server URL: 10.237.1.101')
     }
   }, [])
   
